@@ -58,6 +58,7 @@ from requests.adapters import HTTPAdapter, Retry
 # the seed and every `S.<name>` in the battery keep resolving exactly where they did.
 # ⚠ ENGINE_VERSION moved with the engine it stamps — bump it in sh_engine.py.
 from sh_engine import (
+    apply_calibration, reset_calibration, calibration_in_force, CALIBRATION_BOUNDS, CALIBRATION_DEFAULTS,
     LIMITS_LAID_TOL, BAR_DIVERGE_TOL, RETIRE_ABSORB_MAX, RETIRE_ACWR_HEADROOM, RETIRE_AUTO_MIN_N, RETIRE_AUTO_BIAS,   # noqa: F401 — re-exported for the app and the battery
     ACWR_HARD, ACWR_SOFT, ACWR_SOFT_CTL_FLOOR, AV_HORIZON_DAYS, AV_MAX_STREAK, BANK_PLAN_SCAN,
     BASE_DOWN_EVERY, BASE_DOWN_FRAC, BASE_LONG_FRAC, BASE_QUALITY_CYCLE, BASE_RUNS,
@@ -1956,6 +1957,13 @@ def apply_settings_overrides(db):
         _resolve_setting(db, SETTINGS_BY_KEY["long_run_day"])[0],
         _resolve_setting(db, SETTINGS_BY_KEY["rest_day_rank"])[0])
     set_max_runs(_resolve_setting(db, SETTINGS_BY_KEY["max_runs_per_week"])[0])   # fork §MAXRUNS
+    # Fork §CAL — an APPROVED calibration overlays the engine's fitted constants; none ⇒ defaults.
+    # Like the day preference it changes how the NEXT plan is laid, not one already generated.
+    try:
+        import sh_calibrate
+        sh_calibrate.apply_saved(db)
+    except Exception as e:                       # a bad stored proposal must never take the app down
+        print(f"[calibration] not applied: {e}")
     # §TZ — the SAME zone owns the engine's calendar day, not just the nightly job's wall clock. This
     # is the authoritative apply: the import-time bootstrap only sees the env var, and the stored
     # setting overrides it. Applying it here also means a tz changed in the Settings window moves
@@ -6356,6 +6364,85 @@ _anthropic_client = None
 _anthropic_gen = -1      # the config generation `_anthropic_client` was built for (TECH-4)
 
 
+# Fork §LOCAL — the local Claude Code CLI as a second provider, so a box with no API key can run
+# the AI layer on a Claude subscription (`claude login` once on the machine). Env-only,
+# like the key: SH_LLM_PROVIDER = auto (default: the API when a key is set, else the CLI when the
+# binary is on PATH) | api | cli | off. The CLI is spawned per call with no tools, no MCP servers,
+# no settings/hooks and no session persistence; the prompt goes in on STDIN (never argv, where `ps`
+# would show the athlete's words), structured output via --json-schema. The §S5 per-feature switches
+# still gate every call — the provider only changes WHICH door the same request leaves by.
+LLM_PROVIDER = (os.environ.get("SH_LLM_PROVIDER") or "auto").strip().lower()
+CLAUDE_BIN = os.environ.get("SH_CLAUDE_BIN") or "claude"
+CLAUDE_CLI_MODEL = os.environ.get("SH_CLAUDE_MODEL") or "sonnet"
+CLAUDE_CLI_TIMEOUT = 180     # seconds — a cold CLI start plus one structured turn
+_claude_bin_cache = {}
+
+
+def _claude_cli_path():
+    """Absolute path of the Claude Code CLI, or None. Cached per configured name."""
+    if CLAUDE_BIN not in _claude_bin_cache:
+        _claude_bin_cache[CLAUDE_BIN] = shutil.which(CLAUDE_BIN)
+    return _claude_bin_cache[CLAUDE_BIN]
+
+
+def llm_provider():
+    """'api' | 'cli' | None — the provider the next LLM call will use."""
+    if LLM_PROVIDER == "off":
+        return None
+    if LLM_PROVIDER in ("api", "auto") and _anthropic() is not None:
+        return "api"
+    if LLM_PROVIDER in ("cli", "auto") and _claude_cli_path():
+        return "cli"
+    return None
+
+
+def _cli_env():
+    """The CLI's environment: ours minus Claude Code's session variables (a CLI spawned from inside
+    a Claude Code session would otherwise try to join it) and minus our own secrets."""
+    env = {k: v for k, v in os.environ.items()
+           if not (k.startswith("CLAUDE_CODE") or k.startswith("CLAUDECODE"))
+           and k not in BACKUP_HOOK_ENV_DROP}
+    return env
+
+
+def _llm_json_cli(system, user, schema, effort="low"):
+    """One structured call through the local Claude Code CLI. Same contract as `llm_json`."""
+    exe = _claude_cli_path()
+    if not exe:
+        return {"ok": False, "error": f"Claude CLI ({CLAUDE_BIN}) not found on PATH"}
+    args = [exe, "-p", "--output-format", "json", "--model", CLAUDE_CLI_MODEL,
+            "--system-prompt", system, "--json-schema", json.dumps(schema),
+            "--tools", "", "--strict-mcp-config", "--setting-sources", "",
+            "--no-session-persistence", "--effort", effort if effort in ("low", "medium", "high") else "low"]
+    try:
+        with tempfile.TemporaryDirectory(prefix="sh-claude-") as cwd:
+            proc = subprocess.run(args, input=user, capture_output=True, text=True,
+                                  timeout=CLAUDE_CLI_TIMEOUT, cwd=cwd, env=_cli_env())
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": f"LLM error: Claude CLI timed out after {CLAUDE_CLI_TIMEOUT}s"}
+    except OSError as e:
+        return {"ok": False, "error": f"LLM error: could not start Claude CLI ({e})"}
+    try:
+        out = json.loads(proc.stdout or "{}")
+    except ValueError:
+        out = {}
+    if proc.returncode != 0 or out.get("is_error") or not out:
+        why = (out.get("result") or proc.stderr or proc.stdout or "").strip().splitlines()
+        hint = " — run `claude login` on this machine" if any(
+            w in " ".join(why).lower() for w in ("login", "auth", "credential")) else ""
+        return {"ok": False, "error": f"LLM error (Claude CLI): {(why[-1] if why else 'exit ' + str(proc.returncode))[:200]}{hint}"}
+    data = out.get("structured_output")
+    if not isinstance(data, dict):
+        try:
+            data = json.loads(out.get("result") or "")
+        except ValueError:
+            data = None
+    if not isinstance(data, dict):
+        return {"ok": False, "error": "LLM error (Claude CLI): no structured output"}
+    data["ok"] = True
+    return data
+
+
 def _anthropic():
     """Lazy Anthropic client. Returns None (never raises) when the SDK isn't installed or no
     key is set, so the rest of the app is unaffected."""
@@ -6376,7 +6463,7 @@ def _anthropic():
 
 
 def llm_available():
-    return _anthropic() is not None
+    return llm_provider() is not None
 
 
 def ai_enabled(db, feature):
@@ -6400,9 +6487,14 @@ def llm_json(system, user, schema, effort="low", max_tokens=1024):
     """One structured-output call: returns a dict validated against `schema` (Claude's JSON is
     constrained by output_config.format), or {"ok": False, "error": ...} on any failure. Kept
     deliberately small — the engine, not the model, makes the numeric decisions."""
-    client = _anthropic()
+    prov = llm_provider()
+    if prov == "cli":
+        return _llm_json_cli(system, user, schema, effort=effort)
+    client = _anthropic() if prov == "api" else None
     if client is None:
-        return {"ok": False, "error": "AI features aren't set up — add a Claude API key in Settings"}
+        return {"ok": False, "error": "AI features aren't set up — add a Claude API key in Settings, "
+                                      "or install and log in to Claude Code (`claude login`) to use "
+                                      "your Claude subscription"}
     try:
         import anthropic
         resp = client.messages.create(
@@ -7559,6 +7651,7 @@ def _private_only_path(p):
             or p.startswith("/api/music")                 # §BEAT — listening history + Spotify OAuth
             or p.startswith("/api/backup") or p.startswith("/api/export")   # §BX — the user's data
             or p.startswith("/api/availability")          # §AV — away days = empty-house broadcast
+            or p.startswith("/api/calibration")           # fork §CAL — reads the injury history
             or (p.startswith("/api/activity/") and p.endswith("/map")))
 
 
@@ -10951,6 +11044,46 @@ def api_settings_save():
     return jsonify(ok=True, settings=current_settings(get_db()))
 
 
+# ── Fork §CAL — per-athlete calibration (private-only) ─────────────────────────────────────────
+@app.get("/api/calibration")
+def api_calibration():
+    """The saved proposal (or none) and the values in force."""
+    import sh_calibrate
+    db = get_db()
+    return jsonify(ok=True, proposal=sh_calibrate.load(db), in_force=calibration_in_force())
+
+
+@app.post("/api/calibration/fit")
+def api_calibration_fit():
+    """Run the fits on this database's history and SAVE the result as an unapproved proposal. The
+    engine keeps the values in force (an earlier approval, or the defaults) until it is approved."""
+    import sh_calibrate
+    db = get_db()
+    prop = sh_calibrate.fit(db)
+    sh_calibrate.save(db, prop)
+    sh_calibrate.apply_saved(db)
+    return jsonify(ok=True, proposal=prop, text=sh_calibrate.report_text(prop),
+                   in_force=calibration_in_force())
+
+
+@app.post("/api/calibration/approve")
+def api_calibration_approve():
+    import sh_calibrate
+    db = get_db()
+    prop = sh_calibrate.approve(db)
+    if not prop:
+        return jsonify(ok=False, error="no proposal to approve — run a fit first"), 400
+    sh_calibrate.apply_saved(db)
+    return jsonify(ok=True, proposal=prop, in_force=calibration_in_force())
+
+
+@app.post("/api/calibration/revert")
+def api_calibration_revert():
+    import sh_calibrate
+    sh_calibrate.revert(get_db())
+    return jsonify(ok=True, proposal=None, in_force=calibration_in_force())
+
+
 @app.get("/api/secrets")
 def api_secrets():
     """Status of the Runalyze token + Claude key — configured flag + provenance ONLY, never the value.
@@ -12638,8 +12771,8 @@ if __name__ == "__main__":
         with app.app_context():
             db = get_db()
             if not llm_available():
-                print("No Claude API key available — set ANTHROPIC_API_KEY (or configure it in "
-                      "Settings) and run this again. Nothing was written.")
+                print("No Claude available — set ANTHROPIC_API_KEY (or configure it in Settings), or "
+                      "install Claude Code and run `claude login`, then run this again. Nothing was written.")
                 sys.exit(2)
             if db.execute("SELECT 1 FROM plans LIMIT 1").fetchone() is None:
                 print("No plan in this database yet. Seed it first:  SH_DB=… python SparingHorse.py seed")
@@ -12653,6 +12786,36 @@ if __name__ == "__main__":
             print(f"Baked {len(out['text'])} characters into meta['demo_explain'].")
             print("The demo will serve this, flagged as a sample. Re-run after changing the plan "
                   "fixture so the narration still describes what a visitor sees.")
+        sys.exit(0)
+    if len(sys.argv) > 1 and sys.argv[1] == "calibrate":  # CLI: python SparingHorse.py calibrate [--approve|--revert]
+        # Fork §CAL — fit the engine's per-athlete constants from this database's history. Without a
+        # flag: fit, save as a proposal, print the evidence. --approve applies the saved proposal;
+        # --revert deletes it (defaults again). --injuries FILE reads the injury list from a file
+        # instead of Settings → Injury history. --json FILE also writes the proposal as JSON.
+        import sh_calibrate
+        a = sys.argv[2:]
+        with app.app_context():
+            db = get_db()
+            if "--revert" in a:
+                sh_calibrate.revert(db)
+                print("Calibration removed — the engine is back on its defaults.")
+                sys.exit(0)
+            if "--approve" in a:
+                prop = sh_calibrate.approve(db)
+                if not prop:
+                    print("No proposal saved yet. Run:  python SparingHorse.py calibrate")
+                    sys.exit(2)
+                print(sh_calibrate.report_text(prop))
+                print("Regenerate the plan to lay it with these values.")
+                sys.exit(0)
+            inj = None
+            if "--injuries" in a:
+                inj = Path(a[a.index("--injuries") + 1]).read_text()
+            prop = sh_calibrate.fit(db, injuries_text=inj)
+            sh_calibrate.save(db, prop)
+            if "--json" in a:
+                Path(a[a.index("--json") + 1]).write_text(json.dumps(prop, indent=1))
+            print(sh_calibrate.report_text(prop))
         sys.exit(0)
     if len(sys.argv) > 1 and sys.argv[1] == "golden":     # CLI: python SparingHorse.py golden
         # (Re)write test/golden/*.json from the pinned fixtures. Deliberate act: run it only when an

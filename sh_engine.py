@@ -129,6 +129,10 @@ SETTINGS_SPEC = [
      "help": "Your lactate-threshold heart rate from a field test (30-min TT: average HR of the final "
              "20 minutes — see the manual). Overrides the data-derived estimate while fresh; it ages "
              "out over weeks because LTHR moves with fitness. Empty = derive from your runs."},
+    {"key": "injury_history", "env": "SH_INJURY_HISTORY", "label": "Injury history", "kind": "text",
+     "help": "Fork §CAL — one injury per line: 'YYYY-MM-DD to YYYY-MM-DD what it was' (or "
+             "'YYYY-MM-DD 6w calf'). Read only by Calibrate, which uses it to check how much load you "
+             "carried before each injury. Rough dates are fine."},
     {"key": "athlete_age", "env": "SH_ATHLETE_AGE", "label": "Age (years)", "kind": "line",
      "help": "Used only as a cold-start PRIOR before real data exists (HRmax ≈ 208 − 0.7×age, "
              "Tanaka); measured heart-rate data takes over as it lands. Empty = no prior."},
@@ -1811,6 +1815,56 @@ BIO_EQ_WINDOW = 4           # trailing weeks whose MAX eq_km sets the biomechani
 # p97.5 1.118 · p99 1.377. This refuses 1.49% of them. It says "the athlete has done this without incident",
 # never "this is safe". See PROJECT_LOG §50 and ENGINE_SCIENCE.
 SESSION_EQ_STEP = BIO_EQ_STEP
+
+# Fork §CAL — per-athlete calibration (sh_calibrate fits, the athlete approves, this applies). The
+# bounds are the hard rails no fit may leave; a safety limit's upper bound is its default or a
+# narrow step past it (sh_calibrate only loosens with a listed injury history). `trimp_scale`
+# multiplies every TRIMP_PER_MIN rung — it is a MEASUREMENT of this athlete's TRIMP per minute.
+CALIBRATION_BOUNDS = {"trimp_scale": (0.60, 1.60), "BIO_EQ_STEP": (1.15, 1.40),
+                      "CTL_RAMP_MAX": (3.0, 6.0), "ACWR_HARD": (1.15, 1.30), "ACWR_SOFT": (1.10, 1.25)}
+CALIBRATION_DEFAULTS = {"TRIMP_PER_MIN": dict(TRIMP_PER_MIN), "BIO_EQ_STEP": BIO_EQ_STEP,
+                        "CTL_RAMP_MAX": CTL_RAMP_MAX, "ACWR_HARD": ACWR_HARD, "ACWR_SOFT": ACWR_SOFT}
+_NEAR_CEILING_DEFAULT = NEAR_CEILING_ACWR   # the SAME object comes back on reset (det/module-split)
+_CALIBRATION = {}
+
+
+def reset_calibration():
+    """Put every calibrated constant back to the engine default (and its derived constants)."""
+    apply_calibration({})
+
+
+def apply_calibration(values):
+    """Publish an approved calibration onto the engine globals. Unknown keys are ignored, every value
+    is clamped to CALIBRATION_BOUNDS, SOFT stays ≥ 0.05 under HARD, and the constants derived from a
+    calibrated one (EASY_TRIMP_PER_MIN, SESSION_EQ_STEP, NEAR_CEILING_ACWR) follow it. TRIMP_PER_MIN
+    is mutated IN PLACE so every module that imported the dict sees the change. Returns what is in
+    force (an empty dict = all defaults)."""
+    global EASY_TRIMP_PER_MIN, BIO_EQ_STEP, SESSION_EQ_STEP, CTL_RAMP_MAX, ACWR_HARD, ACWR_SOFT
+    global NEAR_CEILING_ACWR, _CALIBRATION
+    d = CALIBRATION_DEFAULTS
+    got = {}
+    for k, v in (values or {}).items():
+        if k in CALIBRATION_BOUNDS and isinstance(v, (int, float)) and math.isfinite(v):
+            lo, hi = CALIBRATION_BOUNDS[k]
+            got[k] = round(min(hi, max(lo, float(v))), 3)
+    sc = got.get("trimp_scale", 1.0)
+    for z, rung in d["TRIMP_PER_MIN"].items():
+        TRIMP_PER_MIN[z] = round(rung * sc, 4) if sc != 1.0 else rung
+    EASY_TRIMP_PER_MIN = TRIMP_PER_MIN["easy"]
+    BIO_EQ_STEP = got.get("BIO_EQ_STEP", d["BIO_EQ_STEP"])
+    SESSION_EQ_STEP = BIO_EQ_STEP
+    CTL_RAMP_MAX = got.get("CTL_RAMP_MAX", d["CTL_RAMP_MAX"])
+    ACWR_HARD = got.get("ACWR_HARD", d["ACWR_HARD"])
+    ACWR_SOFT = min(got.get("ACWR_SOFT", d["ACWR_SOFT"]), round(ACWR_HARD - 0.05, 3))
+    if "ACWR_SOFT" in got or "ACWR_HARD" in got:
+        got["ACWR_SOFT"] = ACWR_SOFT
+    NEAR_CEILING_ACWR = (ACWR_SOFT - 0.05) if ACWR_SOFT != d["ACWR_SOFT"] else _NEAR_CEILING_DEFAULT
+    _CALIBRATION = got
+    return dict(got)
+
+
+def calibration_in_force():
+    return dict(_CALIBRATION)
 # §PRO17 — the §H1 rescue's own threshold, decoupled from the governor it used to double as. §H1 was
 # written for a low-CTL pathology its docstring measures at ~1.5–1.6 (a quality session's fixed TRIMP
 # floor becoming a huge day among small ones); ACWR_HARD=1.30 was never that number, and using it made a

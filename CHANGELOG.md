@@ -14,6 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Calibrate the engine to your history** (Settings → Calibrate to my history, or
+  `python SparingHorse.py calibrate [--approve|--revert] [--injuries FILE] [--json FILE]`). New module
+  `sh_calibrate.py` re-runs the engine's own calibrations on the database's runs: the TRIMP price of an easy
+  minute (`trimp_scale`, a measurement, both ways), the per-session impact step (`BIO_EQ_STEP`, which
+  `SESSION_EQ_STEP` follows), the CTL ramp, and the ACWR ceiling (tighten-only). Safety limits only tighten
+  unless a new **Injury history** setting lists injuries; every value is clamped to `CALIBRATION_BOUNDS`;
+  a proposal applies only once approved and revert restores the exact defaults. The report shows sample sizes,
+  the replay against past sessions/weeks, each injury's pre-injury step/ramp/ACWR, and unlabelled 14+-day
+  breaks. `/api/calibration*` is private-only (it reads the injury history). The battery pins the defaults
+  (and the max-runs cap) for its run. Covered by `det/calibration` on a synthetic three-year history with
+  planted answers (mutation-tested).
+- **Local Claude on your subscription** (`SH_LLM_PROVIDER`, default `auto`). With no API key, the AI layer
+  runs through the local Claude Code CLI (`claude login` once): structured output via `--json-schema`, no
+  tools/MCP/settings/session, prompt on stdin, Claude Code session variables and our secrets stripped from
+  its environment. The §S5 per-feature switches gate it the same way. The battery keeps the key-only rule
+  unless `SH_SELFTEST_LLM` is set, so a developer's CLI never wakes the AI paths under test.
 - **The long run's workout follows the race.** The build and peak shapers put a marathon-pace finish
   on every long run whatever the race. A half now finishes at half-marathon pace (a `half` pace at
   0.85 vVO₂max, TRIMP 2.37/min and impact 2.05/km, interpolated between marathon and threshold — used

@@ -65,6 +65,9 @@ try:
     APP_SOURCES += ("sh_music.py",)
 except ImportError:
     M = None
+import sh_calibrate as CAL                             # fork §CAL — imported by the app, so registered
+APP_MODULES += (CAL,)
+APP_SOURCES += ("sh_calibrate.py",)
 
 
 def _patch_globals(**kw):
@@ -15763,6 +15766,166 @@ def _stc_race_specific():
                passed=not fails, expect="no violations", got={"roads": got, "failures": fails or "none"})
 
 
+def _cal_fixture_db(easy_rate=2.0, injuries=(("2024-03-11", 28), ("2025-06-09", 21))):
+    """Fork §CAL — three synthetic years (2023-01 → 2025-12) with KNOWN answers: every easy minute
+    costs `easy_rate` TRIMP (the engine assumes 1.65), four runs a week with a long run, and before
+    each injury a two-week spike (a long run +35 % over the trailing longest, the week +40 %), then
+    no running for the time out."""
+    import sqlite3 as _sq, json as _j, math as _m, random as _r
+    from datetime import date as _date, timedelta as _td
+    rng = _r.Random(7)                       # seeded: run-to-run variety, byte-identical across runs
+    mem = _sq.connect(":memory:"); mem.row_factory = _sq.Row
+    mem.executescript(
+        "CREATE TABLE activities(id INTEGER PRIMARY KEY, date_time TEXT, date TEXT, sport TEXT, distance REAL, "
+        "duration REAL, hr_avg INTEGER, hr_max INTEGER, trimp REAL, training_effect REAL, raw TEXT);"
+        "CREATE TABLE shape_snapshots(snapshot_date TEXT PRIMARY KEY, captured_at TEXT, effective_vo2max REAL, "
+        "effective_vo2max_progress REAL, fitness REAL, fatigue REAL, performance REAL, fitness_pct REAL, acwr REAL, "
+        "marathon_shape REAL, hrv_baseline REAL, monotony REAL, training_strain REAL, raw TEXT);"
+        "CREATE TABLE ignored_activities(id INTEGER PRIMARY KEY, reason TEXT, created_at TEXT);"
+        "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);")
+    mem.execute("INSERT INTO shape_snapshots(snapshot_date, captured_at, effective_vo2max) VALUES (?,?,?)",
+                ("2023-01-01", "2023-01-01", 45.0))
+    z = E.pace_zones(45.0)
+    inj = [(_date.fromisoformat(d), n) for d, n in injuries]
+    rid, d = 1, _date(2023, 1, 2)
+    while d < _date(2025, 12, 29):
+        out = any(s0 <= d < s0 + _td(days=n) for s0, n in inj)
+        spike = any(s0 - _td(days=14) <= d < s0 for s0, n in inj)
+        if not out:
+            k = 1.0 + 0.12 * _m.sin(d.toordinal() / 26.0)
+            plan = [(1, "q", 9.0 * k), (3, "e", 8.0 * k), (5, "e", 6.0 * k), (6, "e", 16.0 * k)]
+            if spike:
+                plan = [(1, "q", 11.0 * k), (2, "e", 8.0), (3, "e", 10.0 * k), (5, "e", 8.0 * k), (6, "e", 27.0 * k)]
+            for dow, kind, km in plan:
+                if not spike:
+                    km *= rng.uniform(0.75, 1.25)
+                day = d + _td(days=dow)
+                pace = z["marathon"] if kind == "q" else z["easy"]
+                sec = km * pace
+                rate = 2.6 if kind == "q" else easy_rate
+                mem.execute("INSERT INTO activities(id, date_time, date, sport, distance, duration, trimp, raw) "
+                            "VALUES (?,?,?,?,?,?,?,?)",
+                            (rid, day.isoformat() + "T07:00:00", day.isoformat(), "Running", round(km, 2),
+                             round(sec), round(rate * sec / 60.0, 1), _j.dumps({"gap": 3600.0 / pace})))
+                rid += 1
+        d += _td(days=7)
+    mem.commit()
+    return mem
+
+
+def _stc_calibration():
+    """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
+    TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
+    injury list every safety limit is at or under its default (tighten-only) and the ACWR ceiling is
+    untouched; (c) with the injuries listed, each one's pre-injury session step is refused by the
+    fitted impact step (or the step sits at its lower rail) and the CTL ramp sits under each
+    pre-injury ramp (or its rail); (d) the two years of breaks are reported only when unlisted;
+    (e) every value stays inside CALIBRATION_BOUNDS; (f) an UNAPPROVED proposal changes nothing,
+    an approved one moves the engine globals, and revert restores the defaults exactly; (g) applied,
+    the TRIMP scale makes the same weekly load lay ~1/scale of the kilometres; (h) the injury
+    parser reads every documented form and names a bad line."""
+    import sh_calibrate as C
+    from datetime import date as _date
+    fails, got = [], {}
+    defaults = {"TRIMP_PER_MIN": dict(E.TRIMP_PER_MIN), "BIO_EQ_STEP": E.BIO_EQ_STEP,
+                "CTL_RAMP_MAX": E.CTL_RAMP_MAX, "ACWR_HARD": E.ACWR_HARD, "ACWR_SOFT": E.ACWR_SOFT}
+    if defaults != E.CALIBRATION_DEFAULTS:
+        fails.append(f"(f) the engine is not on its defaults at the start: {defaults}")
+    today = _date(2026, 1, 5)
+    db = _cal_fixture_db()
+    try:
+        bare = C.fit(db, injuries_text="", today=today)
+        listed = C.fit(db, injuries_text="2024-03-11 4w calf\n2025-06-09 to 2025-06-30 achilles", today=today)
+    finally:
+        pass
+    pb = {p["key"]: p for p in bare["params"]}
+    pl = {p["key"]: p for p in listed["params"]}
+    got["bare"] = {k: (p["value"], p["status"]) for k, p in pb.items()}
+    got["listed"] = {k: (p["value"], p["status"]) for k, p in pl.items()}
+    want = 2.0 / defaults["TRIMP_PER_MIN"]["easy"]
+    if abs(pb["trimp_scale"]["value"] - want) > 0.03 * want:
+        fails.append(f"(a) trimp_scale {pb['trimp_scale']['value']} vs planted {want:.3f}")
+    for k in ("BIO_EQ_STEP", "CTL_RAMP_MAX", "ACWR_HARD"):
+        if pb[k]["value"] > pb[k]["default"] + 1e-9:
+            fails.append(f"(b) no injury list, yet {k} loosened {pb[k]['default']} → {pb[k]['value']}")
+    if pb["ACWR_HARD"]["value"] != defaults["ACWR_HARD"]:
+        fails.append("(b) ACWR ceiling moved without an injury list")
+    lo_eq = E.CALIBRATION_BOUNDS["BIO_EQ_STEP"][0]
+    pre = pl["BIO_EQ_STEP"].get("replay", {}).get("pre_injury") or []
+    if len(pre) != 2:
+        fails.append(f"(c) expected both injuries' pre-injury steps, got {pre}")
+    for x in pre:
+        if x["largest_step"] > lo_eq and not x["largest_step"] > pl["BIO_EQ_STEP"]["value"]:
+            fails.append(f"(c) the {x['largest_step']} step before {x['injury']} is not refused by "
+                         f"{pl['BIO_EQ_STEP']['value']}")
+    lo_r = E.CALIBRATION_BOUNDS["CTL_RAMP_MAX"][0]
+    for x in pl["CTL_RAMP_MAX"].get("replay", {}).get("pre_injury") or []:
+        if x["peak_gain"] > 0 and not (pl["CTL_RAMP_MAX"]["value"] < x["peak_gain"]
+                                       or pl["CTL_RAMP_MAX"]["value"] == lo_r):
+            fails.append(f"(c) ramp {pl['CTL_RAMP_MAX']['value']} does not sit under the "
+                         f"{x['peak_gain']} ramp before {x['injury']}")
+    if pl["CTL_RAMP_MAX"]["status"] == "insufficient" or pl["BIO_EQ_STEP"]["status"] == "insufficient":
+        fails.append("(c) three years of runs read as insufficient — the fixture is vacuous")
+    q = pb["BIO_EQ_STEP"]["fitted"]
+    if pb["BIO_EQ_STEP"]["value"] != max(lo_eq, min(round(q, 3), E.CALIBRATION_DEFAULTS["BIO_EQ_STEP"])):
+        fails.append(f"(b) bare impact step {pb['BIO_EQ_STEP']['value']} is not clamp(min(raw {q}, default))")
+    got["breaks"] = (len(bare["breaks"]), len(listed["breaks"]))
+    if len(bare["breaks"]) != 2 or listed["breaks"]:
+        fails.append(f"(d) breaks unlisted {bare['breaks']} / listed {listed['breaks']}")
+    for prop in (bare, listed):
+        for k, v in prop["values"].items():
+            lo, hi = E.CALIBRATION_BOUNDS[k]
+            if not lo <= v <= hi:
+                fails.append(f"(e) {k}={v} outside {lo}–{hi}")
+    # (f) storage + apply
+    try:
+        C.save(db, listed)
+        C.apply_saved(db)
+        if E.calibration_in_force():
+            fails.append("(f) an unapproved proposal was applied")
+        C.approve(db)
+        inforce = C.apply_saved(db)
+        got["in_force"] = inforce
+        if abs(E.EASY_TRIMP_PER_MIN - defaults["TRIMP_PER_MIN"]["easy"] * listed["values"]["trimp_scale"]) > 1e-3:
+            fails.append(f"(f) approved trimp_scale not in force: easy rung {E.EASY_TRIMP_PER_MIN}")
+        if E.SESSION_EQ_STEP != E.BIO_EQ_STEP or E.NEAR_CEILING_ACWR != E.ACWR_SOFT - 0.05:
+            fails.append("(f) a derived constant did not follow its calibrated parent")
+        # (g) same load, fewer km
+        easy, zz = 425, {"easy_top": 425, "easy": 460, "marathon": 360, "threshold": 330, "interval": 300}
+        shp = S.base_shape(3, 40.0) if hasattr(S, "base_shape") else None
+        def lay():
+            wk = {"wk": 1, "km": 40.0, "runs": 4, "long": 12, "quality": [], "strides": 0}
+            ss, _ = E._distribute_week(wk, _date(2026, 1, 5), 450.0, easy, zz)
+            return sum(x["km"] for x in ss)
+        km_cal = lay()
+        C.revert(db)
+        km_def = lay()
+        sc = listed["values"]["trimp_scale"]
+        got["km"] = (km_def, km_cal, round(km_cal / km_def, 3), round(1 / sc, 3))
+        if abs(km_cal / km_def - 1 / sc) > 0.04:
+            fails.append(f"(g) at the same load the calibrated week lays {km_cal} km vs {km_def} — "
+                         f"ratio {km_cal / km_def:.3f}, want ~{1 / sc:.3f}")
+        now = {"TRIMP_PER_MIN": dict(E.TRIMP_PER_MIN), "BIO_EQ_STEP": E.BIO_EQ_STEP,
+               "CTL_RAMP_MAX": E.CTL_RAMP_MAX, "ACWR_HARD": E.ACWR_HARD, "ACWR_SOFT": E.ACWR_SOFT}
+        if now != defaults or E.calibration_in_force() or C.load(db):
+            fails.append(f"(f) revert did not restore the defaults: {now}")
+    finally:
+        E.reset_calibration()
+        db.close()
+    inj, errs = C.parse_injuries("2023-03-10 to 2023-04-20 calf strain\n2021-06-01..2021-06-30 knee\n"
+                                 "2019-09-15 6w achilles\n2018-01-02 hip\n# a comment\nlast spring sore foot")
+    got["parsed"] = [(i["start"], i["end"], i["label"]) for i in inj]
+    want_p = [("2018-01-02", None, "hip"), ("2019-09-15", "2019-10-27", "achilles"),
+              ("2021-06-01", "2021-06-30", "knee"), ("2023-03-10", "2023-04-20", "calf strain")]
+    if got["parsed"] != want_p or len(errs) != 1:
+        fails.append(f"(h) parsed {got['parsed']} errors {errs}")
+    return _st("det", "calibration",
+               "fork §CAL — per-athlete calibration recovers a planted TRIMP rate, only tightens safety "
+               "limits without an injury list, refuses each listed injury's pre-injury step and ramp, "
+               "stays in bounds, applies only when approved and reverts to the defaults exactly",
+               passed=not fails, expect="no violations", got={"got": got, "failures": fails or "none"})
+
+
 def _stc_durability_builds():
     """SH-94 — durability_builds: the build-vs-build read behind the durability card's chart/table.
     Hand-computed fixture: three past marathon races (two sharing 2024 → 'Sep 2024'/'Dec 2024' labels,
@@ -24137,10 +24300,24 @@ def _pinned_engine_globals():
     against. Pinned to the unset pair for the run; the athlete's own setting goes back after."""
     saved = E.day_preferences()
     E.set_day_preferences(None, None)
+    # Fork — the athlete's runs-per-week cap (§MAXRUNS) and an approved calibration (§CAL) are the
+    # same class of settings-seeded engine global: pinned to the defaults for the run, put back after.
+    saved_mr, saved_cal = E.max_runs(), E.calibration_in_force()
+    E.set_max_runs("")
+    E.reset_calibration()
+    # Fork §LOCAL — `auto` would see a developer's `claude` CLI and turn the AI layer on for every
+    # det that assumes the keyless test env. The battery keeps the key-only rule it always had;
+    # SH_SELFTEST_LLM (the llm/ dets' own opt-in) leaves the provider as configured.
+    saved_prov = S.LLM_PROVIDER
+    if S.LLM_PROVIDER == "auto" and os.environ.get("SH_SELFTEST_LLM", "").lower() not in ("1", "true", "yes"):
+        S.LLM_PROVIDER = "api"
     try:
         yield
     finally:
+        S.LLM_PROVIDER = saved_prov
         E._DAY_PREF = saved          # restore the parsed pair as-is
+        E.set_max_runs("" if saved_mr is None else str(saved_mr))
+        E.apply_calibration(saved_cal)
 
 
 def _stc_battery_hermetic():
@@ -24251,7 +24428,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

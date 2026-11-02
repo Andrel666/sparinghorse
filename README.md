@@ -101,7 +101,8 @@ everything.
   Song tempos come from ReccoBeats; [GetSongBPM.com](https://getsongbpm.com) is on trial as a second
   source. Private container only.
 
-**AI layer** *(optional: set `ANTHROPIC_API_KEY`; blank means dormant, the engine is unaffected)*
+**AI layer** *(optional: set `ANTHROPIC_API_KEY`, or — fork — run locally with Claude Code logged in to use your
+Claude subscription; neither means dormant, the engine is unaffected)*
 - Natural-language objectives ("sub-45 10k in October"), advice on closely spaced A-races, plain-language
   plan narration, and qualitative check-ins ("knee's a bit sore" eases the engine, never pushes it).
 
@@ -236,6 +237,8 @@ screen is computed by the deterministic engine.
 |---|---|
 | `RUNALYZE_TOKEN` | Runalyze Personal API token (required on the writable instance) |
 | `ANTHROPIC_API_KEY` | enable the LLM layer (optional) |
+| `SH_LLM_PROVIDER` | fork: `auto` (default) · `api` · `cli` (local Claude Code on your subscription) · `off` |
+| `SH_CLAUDE_MODEL` / `SH_CLAUDE_BIN` | fork: model (default `sonnet`) and binary for the `cli` provider |
 | `SH_PORT` | listen port (default 8770) |
 | `SH_TZ` / `SH_SYNC_AT` / `SH_SCHEDULE` | nightly-sync timezone / time / on-off |
 | `SH_SEED_OBJECTIVE` | seed a first race on a fresh DB (`label\|date\|type\|target\|priority`) |

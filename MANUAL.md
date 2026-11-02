@@ -660,7 +660,14 @@ and the zone model are stripped server-side, so the band simply doesn't render t
 
 ## 7. The AI layer
 
-Set `ANTHROPIC_API_KEY` (or add a Claude key in Settings) and four capabilities wake up:
+Set `ANTHROPIC_API_KEY` (or add a Claude key in Settings) and four capabilities wake up. *(Fork:)* no key?
+Running locally (`./run.sh`), the app can use your **Claude subscription** instead: install Claude Code, run
+`claude login` once, and the AI layer goes through the local `claude` CLI. `SH_LLM_PROVIDER` picks the route —
+`auto` (default: the API when a key is set, else the CLI when `claude` is on the PATH), `api`, `cli` or `off`;
+`SH_CLAUDE_MODEL` (default `sonnet`) and `SH_CLAUDE_BIN` set the CLI's model and binary. The CLI runs with no
+tools, no MCP servers, no settings or hooks and no saved session, and the prompt goes in on standard input.
+The per-feature switches in Settings → AI features apply exactly as they do with a key. The Docker image does
+not ship the CLI, so in containers use a key.
 
 - **Natural-language objectives** — "sub-45 10k in October" → a structured race.
 - **Multi-A adjudication advice** — guidance on how to treat closely-spaced A-races.
@@ -1021,6 +1028,29 @@ manual anchor fresh; otherwise clear the field and let the data lead.
 Anything you would rather set via environment still works; see the env table in the [README](README.md).
 
 ---
+
+## 14b. Calibrating the engine to your history *(fork)*
+
+The engine's load and safety numbers were fitted to one runner. **Settings → Calibrate to my history**
+(or `python SparingHorse.py calibrate`) re-runs those fits on your own runs and shows the evidence; nothing
+changes until you **Approve**, and **Revert** puts the defaults back. Regenerate the plan after approving.
+
+Fill in **Injury history** first (one per line: `2023-03-10 to 2023-04-20 calf strain`, or `2019-09-15 6w
+achilles`; rough dates are fine). The fit also lists breaks of 14+ days that no listed injury covers, so you can
+label the ones that were.
+
+| Number | What it is | How it is fitted | Which way it may move |
+|---|---|---|---|
+| TRIMP scale | what one easy minute costs *you* | median TRIMP per minute of your easy runs (last year) ÷ the engine's 1.65 | both — a measurement |
+| Impact step | the largest single run vs your last 30 days, in impact-weighted km | the same 98.5th percentile the engine's own 1.30 came from, tightened to refuse the step before each listed injury | tighten only, unless injuries are listed (then 1.15–1.40) |
+| Fitness ramp | CTL points per week | p90 of your building weeks outside the four weeks before an injury, kept under each pre-injury ramp | tighten only, unless injuries are listed and you have 2+ years (then up to 6) |
+| ACWR ceiling | acute:chronic load | just under the median pre-injury peak, with 2+ injuries that peaked under 1.30 | tighten only, never loosened |
+
+Why the TRIMP scale matters most: the plan sizes weeks in load and converts load to kilometres at the price of
+an easy minute. If your easy minute costs 2.0 TRIMP and the engine assumes 1.65, every plan is about 20 % longer
+than the load it thinks it is prescribing. Each value is clamped to fixed rails, a fit needs enough data
+(300 runs for the impact step, 26 building weeks for the ramp) and says "no data" otherwise. An unlisted injury
+is invisible to every safety fit, which is why the list is asked for.
 
 ## 15. Backing up your data
 
