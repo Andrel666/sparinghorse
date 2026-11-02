@@ -972,6 +972,16 @@ library) and **Console** (access, system, links, backup and export). The blocks:
   is harmless. And the plan will not overrule you to keep its usual spacing: if you ask to rest
   Saturday and Sunday, you get a five-day run streak, because that is what you asked for — it only
   declines to make a week *denser* than your own choice already makes it.
+- **Max runs per week** *(fork)* — the most runs you can do in a week: `3`, `4`, `5` or `6`. Empty = no
+  cap, and the plan decides (3 in the re-base, rising to 5–6 in the build). The plan never lays more
+  runs than this, and runs you have already done this week count towards it. A week does not cram the
+  volume it would have spread over more runs into fewer: easy runs grow only up to 85% of the long
+  run, the long run only up to its +10% step, and what does not fit is dropped and flagged on the
+  week. With a cap of 3 or 4 the plan is deliberately more conservative: one mid-week quality session
+  (plus, at 4 runs, the threshold run carved from an easy day), always at least one easy run beside
+  the long run, a long run allowed up to ~40% of the week so it can stay the longest run, and — while
+  there is no history to anchor the impact limits — the classic 1.30 acute ACWR ceiling on the raw
+  daily curve. Expect less weekly volume than an uncapped plan: fewer runs carry less load safely.
 - **Taper length (weeks)** — how many weeks before an A-race the plan tapers, counting the race week. Leave
   it empty for the automatic rule: 3 weeks when the road to the race spans 16 weeks or more, otherwise 2.
   Set **2** or **3** to choose. A choice moves weeks between the Peak and the Taper only: the Base, the Build
