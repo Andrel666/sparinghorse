@@ -2422,6 +2422,7 @@ SUUNTO_ACTIVITY_RUNNING = 1
 # effort-discipline panel grades easy runs against, so the wrist band and the panel agree.
 _SUUNTO_ZONE_TO_HRZ = {"easy": ("Z1", "Z1"), "easy_top": ("Z2", "Z2"), "lt1": ("Z2", "Z3"),
                        "marathon": ("Z3", "Z3"), "threshold": ("Z4", "Z4"),
+                       "half": ("Z3", "Z4"),   # fork §RSPEC — HM pace sits between M and T
                        "interval": ("Z5", "Z5"), "p5k": ("Z5", "Z5")}
 _icon_png_cache = None
 
@@ -2714,7 +2715,8 @@ def session_to_guide(session, hrz=None, pace_zones=None):
         pace_sec = session["minutes"] * 60.0 / km if session.get("minutes") else None
         steps.append(_guide_step("Run", session.get("note", ""), km=km,
                                  pace_sec=pace_sec, hr=_hr_target("easy", hrz)))
-    label = {"easy": "Easy run", "long": "Long run", "long_mp": "Long run + MP"}.get(kind) \
+    label = {"easy": "Easy run", "long": "Long run",
+             "long_mp": "Long run + HM" if session.get("zone") == "half" else "Long run + MP"}.get(kind) \
         or _guide_txt(kind, 20).title()
     guide = {"type": "sequence",
              "name": _guide_txt(f"{label} {km}km - {session['date']}", 60),
@@ -3302,7 +3304,8 @@ def session_to_coros_course(session, hrz=None, pace_zones=None):
             if pband:
                 note_band("pace", session.get("zone") or kind, pband[0], pband[1])
             sections = [_coros_section(2, km=km, pace=pband)]
-    label = {"easy": "Easy run", "long": "Long run", "long_mp": "Long run + MP"}.get(kind) \
+    label = {"easy": "Easy run", "long": "Long run",
+             "long_mp": "Long run + HM" if session.get("zone") == "half" else "Long run + MP"}.get(kind) \
         or _guide_txt(kind, 20).title()
     note = (session.get("note") or "").strip().rstrip(".")
     desc = (note[:1].upper() + note[1:]) if note else f"{label}, {km:g} km"
@@ -8790,7 +8793,7 @@ _PV_WITHHELD = {
     "plan.<phase>.weeks[].quality[].carve",          # §ROT — the threshold run's lay instruction; `kind` already names the session
     "plan.<phase>.weeks[].sessions[].rot",           # §ROT — the marker on the carved run (the per-session step and §H2's un-carve read it)
     "readiness.session.rot",                         # §ROT — the same marker on today's session in /api/readiness
-    "plan.<phase>.weeks[].race_type",        # fork §LRDIST — the engine's own key for the long-run ceiling; the console reads the race from its phase
+    "plan.<phase>.weeks[].race_type", "log.weeks[].race_type",        # fork §LRDIST — the engine's own key for the long-run ceiling; the console reads the race from its phase
     "plan.<phase>.weeks[].av_dates",         # §AV — away days are an empty-house broadcast
     "plan.<phase>.weeks[].av_shed",
     "plan.<phase>.weeks[].sessions[].reflection",   # free text, the readiness-note posture

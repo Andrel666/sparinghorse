@@ -15675,6 +15675,94 @@ def _stc_race_distance_long():
                passed=not fails, expect="no violations", got={"longest": got, "failures": fails or "none"})
 
 
+def _stc_race_specific():
+    """Fork §RSPEC — the long run's fast segment follows the race. (a) real-history half/10k/5k roads
+    lay no marathon-pace session and their intents never say MP/marathon; (b) the half road's long
+    runs finish at HALF-marathon pace (non-vacuous: at least one), its pace strictly between the
+    marathon and threshold zones; (c) a 10k/5k road's long run is plain easy and every quality week
+    of the synthetic build keeps a threshold session (no week sheds its workouts — the naive swap
+    did); (d) no two hard sessions on consecutive days; (e) the marathon road keeps its MP finish
+    (byte-identical, det/golden-plans); (f) at 3 runs/week the long run stays the week's longest when
+    the race ceiling holds it (the 19.6-km-easy-beside-a-16.9-km-long bug)."""
+    from datetime import date as _date, timedelta as _td
+    fails, got = [], {}
+
+    def runs(plan):
+        for ph in plan.get("phases", []):
+            for w in (plan.get(ph["key"]) or {}).get("weeks", []):
+                if w.get("frozen") or w.get("elapsed"):
+                    continue
+                yield w, [x for x in (w.get("sessions") or []) if (x.get("km") or 0) > 0]
+
+    for rt in ("half", "10k", "5k", "marathon"):
+        fx, today = _race_fixture_db(rt)
+        plan = S.generate_plan(fx, today=today)
+        fx.close()
+        kinds = {}
+        for w, ss in runs(plan):
+            for x in ss:
+                kinds[(x["kind"], x.get("zone"))] = kinds.get((x["kind"], x.get("zone")), 0) + 1
+            it = (w.get("intent") or "").replace("half-marathon", "")
+            if rt != "marathon" and ("MP" in it or "marathon" in it):
+                fails.append(f"(a) {rt}/{w.get('start')}: intent {w.get('intent')!r}")
+        got[rt] = {f"{k}/{z}": n for (k, z), n in sorted(kinds.items(), key=str)}
+        if rt != "marathon" and kinds.get(("long_mp", "marathon")):
+            fails.append(f"(a) {rt}: {kinds[('long_mp', 'marathon')]} marathon-pace long runs")
+        if rt == "half" and not kinds.get(("long_mp", "half")):
+            fails.append("(b) half road lays no half-marathon-pace long run — vacuous")
+        if rt in ("10k", "5k") and kinds.get(("long_mp", "half")):
+            fails.append(f"(c) {rt}: a long run carries a race-pace finish")
+        if rt == "marathon" and not kinds.get(("long_mp", "marathon")):
+            fails.append("(e) the marathon road lost its MP finish")
+
+    easy = 425
+    zones = {"easy_top": easy, "easy": 460, "marathon": 360, "threshold": 330, "interval": 300}
+    hard = ("interval", "tempo")
+
+    def block(rt, davis, regime):
+        shp = S.build_shape(6, 70.0, davis=davis) + S.peak_shape(3, 75.0, davis=davis)
+        for w in shp:
+            w["race_type"] = rt
+            w["quality"] = E._race_specific_quality(w.get("quality"), w)
+        cw, _ = S.generate_block(shp, _date(2026, 8, 3), 70.0, 65.0, easy, zones=zones, regime=regime)
+        return shp, cw
+
+    for rt in ("10k", "5k", "half"):
+        for davis, regime in ((True, "assertive"), (False, "caution")):
+            shp, cw = block(rt, davis, regime)
+            for s_, w in zip(shp, cw):
+                ss = [x for x in w["sessions"] if (x.get("km") or 0) > 0]
+                if rt == "half":
+                    for x in ss:
+                        if x["kind"] == "long_mp":
+                            wp = [r for r in x["reps"] if r.get("zone") == "half"]
+                            pace = wp and wp[0]["minutes"] * 60 / wp[0]["km"]
+                            if not wp or not (zones["threshold"] < pace < zones["marathon"]):
+                                fails.append(f"(b) {regime} half {w['start']}: HM finish pace {pace}")
+                elif s_.get("quality") and not any(x["kind"] == "tempo" for x in ss):
+                    fails.append(f"(c) {rt}/{regime} {w['start']}: quality week lays no threshold session "
+                                 f"{[(x['kind'], x['km']) for x in ss]}")
+                hd = sorted(_date.fromisoformat(x["date"]) for x in ss if x["kind"] in hard)
+                if any(b - a == _td(days=1) for a, b in zip(hd, hd[1:])):
+                    fails.append(f"(d) {rt}/{regime} {w['start']}: back-to-back hard days")
+    prev = E.max_runs()
+    try:
+        E.set_max_runs("3")
+        for rt in ("10k", "5k", "half"):
+            _, cw = block(rt, True, "assertive")
+            for w in cw:
+                ss = [x for x in w["sessions"] if (x.get("km") or 0) > 0]
+                lg = [x for x in ss if x["kind"] in ("long", "long_mp")]
+                if not lg or any(x["km"] > lg[0]["km"] + 1e-9 for x in ss if x is not lg[0]):
+                    fails.append(f"(f) cap 3 {rt} {w['start']}: {[(x['kind'], x['km']) for x in ss]}")
+    finally:
+        E.set_max_runs("" if prev is None else str(prev))
+    return _st("det", "race-specific",
+               "fork §RSPEC — a half's long runs finish at half-marathon pace; a 10k/5k's long run is easy "
+               "and its slice is a threshold session; no marathon-pace work off a marathon road",
+               passed=not fails, expect="no violations", got={"roads": got, "failures": fails or "none"})
+
+
 def _stc_durability_builds():
     """SH-94 — durability_builds: the build-vs-build read behind the durability card's chart/table.
     Hand-computed fixture: three past marathon races (two sharing 2024 → 'Sep 2024'/'Dec 2024' labels,
@@ -24163,7 +24251,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

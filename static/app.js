@@ -861,11 +861,11 @@ function plannedSession(s, easyPace){
   const noteParts=(s.note||"").split(" — ");
   const noteTxt=U.t((q&&noteParts.length>1)?noteParts.slice(0,-1).join(" — "):s.note);   // card replaces the cramped structure string
   // 0.60.2 — a note that only restates the title ("easy run" under "Easy run") is not a line
-  const ttlTxt=String(KINDT[s.kind]||s.kind+" run").replace(/<[^>]+>/g,"");
+  const ttlTxt=String((s.kind==="long_mp"&&s.zone==="half"?"Long run · HM finish":KINDT[s.kind])||s.kind+" run").replace(/<[^>]+>/g,"");
   const noteLine=(noteTxt&&String(noteTxt).trim().toLowerCase()!==ttlTxt.toLowerCase()) ? `<div class="muted" style="font-size:12px;margin-top:6px">${esc(noteTxt)}</div>` : "";
   return `<div class="planned"${s.done?' style="opacity:.85"':''}><div class="rkick">${kick}</div>
     <div class="mrow">
-      <span class="ttl">${KINDT[s.kind]||esc(s.kind)+" run"}</span>
+      <span class="ttl">${(s.kind==="long_mp"&&s.zone==="half"?"Long run · HM finish":KINDT[s.kind])||esc(s.kind)+" run"}</span>
       ${metric("Distance", U.d(s.km), U.unit)}
       ${metric("Duration", `~${s.minutes}`, "min")}
       ${q?"":paceMetric}
@@ -1874,9 +1874,10 @@ function workoutCard(s, open){
     cue.push(`${work.length} × ${rm}′ @ ${rz} pace${rcm?` (${rcm}′ easy jog between)`:""}`);
   }else if(work.length===1){
     const w0=work[0];
-    row(s.kind==="long_mp"?`${w0.minutes}′ @ marathon pace to finish`:`${w0.minutes}′ steady @ ${w0.zone}`,
+    const fp=w0.zone==="half"?"half-marathon pace":"marathon pace";   // fork §RSPEC
+    row(s.kind==="long_mp"?`${w0.minutes}′ @ ${fp} to finish`:`${w0.minutes}′ steady @ ${w0.zone}`,
         w0.zone,w0.minutes,w0.km,w0);
-    cue.push(s.kind==="long_mp"?`finish with ${w0.minutes}′ @ marathon pace`:`${w0.minutes}′ steady @ ${w0.zone} pace`);
+    cue.push(s.kind==="long_mp"?`finish with ${w0.minutes}′ @ ${fp}`:`${w0.minutes}′ steady @ ${w0.zone} pace`);
   }
   if(cd.length){ row("Cool-down · easy","easy",sum(cd,"minutes"),sum(cd,"km"),cd[0]); cue.push(`${sum(cd,"minutes")}′ easy`); }
   return `<div class="wcard${open?" open":""}"><div class="wcue">${esc(cue.join("  →  "))}</div>
