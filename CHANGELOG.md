@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > outputs may change between releases as the model matures. Versions are checkpoints on a moving
 > target, not a stable API.
 
+## [Unreleased — fork]
+
+### Added
+
+- **Races tagged in Runalyze calibrate the finish-time model at every distance.** The model used to
+  learn only from marathons found by distance and from races finished inside the app, so a runner's
+  halves and 10ks were ignored. A run carrying Runalyze's `race_result` now joins the calibration
+  set as a 5k, 10k, half or marathon, typed from its `official_distance` (within ±5%). Its time is
+  `official_time` when Runalyze has one, otherwise gun-to-mat. Odd distances, results marked as not
+  finished, impossible clocks and ignored runs stay out, and a tag wins over the distance guess on
+  the same date. Covered by `det/race-tags`.
+
 ## [0.85.7] - 2026-11-02
 
 ### Fixed

@@ -15443,6 +15443,55 @@ def _stc_durability_api():
                got={"failures": fails or "none"})
 
 
+def _stc_race_tags():
+    """Fork — Runalyze-tagged races feed the §FT1 calibration corpus at every standard distance.
+    Hand-built fixture: (a) a tagged half (official 21 097.5 m, GPS 21.4 km) joins as 'half' at its
+    gun-to-mat time; (b) a tagged 10k's `official_time` wins over the watch clock; (c) an UNTAGGED
+    21.1 km long run stays out (the distance heuristic is still marathon-only); (d) a tagged 15k has
+    no model and is skipped; (e) a tagged DNF is skipped; (f) a tagged 5k with an impossible clock
+    fails the pace gate; (g) an untagged marathon still auto-detects; (h) a tagged run on the manual
+    ignore-list is dropped; (i) a tag beats the distance guess on the same date (tagged marathon with
+    an official time). In-memory."""
+    import sqlite3 as _sq, json as _j
+    mem = _sq.connect(":memory:"); mem.row_factory = _sq.Row
+    mem.executescript(
+        "CREATE TABLE activities(id INTEGER PRIMARY KEY, date_time TEXT, date TEXT, sport TEXT, sport_id INTEGER, "
+        "distance REAL, duration REAL, elapsed_time REAL, hr_avg INTEGER, hr_max INTEGER, trimp REAL, raw TEXT);"
+        "CREATE TABLE ignored_activities(id INTEGER PRIMARY KEY, reason TEXT, created_at TEXT);"
+        "CREATE TABLE objectives(id INTEGER PRIMARY KEY, type TEXT, date TEXT, status TEXT, outcome TEXT);")
+    rows = [  # id, date, km, moving s, elapsed s, race_result or None
+        (1, "2019-03-01", 21.4, 6240, 6300, {"official_distance": 21097.5, "status": "completed"}),   # (a)
+        (2, "2020-11-10", 10.1, 2760, 2790, {"official_distance": 10000, "official_time": 2745}),     # (b)
+        (3, "2021-04-04", 21.1, 7600, 7700, None),                                                    # (c)
+        (4, "2021-06-06", 15.0, 4500, 4520, {"official_distance": 15000}),                            # (d)
+        (5, "2022-02-25", 14.0, 4300, 4400, {"official_distance": 21097.5, "status": "DNF"}),          # (e)
+        (6, "2022-05-05", 5.0, 100, 100, {"official_distance": 5000}),                                # (f)
+        (7, "2023-02-24", 42.3, 15000, 15100, None),                                                  # (g)
+        (8, "2023-10-10", 10.0, 2900, 2950, {"official_distance": 10000}),                            # (h)
+        (9, "2024-02-23", 42.6, 14800, 14900, {"official_distance": 42195, "official_time": 14850}),  # (i)
+    ]
+    for i, d, km, mv, el, rr in rows:
+        raw = {"id": i}
+        if rr is not None:
+            raw["race_result"] = rr
+        mem.execute("INSERT INTO activities(id,date_time,date,sport,distance,duration,elapsed_time,raw) "
+                    "VALUES(?,?,?,?,?,?,?,?)", (i, d + "T09:00", d, S.RUNNING_SPORT, km, mv, el, _j.dumps(raw)))
+    mem.execute("INSERT INTO ignored_activities(id) VALUES(8)")
+    mem.commit()
+    got = [(r["date"], r["type"], r["seconds"]) for r in S._ft_race_corpus(mem)]
+    want = [("2019-03-01", "half", 6300), ("2020-11-10", "10k", 2745.0),
+            ("2023-02-24", "marathon", 15100), ("2024-02-23", "marathon", 14850.0)]
+    fail = [] if got == want else [f"corpus {got} != {want}"]
+    if S._tagged_race('{"race_result": "yes"}', 21.1) is not None:
+        fail.append("a non-dict race_result must not count as a tag")
+    if S._tagged_race("not json", 21.1) is not None:
+        fail.append("malformed raw must not count as a tag")
+    return _st("det", "race-tags",
+               "Runalyze-tagged races (5k/10k/half/marathon) calibrate the finish model; untagged "
+               "non-marathons, odd distances, DNFs, impossible clocks and ignored runs stay out",
+               passed=not fail, expect=str(want), got={"corpus": got, "failures": fail or "none"})
+
+
 def _stc_durability_builds():
     """SH-94 — durability_builds: the build-vs-build read behind the durability card's chart/table.
     Hand-computed fixture: three past marathon races (two sharing 2024 → 'Sep 2024'/'Dec 2024' labels,
@@ -23931,7 +23980,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),
