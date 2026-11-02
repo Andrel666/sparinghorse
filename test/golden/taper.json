@@ -160,11 +160,11 @@
           "long_max": {
             "basis": "L",
             "binds": false,
-            "ceiling": 210,
-            "headroom": 126,
+            "ceiling": 150,
+            "headroom": 66,
             "km": 17.3,
             "laid": 84,
-            "max_km": 35.0,
+            "max_km": 22.0,
             "unit": "min"
           },
           "long_step": {
@@ -217,6 +217,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "half",
         "role": "build",
         "runs": 3,
         "runs_ahead": 3,
@@ -549,11 +550,11 @@
           "long_max": {
             "basis": "L",
             "binds": false,
-            "ceiling": 210,
-            "headroom": 182,
+            "ceiling": 150,
+            "headroom": 122,
             "km": 5.6,
             "laid": 28,
-            "max_km": 35.0,
+            "max_km": 22.0,
             "unit": "min"
           },
           "long_step": {
@@ -600,6 +601,7 @@
             "zone": "threshold"
           }
         ],
+        "race_type": "half",
         "role": "taper",
         "runs": 5,
         "sessions": [
@@ -762,11 +764,11 @@
           "long_max": {
             "basis": "L",
             "binds": false,
-            "ceiling": 210,
-            "headroom": 190,
+            "ceiling": 150,
+            "headroom": 130,
             "km": 4.0,
             "laid": 20,
-            "max_km": 35.0,
+            "max_km": 22.0,
             "unit": "min"
           },
           "long_step": {
@@ -803,6 +805,7 @@
         "proj_acwr_soft": 0.459,
         "proj_ctl": 50.4,
         "quality": [],
+        "race_type": "half",
         "role": "race",
         "runs": 1,
         "sessions": [

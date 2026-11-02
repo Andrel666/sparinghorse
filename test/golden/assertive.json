@@ -109,6 +109,7 @@
         "proj_acwr_flat": 0.859,
         "proj_ctl": 67.2,
         "quality": [],
+        "race_type": "marathon",
         "role": "build",
         "runs": 3,
         "runs_ahead": 3,
@@ -266,6 +267,7 @@
         "proj_acwr_soft": 1.065,
         "proj_ctl": 70.1,
         "quality": [],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -441,6 +443,7 @@
             "zone": "interval"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -769,6 +772,7 @@
         "proj_acwr_soft": 1.044,
         "proj_ctl": 73.7,
         "quality": [],
+        "race_type": "marathon",
         "role": "down",
         "runs": 5,
         "sessions": [
@@ -939,6 +943,7 @@
             "zone": "threshold"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -1185,6 +1190,7 @@
             "zone": "interval"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -1579,6 +1585,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -1960,6 +1967,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -2142,6 +2150,7 @@
         "proj_acwr_soft": 1.005,
         "proj_ctl": 90.5,
         "quality": [],
+        "race_type": "marathon",
         "role": "down",
         "runs": 5,
         "sessions": [
@@ -2315,6 +2324,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -2713,6 +2723,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -3133,6 +3144,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -3636,6 +3648,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -4076,6 +4089,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -4562,6 +4576,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "taper",
         "runs": 5,
         "sessions": [
@@ -4901,6 +4916,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "taper",
         "runs": 5,
         "sessions": [
@@ -5194,6 +5210,7 @@
         "proj_acwr_soft": 0.644,
         "proj_ctl": 95.5,
         "quality": [],
+        "race_type": "marathon",
         "role": "race",
         "runs": 2,
         "sessions": [
