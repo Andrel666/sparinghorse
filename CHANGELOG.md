@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Calibration: only injuries that followed unusual load tighten a limit.** Every listed injury used to
+  tighten the session-step and CTL-ramp limits to just under whatever preceded it, so an injury after
+  ordinary running (a knee that went in a race after a 1.9/wk ramp) pinned the ramp at its 3.0 floor. Now an
+  injury implicates the step only after a spike over 1.10× the 30-day longest (Frandsen et al. 2025), and the
+  ramp only after a peak above the runner's own median building week; the report marks each injury
+  implicated or not and says why. On one real history: ramp 3.0 → 4.72/wk (just under the 5.2/wk ramp
+  before a calf injury). `det/calibration` (i), mutation-tested.
 - **The race correction follows race-day fitness** (§FTS). The per-runner correction was one number at
   every fitness level, so a runner whose races fall further behind the model the fitter they were got an
   over-optimistic prediction for a build projected above anything they had raced at. The correction is

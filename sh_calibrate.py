@@ -47,6 +47,12 @@ MIN_SESSIONS = 300            # a 98.5th percentile needs a few hundred samples 
 MIN_RAMP_WEEKS = 26
 MIN_INJURIES_FOR_ACWR = 2
 GAP_MIN_DAYS = 14             # breaks this long are surfaced for the athlete to label
+# An injury tightens a limit only when the load before it was UNUSUAL on that axis — otherwise the
+# injury says nothing about that limit (a knee that went in a race after a 1.9/wk ramp is no evidence
+# against a 5/wk ramp). Step: a spike past STEP_IMPLICATED_MIN (Frandsen et al. 2025: single-session
+# spikes > 10 % over the 30-day longest raise the injury rate; smaller steps are ordinary running).
+# Ramp: a pre-injury peak above the runner's own median building week.
+STEP_IMPLICATED_MIN = 1.10
 
 
 # ── injuries ────────────────────────────────────────────────────────────────────────────────────
@@ -218,16 +224,21 @@ def fit_session_step(runs, zones_at, injuries):
                      <= date.fromisoformat(d) < date.fromisoformat(inj["start"]))
             by_inj[k] = max(by_inj.get(k, 0.0), r)
         for k, r in sorted(by_inj.items()):
-            caught.append({"injury": k, "largest_step": round(r, 3)})
-        lows = [r for r in by_inj.values() if r > 1.0]
+            caught.append({"injury": k, "largest_step": round(r, 3),
+                           "implicated": r > STEP_IMPLICATED_MIN})
+        lows = [c["largest_step"] for c in caught if c["implicated"]]
         if lows and min(lows) - 0.02 < val:
             val, why = min(lows) - 0.02, why + f", tightened to refuse the {min(lows):.2f} step before an injury"
+        quiet = [c["injury"] for c in caught if not c["implicated"]]
+        if quiet:
+            why += (f"; {', '.join(quiet)} followed no step over {STEP_IMPLICATED_MIN:g}× — "
+                    f"not evidence against this limit")
     else:
         val = min(val, default)                      # no injury list ⇒ tighten-only
         why += " (no injury list — tighten-only)"
     val = _clamp("BIO_EQ_STEP", val)
     floor = E.CALIBRATION_BOUNDS["BIO_EQ_STEP"][0]
-    small = [c for c in caught if c["largest_step"] <= floor]
+    small = [c for c in caught if c["implicated"] and c["largest_step"] <= floor]
     if small:
         why += (f"; the step before {', '.join(c['injury'] for c in small)} "
                 f"({', '.join(str(c['largest_step']) for c in small)}) is under the lowest allowed limit "
@@ -284,9 +295,15 @@ def fit_ramp(daily, injuries, history_days):
                  if date.fromisoformat(inj["start"]) - timedelta(days=7 * RAMP_EXCLUDE_WEEKS)
                  <= date.fromisoformat(dd) < date.fromisoformat(inj["start"]))
         pre_peaks[k] = max(pre_peaks.get(k, -99.0), g)
-    risky = [g for g in pre_peaks.values() if g > 0]
+    typical = statistics.median(gains)
+    implicated = {k: g > typical for k, g in pre_peaks.items()}
+    risky = [g for k, g in pre_peaks.items() if implicated[k]]
     if risky and min(risky) - 0.5 < val:
         val, why = min(risky) - 0.5, why + f", tightened under the {min(risky):.1f}/wk ramp before an injury"
+    quiet = sorted(k for k in pre_peaks if not implicated[k])
+    if quiet:
+        why += (f"; {', '.join(quiet)} followed a ramp no faster than the typical building week "
+                f"({typical:.1f}/wk) — not evidence against this limit")
     val = _clamp("CTL_RAMP_MAX", val)
     if abs(val - default) < 0.1:
         val = default
@@ -295,7 +312,9 @@ def fit_ramp(daily, injuries, history_days):
             "status": "fitted" if val != default else "unchanged", "basis": why,
             "replay": {"weeks": len(gains), "over_default": sum(1 for g in gains if g > default),
                        "over_fitted": sum(1 for g in gains if g > val),
-                       "pre_injury": [{"injury": k, "peak_gain": round(g, 2)} for k, g in sorted(pre_peaks.items())]}}
+                       "typical_gain": round(typical, 2),
+                       "pre_injury": [{"injury": k, "peak_gain": round(g, 2), "implicated": implicated[k]}
+                                      for k, g in sorted(pre_peaks.items())]}}
 
 
 def fit_acwr(daily, injuries):
