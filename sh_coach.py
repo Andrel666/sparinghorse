@@ -17,19 +17,11 @@ The app module is passed in (`S`) rather than imported: SparingHorse may be runn
 import json
 from datetime import datetime, timedelta, timezone
 
+from sh_ui_api import LIMITS          # the plan's limits in plain words — one table for every surface
+
 HISTORY_TURNS = 12          # messages of past conversation sent with each question
 MAX_MESSAGE_CHARS = 2000    # one question's length cap
 RECENT_RUN_DAYS = 14
-# The engine's limit keys, in the words the athlete sees on the plan's "why this week" cards.
-LIMIT_NAMES = {
-    "acwr": "load ratio (this week's load vs the ~6-week base; plan sizes it at or under the ceiling)",
-    "chronic": "fitness gain per week (CTL rise)",
-    "long_step": "long-run step (longest run vs 10% over the longest of the last 4 weeks)",
-    "long_max": "long-run limit for the race distance",
-    "eq_week": "impact load for the week (speed-weighted km)",
-    "eq_session": "impact load for a single run",
-    "tissue": "weeks in a row near the load ceiling (forces a down week)",
-}
 REPLY_SCHEMA = {"type": "object", "properties": {"reply": {"type": "string"}},
                 "required": ["reply"], "additionalProperties": False}
 
@@ -166,7 +158,7 @@ def build_context(S, db):
                 if isinstance(v, dict) and "laid" in v and "ceiling" in v:
                     tag = " ← HOLDS THE WEEK (this limit sized it)" if (L.get("binding") == k or v.get("binds")) else ""
                     over = " (ran over)" if v["laid"] > v["ceiling"] else ""
-                    lim.append(f"{LIMIT_NAMES.get(k, k)} {v['laid']} of {v['ceiling']} {v.get('unit', '')}{over}{tag}")
+                    lim.append(f"{LIMITS.get(k, {}).get('name', k)} {v['laid']} of {v['ceiling']} {v.get('unit', '')}{over}{tag}")
             out.append(f"WEEK of {w['start']} ({w.get('pk')}, {w.get('km')} km planned, {len(w['sessions'])} sessions"
                        + (f"; intent: {w['intent']}" if w.get("intent") else "") + "): " + " | ".join(lines)
                        + (f"\n  limits: {'; '.join(lim)}" if lim else ""))

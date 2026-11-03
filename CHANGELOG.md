@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **New UI, step 1: the shell and Today** (`ui/`, React + Vite + TypeScript, its own port 5180). A sidebar on
+  desktop and a tab bar with a More sheet on phones, both built from one page list; a 12-column grid; 16px body
+  type with a 13px floor; one token file for colour, type and space, light and dark. Today puts the readiness
+  verdict, the session with its target and steps, a three-tap check-in, the week strip with what holds the
+  week, and the latest run on the first screen. Its data comes from one new endpoint, `/api/ui/today`
+  (`sh_ui_api.py`, private), assembled from the engine's own readers; the plain names of the plan's limits
+  live there once and the coach uses them too. Other pages link to Classic until built.
+  `det/ui-today` (mutation-tested), unit tests for the formatter.
 - **Coach chat.** A Coach button on every page opens a chat about the athlete's own training, answered by the
   existing AI layer (API key or the local Claude Code CLI). New module `sh_coach.py` builds the context from
   what the engine already computed — the race, target, prediction and race-day pacing; readiness and today's

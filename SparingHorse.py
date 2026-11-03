@@ -7952,6 +7952,7 @@ def _private_only_path(p):
                   "/api/coach/messages", "/api/coach/chat", "/api/coach/clear",       # §COACH
                   "/api/system")                          # 0.56.1 — the household's timestamps
             or p.startswith("/api/suunto")                # §SG — OAuth + watch push are owner-only
+            or p.startswith("/api/ui/")                   # fork §UI — the new UI's pages carry HR
             or p.startswith("/api/coros")                 # §CG — same for the COROS plan push
             or p.startswith("/api/music")                 # §BEAT — listening history + Spotify OAuth
             or p.startswith("/api/backup") or p.startswith("/api/export")   # §BX — the user's data
@@ -11251,6 +11252,11 @@ def api_coach_clear():
         return jsonify(ok=False, error="not available on the public view"), 403
     sh_coach.clear(db)
     return jsonify(ok=True, messages=[])
+
+
+# ── Fork §UI — the new UI's page endpoints (sh_ui_api.py) ───────────────────────────────────────
+import sh_ui_api
+sh_ui_api.register(app, sys.modules[__name__])
 
 
 @app.get("/api/plan/calendar")

@@ -71,6 +71,9 @@ APP_SOURCES += ("sh_calibrate.py",)
 import sh_coach as COACH                               # fork §COACH — imported by the app, so registered
 APP_MODULES += (COACH,)
 APP_SOURCES += ("sh_coach.py",)
+import sh_ui_api as UIAPI                              # fork §UI — imported by the app, so registered
+APP_MODULES += (UIAPI,)
+APP_SOURCES += ("sh_ui_api.py",)
 
 
 def _patch_globals(**kw):
@@ -16192,6 +16195,80 @@ def _stc_coach_chat():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_ui_today():
+    """Fork §UI — /api/ui/today, the new UI's Today page: (a) private (refused on the public view) and
+    complete on a race fixture — readiness with a split headline, the session, a 7-day week starting on
+    the week start, the race countdown; (b) its pieces come from the engine's own readers, not
+    re-derived: the held-by sentence names the plan's own binding limit, the target is the zones
+    table's easy ceiling, strides come from the session (flag or note), workout steps add up to the
+    session's minutes; (c) split_action and limit_held handle the empty cases."""
+    import json
+    from datetime import date as _d
+    fails = []
+    U = UIAPI
+    # (c) the helpers
+    if U.split_action("Good to go — run today's session") != ("Good to go", "Run today's session"):
+        fails.append(f"(c) split_action: {U.split_action('Good to go — run today' + chr(39) + 's session')}")
+    if U.split_action("Rest") != (None, "Rest") or U.limit_held({}) is not None:
+        fails.append("(c) empty cases mishandled")
+    zl = {"rows": [{"key": "easy", "hr": {"hi": 145}, "pace_slower_than": {"fmt": "6:21"}}], "hr_anchor": {"anchor": "lthr"}}
+    zp = {**zl, "hr_anchor": {"anchor": "hrmax"}}
+    if (U.session_target(S, None, "easy", zl) or {}).get("text") != "≤ 145 bpm" \
+            or (U.session_target(S, None, "long", zp) or {}).get("text") != "slower than 6:21/km" \
+            or U.session_target(S, None, "interval", zl) is not None:
+        fails.append("(b) the target does not follow the threshold's trust (HR when trusted, else pace)")
+    if U.strides_of({"note": "easy run + 2×4–6 strides"}) != 2 or U.strides_of({"strides": 3}) != 3:
+        fails.append("(c) strides_of misses the flag or the note")
+    steps = U.workout_steps({"reps": [{"effort": "warmup", "minutes": 10, "km": 1.5, "zone": "easy"},
+                                      *[{"effort": "work", "minutes": 4, "km": 1.0, "zone": "interval"},
+                                        {"effort": "recovery", "minutes": 2, "km": 0.3, "zone": "easy"}] * 4,
+                                      {"effort": "cooldown", "minutes": 10, "km": 1.5, "zone": "easy"}]})
+    if [x["label"].split(" ")[0] for x in steps] != ["Warm-up,", "4", "4", "Cool-down,"] or sum(x["minutes"] for x in steps) != 44:
+        fails.append(f"(b) workout steps not grouped/summed: {[(x['label'], x['minutes']) for x in steps]}")
+    # (a)/(b) the page on a race fixture
+    saved_ro, saved_auth = S.READONLY, S._AUTH_ACTIVE
+    fx, today = _race_fixture_db("half", today=_d.today())
+    try:
+        plan = S.generate_plan(fx, today=today)
+        fx.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)",
+                   (today.isoformat() + "T06:00:00", today.isoformat(), "{}", json.dumps(plan)))
+        fx.commit()
+        d = U.today_page(S, fx)
+        for k in ("readiness", "session", "week", "race"):
+            if not d.get(k):
+                fails.append(f"(a) page lacks {k}")
+        w = d.get("week") or {}
+        if len(w.get("days") or []) != 7 or S._date(w["days"][0]["date"]) != E.week_start_of(today):
+            fails.append(f"(a) week is not 7 days from the week start: {[x['date'] for x in w.get('days') or []][:2]}")
+        if (d.get("race") or {}).get("days") != (S._date(plan["objective"]["date"]) - today).days:
+            fails.append("(a) race countdown off")
+        cur = [x for x in E._plan_all_weeks(plan) if x["start"] == w.get("start")]
+        bk = ((cur[0].get("limits") or {}).get("binding") if cur else None)
+        if bk and (w.get("held") or {}).get("key") != bk:
+            fails.append(f"(b) held-by is not the plan's binding limit: {w.get('held')} vs {bk}")
+        z = S.training_zones(fx)
+        easy = next(r for r in z["rows"] if r["key"] == "easy")
+        t = U.session_target(S, fx, "easy", z)
+        want = (f"≤ {easy['hr']['hi']} bpm" if (z.get("hr_anchor") or {}).get("anchor") == "lthr"
+                else f"slower than {(easy.get('pace_slower_than') or {}).get('fmt')}/km")
+        if (t or {}).get("text") != want:
+            fails.append(f"(b) target {t} is not the zones table's easy ceiling {want!r}")
+        # private: refused on the public view
+        S.READONLY, S._AUTH_ACTIVE = True, False
+        r = S.app.test_client().get("/api/ui/today")
+        if r.status_code != 403:
+            fails.append(f"(a) the public view served /api/ui/today: {r.status_code}")
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        S.READONLY, S._AUTH_ACTIVE = saved_ro, saved_auth
+        fx.close()
+    return _st("det", "ui-today",
+               "the new UI's Today endpoint is private and complete, and its pieces are the engine's own "
+               "(binding limit, zones ceiling, session strides and steps), not re-derived",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -25037,7 +25114,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

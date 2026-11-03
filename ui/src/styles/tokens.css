@@ -1,0 +1,64 @@
+/* The new UI's design tokens — the ONE place colours, type, spacing and shape are defined.
+   Components read only these variables. Light is the base; dark redefines the same names.
+   Floor: no text below --fs-label (13px). */
+:root {
+  /* colour — neutrals lean slightly blue, one accent for actions, state colours only for state */
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --line: #dde2ea;
+  --text: #121620;
+  --muted: #586174;
+  --accent: #2b59c3;
+  --accent-soft: #e6edfb;
+  --on-accent: #ffffff;
+  --ok: #217a47;
+  --ok-soft: #e3f3ea;
+  --warn: #946200;
+  --warn-soft: #fbf0d9;
+  --bad: #b42531;
+  --bad-soft: #fbe6e8;
+  /* training phases — the same four hues everywhere (road, calendar, week) */
+  --ph-rebase: #8a94a6;
+  --ph-base: #4f86e8;
+  --ph-build: #c95a93;
+  --ph-peak: #c08a2d;
+  --ph-taper: #3f9672;
+
+  /* type — one sans family, a mono for aligned numbers */
+  --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --fs-display: 36px;
+  --fs-title: 24px;
+  --fs-heading: 18px;
+  --fs-body: 16px;
+  --fs-small: 14px;
+  --fs-label: 13px;
+
+  /* space and shape */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --nav-w: 224px;
+  --content-max: 1440px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1116; --surface: #161a22; --surface-2: #1d222c; --line: #2b313d;
+    --text: #e8ebf1; --muted: #9aa3b4; --accent: #84a6ff; --accent-soft: #1e2a47; --on-accent: #0e1116;
+    --ok: #6fd49a; --ok-soft: #15301f; --warn: #f0c25c; --warn-soft: #33280f; --bad: #ff8b95; --bad-soft: #3a191d;
+    --ph-rebase: #8d96a8; --ph-base: #6d9cf0; --ph-build: #df7aae; --ph-peak: #d9a64b; --ph-taper: #5fb58f;
+    --shadow: none;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1116; --surface: #161a22; --surface-2: #1d222c; --line: #2b313d;
+  --text: #e8ebf1; --muted: #9aa3b4; --accent: #84a6ff; --accent-soft: #1e2a47; --on-accent: #0e1116;
+  --ok: #6fd49a; --ok-soft: #15301f; --warn: #f0c25c; --warn-soft: #33280f; --bad: #ff8b95; --bad-soft: #3a191d;
+  --ph-rebase: #8d96a8; --ph-base: #6d9cf0; --ph-build: #df7aae; --ph-peak: #d9a64b; --ph-taper: #5fb58f;
+  --shadow: none;
+  color-scheme: dark;
+}
