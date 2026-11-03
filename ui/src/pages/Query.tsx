@@ -13,6 +13,10 @@ export function Query<T>({ q, children }: { q: UseQueryResult<T>; children: (d: 
       <p><b>Sign in first.</b> The new UI uses the same login as Sparing Horse.</p>
       <p><a className="btn primary" href={`${CLASSIC}${e.login || "/login"}`}>Sign in</a></p>
       <p className="muted">Then come back to this page and reload.</p></State>;
+    if (e.status === 404) return <State>
+      <p><b>Restart the Sparing Horse server.</b></p>
+      <p className="muted">This page needs a server endpoint the running server doesn't have yet. Stop it (Ctrl+C) and
+        run <code>./run.sh</code> again, then reload.</p></State>;
     return <State><p><b>Couldn't load this page.</b></p><p className="muted">{e.message}</p>
       <button className="btn" onClick={() => q.refetch()}>Try again</button></State>;
   }
