@@ -144,6 +144,16 @@ shows a three-step guided card. In order:
    stored in a private-only secrets store, never the shared DB — see [§14](#14-settings-and-secrets).)
 2. **Pull your history.** Hit **Sync now**, then **Backfill all** once to load your full activity history.
    The first backfill can take a minute or two depending on how many years you have.
+
+   > **Fork — a token refused on the activity list.** Some Premium tokens read statistics and health
+   > metrics but get *403 Access Denied* on the REST activity list. The sync then pulls activities through
+   > the Runalyze MCP instead (same token): it lists them by date window and fetches each one's details, so
+   > the **first** import is slow — roughly two to three seconds an activity, an hour or more for a
+   > decade of runs. It keeps its progress: stopping the app mid-import resumes on the next sync. After that
+   > a sync re-reads only the last 14 days. Races tagged in Runalyze come across as on REST. Set
+   > `SH_ACTIVITY_SOURCE=mcp` to skip the REST attempt, or `rest` to turn the fallback off. Not carried over
+   > from the MCP: Runalyze's grade-adjusted speed (`gap`; plain pace is used instead) and the per-activity
+   > "use for VO2max" switch (an activity with a VO2max value counts).
 3. **Add your first race.** Open the **Objectives** panel and add a goal race (label, date, type, target,
    priority A). With no objective the engine runs in *maintenance* mode — it holds fitness with an easy
    aerobic base and no taper.

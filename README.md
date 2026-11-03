@@ -238,6 +238,7 @@ screen is computed by the deterministic engine.
 | `RUNALYZE_TOKEN` | Runalyze Personal API token (required on the writable instance) |
 | `ANTHROPIC_API_KEY` | enable the LLM layer (optional) |
 | `SH_LLM_PROVIDER` | fork: `auto` (default) · `api` · `cli` (local Claude Code on your subscription) · `off` |
+| `SH_ACTIVITY_SOURCE` | fork: `auto` (default: REST, the Runalyze MCP if the token gets 403 on the activity list) · `rest` · `mcp` |
 | `SH_CLAUDE_MODEL` / `SH_CLAUDE_BIN` | fork: model (default `sonnet`) and binary for the `cli` provider |
 | `SH_PORT` | listen port (default 8770) |
 | `SH_TZ` / `SH_SYNC_AT` / `SH_SCHEDULE` | nightly-sync timezone / time / on-off |
