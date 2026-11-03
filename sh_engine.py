@@ -155,6 +155,13 @@ SETTINGS_SPEC = [
              "switch that ships your own words about your body, so it is OFF until you turn it on. "
              "Off, the deterministic readiness gate and the stop-symptom catch still run; only the "
              "narration of the call and the free-text adjustment chat are unavailable."},
+    {"key": "ai_coach", "env": "SH_AI_COACH", "label": "AI — coach chat", "kind": "flag",
+     "default": "0",
+     "help": "The Coach button: sends Claude your questions, the recent conversation, and what the engine "
+             "computed for you — your race, goal and prediction, this week and the next two with their "
+             "limits, your last two weeks of runs with heart rate, readiness, your LTHR, settings and "
+             "injury history. It answers inside that picture and never changes the plan. OFF until you "
+             "turn it on; the conversation is stored only in your own database."},
     {"key": "units", "env": "SH_UNITS", "label": "Distance units", "kind": "line", "default": "km",
      "help": "km or mi. The engine plans in kilometres whatever you choose; this changes how every "
              "distance and pace is SHOWN, on every page and box. Reload after saving."},

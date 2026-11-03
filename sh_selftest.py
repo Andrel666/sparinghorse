@@ -68,6 +68,9 @@ except ImportError:
 import sh_calibrate as CAL                             # fork §CAL — imported by the app, so registered
 APP_MODULES += (CAL,)
 APP_SOURCES += ("sh_calibrate.py",)
+import sh_coach as COACH                               # fork §COACH — imported by the app, so registered
+APP_MODULES += (COACH,)
+APP_SOURCES += ("sh_coach.py",)
 
 
 def _patch_globals(**kw):
@@ -16119,6 +16122,76 @@ def _stc_race_day_plan():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_coach_chat():
+    """Fork §COACH — the coach chat, with the model stubbed (no network, no cost):
+    (a) with its AI switch OFF (the default) the chat route refuses and sends nothing; the history
+    route says it is off; (b) the context is the engine's own picture — the race, the plan weeks with
+    the limit that holds each, the recent runs with HR, LTHR; (c) a reply stores both turns, and the
+    next question carries the conversation; (d) a failed model call stores nothing, an empty or
+    over-long message is refused before any call; (e) the system prompt keeps the safety rule and the
+    engine-is-the-authority rule."""
+    import json
+    from datetime import date as _d
+    fails = []
+    calls = []
+    real, auth = S.llm_json, S._AUTH_ACTIVE
+    def stub(system, user, schema, effort="low", max_tokens=1024):
+        calls.append((system, user))
+        return {"ok": True, "reply": f"stub reply {len(calls)}"}
+    try:
+        # (a) the switch: default OFF on the battery's DB
+        S._AUTH_ACTIVE = False                      # the gate under test is the AI switch, not the login
+        c = S.app.test_client()
+        S.llm_json = stub
+        r = c.post("/api/coach/chat", json={"message": "hi"})
+        if r.status_code != 403 or calls:
+            fails.append(f"(a) chat answered with the switch off: {r.status_code}, calls {len(calls)}")
+        h = c.get("/api/coach/messages").get_json() or {}
+        if h.get("enabled") is not False:
+            fails.append(f"(a) history route does not report the switch off: {h}")
+        # (b)–(d) on a race fixture
+        fx, today = _race_fixture_db("half", today=_d.today())
+        try:
+            plan = S.generate_plan(fx, today=today)
+            fx.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)",
+                       (today.isoformat() + "T06:00:00", today.isoformat(), "{}", json.dumps(plan)))
+            fx.commit()
+            ctx = COACH.build_context(S, fx)
+            for want in ("GOAL RACE", "WEEK of", "limits:", "HOLDS THE WEEK"):
+                if want not in ctx:
+                    fails.append(f"(b) context lacks {want!r}")
+            r1 = COACH.reply(S, fx, "Why is this week short?")
+            r2 = COACH.reply(S, fx, "And next week?")
+            hist = COACH.history(fx)
+            if not (r1.get("ok") and r2.get("ok")) or [m["role"] for m in hist] != ["user", "coach", "user", "coach"]:
+                fails.append(f"(c) turns not stored in order: {[m['role'] for m in hist]}")
+            if "Why is this week short?" not in calls[-1][1] or "stub reply 1" not in calls[-1][1]:
+                fails.append("(c) the second question did not carry the conversation")
+            n = len(calls)
+            S.llm_json = lambda *a, **k: {"ok": False, "error": "boom"}
+            bad = COACH.reply(S, fx, "third")
+            if bad.get("ok") or len(COACH.history(fx)) != 4:
+                fails.append("(d) a failed call stored a turn")
+            S.llm_json = stub
+            if COACH.reply(S, fx, "  ").get("ok") or COACH.reply(S, fx, "x" * (COACH.MAX_MESSAGE_CHARS + 1)).get("ok") \
+                    or len(calls) != n:
+                fails.append("(d) an empty or over-long message reached the model")
+        finally:
+            fx.close()
+        # (e) the rules
+        for rule in ("stop running and get medical care", "Never prescribe more distance"):
+            if rule not in COACH.SYSTEM:
+                fails.append(f"(e) system prompt lost the rule {rule!r}")
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        S.llm_json, S._AUTH_ACTIVE = real, auth
+    return _st("det", "coach-chat",
+               "the coach chat is off until switched on, answers inside the engine's context, keeps the "
+               "conversation, stores nothing on a failed call, and keeps its safety rules",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -24964,7 +25037,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

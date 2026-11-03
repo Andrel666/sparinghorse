@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Coach chat.** A Coach button on every page opens a chat about the athlete's own training, answered by the
+  existing AI layer (API key or the local Claude Code CLI). New module `sh_coach.py` builds the context from
+  what the engine already computed — the race, target, prediction and race-day pacing; readiness and today's
+  session; this week and the next two with every limit and the one that holds the week; the last 14 days
+  of runs with HR; LTHR, settings, injury history, the effort check and calibration — and the system prompt
+  keeps the engine the authority (never more than the plan lays, settings changes only suggested) with a
+  stop-and-get-care rule for cardiac symptoms. Behind a new switch, **AI — coach chat** (`ai_coach`, off by
+  default); routes `/api/coach/{messages,chat,clear}` are private; the conversation lives only in the
+  athlete's database (`coach_messages`). `det/coach-chat` (model stubbed), mutation-tested.
 - **Race-day plan.** The race-day session opens (week list, plan calendar) into a pacing plan for the A race,
   computed server-side (`/api/race/plan`, private): the target — the objective's goal, else the prediction, or
   a typed override — split into settle-in (first ~14 %, +8 s/km), goal pace and finish (last ~15 %, −5 s/km)

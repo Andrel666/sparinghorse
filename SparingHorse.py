@@ -7949,6 +7949,7 @@ def _private_only_path(p):
     so the score is public while the HR-led critique stays private."""
     return (p in ("/api/health", "/api/settings", "/api/secrets",
                   "/api/secrets/validate", "/api/runs", "/api/plan/calendar", "/api/race/plan",   # §RB/§PCAL/§RDAY — carry HR
+                  "/api/coach/messages", "/api/coach/chat", "/api/coach/clear",       # §COACH
                   "/api/system")                          # 0.56.1 — the household's timestamps
             or p.startswith("/api/suunto")                # §SG — OAuth + watch push are owner-only
             or p.startswith("/api/coros")                 # §CG — same for the COROS plan push
@@ -11209,6 +11210,47 @@ def api_race_plan():
         return jsonify(ok=False, error="not available on the public view"), 403
     r = race_plan(get_db(), request.args.get("target") or None)
     return jsonify(r), (200 if r.get("ok") or "target must" not in (r.get("error") or "") else 400)
+
+
+# ── Fork §COACH — the coach chat (sh_coach.py holds the logic; these are the private routes) ─────
+import sh_coach
+
+
+def _coach_gate(db):
+    if READONLY:
+        return jsonify(ok=False, error="not available on the public view"), 403
+    if not ai_enabled(db, "coach"):
+        return _ai_off("coach")
+    return None
+
+
+@app.get("/api/coach/messages")
+def api_coach_messages():
+    db = get_db()
+    if READONLY:
+        return jsonify(ok=False, error="not available on the public view"), 403
+    return jsonify(ok=True, enabled=ai_enabled(db, "coach"), available=llm_available(),
+                   messages=sh_coach.history(db))
+
+
+@app.post("/api/coach/chat")
+def api_coach_chat():
+    db = get_db()
+    gate = _coach_gate(db)
+    if gate:
+        return gate
+    body = request.get_json(silent=True) or {}
+    r = sh_coach.reply(sys.modules[__name__], db, body.get("message"))
+    return jsonify({**r, "messages": sh_coach.history(db)}), (200 if r.get("ok") else 400)
+
+
+@app.post("/api/coach/clear")
+def api_coach_clear():
+    db = get_db()
+    if READONLY:
+        return jsonify(ok=False, error="not available on the public view"), 403
+    sh_coach.clear(db)
+    return jsonify(ok=True, messages=[])
 
 
 @app.get("/api/plan/calendar")
