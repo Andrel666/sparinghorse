@@ -16068,6 +16068,57 @@ def _stc_session_swap():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_race_day_plan():
+    """Fork §RDAY — the race-day plan on a half-marathon road: (a) the three segments add up to the
+    target exactly (the last split's clock IS the target) and the splits only climb; (b) the start is
+    slower than goal pace and the finish faster; (c) the objective's own '1:59' reads as hours for a
+    half, a typed override replaces it, and an unparseable one is refused; (d) the HR guardrails are
+    the distance's LTHR fractions (settle cap under the middle band's top) when an LTHR exists."""
+    import json
+    from datetime import date as _d
+    fails = []
+    fx, today = _race_fixture_db("half", today=_d(2026, 6, 3))
+    try:
+        plan = S.generate_plan(fx, today=today)
+        plan["objective"] = {**(plan.get("objective") or {}), "target": "1:59"}
+        fx.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)",
+                   (today.isoformat() + "T08:00:00", today.isoformat(), "{}", json.dumps(plan)))
+        fx.commit()
+        r = S.race_plan(fx)
+        if not r.get("ok"):
+            fails.append(f"no plan: {r}")
+        else:
+            secs = lambda c: sum(int(x) * 60 ** i for i, x in enumerate(reversed(c.split(":"))))
+            if r["target"]["seconds"] != 7140 or r["target"]["source"] != "goal":
+                fails.append(f"(c) '1:59' on a half did not read as 1:59:00: {r['target']}")
+            last = secs(r["splits"][-1]["clock"])
+            if abs(last - 7140) > 1:
+                fails.append(f"(a) splits end at {r['splits'][-1]['clock']}, not the target")
+            cl = [secs(x["clock"]) for x in r["splits"]]
+            if cl != sorted(cl) or len(set(cl)) != len(cl):
+                fails.append("(a) split clocks do not climb")
+            st, mid, fin = r["segments"]
+            if not (st["pace_s"] > mid["pace_s"] > fin["pace_s"]):
+                fails.append(f"(b) pace shape off: {st['pace']} / {mid['pace']} / {fin['pace']}")
+            if r.get("lthr"):
+                if not (st["hr"] and mid["hr"] and st["hr"]["hi"] <= mid["hr"]["hi"]):
+                    fails.append(f"(d) HR guardrails off: {st['hr']} / {mid['hr']}")
+            o = S.race_plan(fx, "2:05")
+            if not (o.get("ok") and o["target"]["seconds"] == 7500 and o["target"]["source"] == "override"):
+                fails.append(f"(c) override 2:05 not applied: {o.get('target')}")
+            bad = S.race_plan(fx, "fast")
+            if bad.get("ok"):
+                fails.append("(c) an unparseable target was accepted")
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        fx.close()
+    return _st("det", "race-day-plan",
+               "the race-day plan splits the target into settle / goal pace / finish that add up exactly, "
+               "reads the goal in the race's own units, takes an override and refuses a bad one",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -24913,7 +24964,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),
