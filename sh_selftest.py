@@ -16274,6 +16274,67 @@ def _stc_ui_today():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_ui_fitness():
+    """Fork §UI — /api/ui/fitness, the dashboard's numbers on one page: (a) private and complete on the
+    battery DB (four tiles, the chart's two series, load, weekly volume, zones, easy check, durability,
+    efficiency, track record); (b) the numbers are the engine's own — fitness and fatigue tiles end on
+    the reconstructed model's last day, the zones are training_zones' rows, the easy check is
+    effort_discipline's counts; (c) the verdicts Classic's browser computed are decided here: the load
+    state follows ACWR_BAND, the ramp word follows RAMP_STEADY, the form word follows FORM_WORDS."""
+    fails = []
+    U = UIAPI
+    lo, hi = U.ACWR_BAND
+    if [U.load_state(x) for x in (lo - 0.01, lo, hi, hi + 0.01, None)] != ["low", "in", "in", "high", None]:
+        fails.append("(c) load_state does not follow ACWR_BAND at its edges")
+    st = U.RAMP_STEADY
+    if [U.ramp_word(x) for x in (st + 0.1, st, -st, -st - 0.1, None)] != ["building", "steady", "steady", "easing", None]:
+        fails.append("(c) ramp_word does not follow RAMP_STEADY")
+    saved_ro, saved_auth = S.READONLY, S._AUTH_ACTIVE
+    try:
+        with S.app.test_request_context("/api/ui/fitness"):
+            db = S.get_db()
+            d = U.fitness_page(S, db)
+            for k in ("tiles", "load", "chart", "weekly", "zones", "easy", "durability", "efficiency", "track"):
+                if k not in d:
+                    fails.append(f"(a) page lacks {k}")
+            hist = (S.reconstruct_history(db) or [])[-180:]
+            t = {x["key"]: x for x in d.get("tiles", [])}
+            if hist and (round(hist[-1]["ctl"], 2) != t.get("fitness", {}).get("value")
+                         or round(hist[-1]["atl"], 2) != t.get("fatigue", {}).get("value")):
+                fails.append("(b) fitness/fatigue tiles are not the model's last day")
+            if [z["label"] for z in d.get("zones", [])] != [r["label"] for r in S.training_zones(db)["rows"]]:
+                fails.append("(b) zones are not training_zones' rows")
+            ed = S.effort_discipline(db) or {}
+            if (ed.get("easy_counts") or {}).get("judged") != d.get("easy", {}).get("judged"):
+                fails.append("(b) easy check is not effort_discipline's count")
+            L = d.get("load", {})
+            if L.get("acwr") is not None:
+                lo, hi = U.ACWR_BAND
+                want = "high" if L["acwr"] > hi else "low" if L["acwr"] < lo else "in"
+                if L.get("state") != want or not L.get("text"):
+                    fails.append(f"(c) load state {L.get('state')} for {L['acwr']} (want {want})")
+            if L.get("ramp") is not None:
+                want = "building" if L["ramp"] > U.RAMP_STEADY else "easing" if L["ramp"] < -U.RAMP_STEADY else "steady"
+                if L.get("ramp_word") != want:
+                    fails.append(f"(c) ramp word {L.get('ramp_word')} for {L['ramp']}")
+            f = t.get("form", {})
+            if f.get("value") is not None:
+                want = next(w for th, w in U.FORM_WORDS if f["value"] > th)
+                if f.get("word") != want:
+                    fails.append(f"(c) form word {f.get('word')} for {f['value']}")
+        S.READONLY, S._AUTH_ACTIVE = True, False
+        if S.app.test_client().get("/api/ui/fitness").status_code != 403:
+            fails.append("(a) the public view served /api/ui/fitness")
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        S.READONLY, S._AUTH_ACTIVE = saved_ro, saved_auth
+    return _st("det", "ui-fitness",
+               "the new UI's Fitness endpoint is private and complete, its numbers are the engine's own, and "
+               "the gauge, ramp and form verdicts are decided server-side from named constants",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -25119,7 +25180,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **New UI: the Fitness page** — Classic's dashboard numbers on one page: VO₂max, fitness, fatigue and form
+  tiles with 6-month sparklines and the 4-week change; fitness & fatigue over 6 months; the load ratio on a
+  gauge with its meaning and the 7-day ramp; 26 weeks of distance; zones; the easy-run check per run;
+  durability, aerobic efficiency and the prediction track record. `/api/ui/fitness` (private) reuses
+  `reconstruct_history`, `vo2max_trend`, `training_zones`, `effort_discipline`, `durability_signal`,
+  `efficiency_signal`, `track_record`; the gauge band, ramp word and form word Classic's browser computed are
+  decided server-side (`load_state`, `ramp_word`, `FORM_WORDS`). One charts module (sparkline, lines, bars,
+  gauge) from one scale helper. `det/ui-fitness`, mutation-tested.
 - **New UI, step 1: the shell and Today** (`ui/`, React + Vite + TypeScript, its own port 5180). A sidebar on
   desktop and a tab bar with a More sheet on phones, both built from one page list; a 12-column grid; 16px body
   type with a 13px floor; one token file for colour, type and space, light and dark. Today puts the readiness

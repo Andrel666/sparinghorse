@@ -8,9 +8,10 @@ import { PAGES } from "./lib/pages";
 import { Shell } from "./components/Shell";
 import { Today } from "./pages/Today";
 import { NotYet } from "./pages/NotYet";
+import { Fitness } from "./pages/Fitness";
 
 // Pages that exist; every other entry in PAGES shows NotYet until it is built.
-const BUILT: Record<string, () => JSX.Element> = { "/": Today };
+const BUILT: Record<string, () => JSX.Element> = { "/": Today, "/fitness": Fitness };
 
 const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 60_000, refetchOnWindowFocus: true, retry: 1 } } });
 

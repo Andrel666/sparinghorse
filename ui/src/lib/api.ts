@@ -42,8 +42,28 @@ export interface TodayPage {
                 verdict: string | null; verdict_text: string | null } | null;
 }
 
+export interface Tile { key: string; label: string; value: number | null; unit: string; delta: number | null;
+  series: { date: string; v: number }[]; hint: string; word?: string | null }
+export interface FitnessPage {
+  ok: true; tiles: Tile[];
+  load: { acwr: number | null; band: [number, number]; state: "high" | "low" | "in" | null; text: string | null;
+          ramp: number | null; ramp_word: string | null };
+  chart: { ctl: { date: string; v: number }[]; atl: { date: string; v: number }[] };
+  weekly: { week: string; km: number }[];
+  zones: { label: string; pace: string | null; hr: { lo: number | null; hi: number | null } | null }[];
+  easy: { score: number | null; window_days: number; judged: number | null; on: number | null; hot: number | null;
+          too_hard: number | null; by: string; ceiling: string | null;
+          runs: { date: string; kind: string; km: number; pace: string | null; hr: number | null; verdict: string | null;
+                  verdict_text: string | null }[] };
+  durability: { ok: boolean; n: number | null; text: string; note: string | null };
+  efficiency: { ok: boolean; verdict: string | null; text: string };
+  track: { scored: number; text: string };
+}
+
 // ── one hook per page ──
-export const useToday = () => useQuery({ queryKey: ["ui", "today"], queryFn: () => api<TodayPage>("/api/ui/today") });
+const page = <T,>(name: string) => () => useQuery({ queryKey: ["ui", name], queryFn: () => api<T>(`/api/ui/${name}`) });
+export const useToday = page<TodayPage>("today");
+export const useFitness = page<FitnessPage>("fitness");
 
 // The check-in posts to the endpoint Classic already uses (readiness owns the rule set).
 export interface Checkin { energy: "" | "good" | "ok" | "heavy"; sleep: "" | "good" | "ok" | "poor"; note: string; stop_symptom: boolean }
