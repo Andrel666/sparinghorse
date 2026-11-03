@@ -24144,7 +24144,7 @@ def _stc_pwa_polish():
     fails = []
     js, css, shell = S.APP_JS, S.APP_CSS, S.INDEX_HTML
     # (a) theme chrome: the shell map + the two writes at parse time, and the switch-side upkeep
-    for hexv in ("#f4f1ea", "#191a1d"):   # 0.57.0: two themes
+    for hexv in ("#f6f5f0", "#070b10"):   # 0.57.0: two themes
         if hexv not in shell or hexv not in js:
             fails.append(f"(a) theme bg {hexv} missing from {'shell' if hexv not in shell else 'app.js'} "
                          f"— one theme's chrome would fall back to Daylight")
@@ -24161,10 +24161,10 @@ def _stc_pwa_polish():
             plain = S.json.loads(c.get("/manifest.webmanifest").get_data(as_text=True))
             dark = S.json.loads(c.get("/manifest.webmanifest?theme=dark").get_data(as_text=True))
             junk = S.json.loads(c.get("/manifest.webmanifest?theme=evil").get_data(as_text=True))
-            if dark.get("theme_color") != "#191a1d" or dark.get("background_color") != "#191a1d":
+            if dark.get("theme_color") != "#070b10" or dark.get("background_color") != "#070b10":
                 fails.append(f"(a) ?theme=dark manifest colours {dark.get('theme_color')!r} "
                              f"(READONLY={ro}) — an installed Charcoal window would wear Daylight chrome")
-            if plain.get("theme_color") != "#f4f1ea" or junk.get("theme_color") != "#f4f1ea":
+            if plain.get("theme_color") != "#f6f5f0" or junk.get("theme_color") != "#f6f5f0":
                 fails.append(f"(a) default/garbage theme did not fall back to Daylight (READONLY={ro})")
     finally:
         S.READONLY = saved

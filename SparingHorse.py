@@ -7717,8 +7717,8 @@ WEB_MANIFEST = json.dumps({
     "start_url": "/today",   # 0.57.0 — the installed app opens on the day, not the analytics
     "scope": "/",
     "display": "standalone",
-    "background_color": "#f4f1ea",
-    "theme_color": "#f4f1ea",
+    "background_color": "#f6f5f0",
+    "theme_color": "#f6f5f0",
     "icons": [
         {"src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
         {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
@@ -7768,7 +7768,7 @@ self.addEventListener('fetch',e=>{
 # The installed window's chrome follows the theme too: the shell rewrites the manifest link with
 # ?theme=<name> (whitelisted — anything else gets the Daylight default), so the title bar and
 # splash match the page being installed. The colours are each theme's --bg (static/app.css).
-_MANIFEST_THEME_BG = {"light": "#f4f1ea", "dark": "#191a1d"}   # 0.57.0: two themes
+_MANIFEST_THEME_BG = {"light": "#f6f5f0", "dark": "#070b10"}   # 0.57.0: two themes
 
 
 @app.get("/manifest.webmanifest")
@@ -8451,7 +8451,7 @@ def _cookie_will_stick():
 
 
 _AUTH_CSS = (
-    "body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg,#f4f1ea);"
+    "body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg,#f6f5f0);"
     "color:var(--text,#2a2620);font-family:var(--sans,Inter,system-ui,sans-serif)}"
     ".authcard{width:min(440px,92vw);background:var(--surface,#fbf9f4);border:1px solid var(--line,#ddd6c7);"
     "border-radius:14px;padding:28px 28px 24px;box-shadow:0 12px 40px rgba(0,0,0,.08)}"
@@ -8462,10 +8462,10 @@ _AUTH_CSS = (
     ".authcard label{display:block;font-size:12px;font-family:var(--mono,monospace);letter-spacing:.06em;"
     "text-transform:uppercase;color:var(--muted,#6f6857);margin:12px 0 6px}"
     ".authcard input{width:100%;box-sizing:border-box;font:inherit;font-size:16px;padding:10px 12px;"
-    "border:1px solid var(--line,#ddd6c7);border-radius:8px;background:var(--bg,#f4f1ea);color:inherit}"
-    ".authcard input:focus-visible{outline:2px solid var(--accent,#b9542c);outline-offset:2px}"
+    "border:1px solid var(--line,#ddd6c7);border-radius:8px;background:var(--bg,#f6f5f0);color:inherit}"
+    ".authcard input:focus-visible{outline:2px solid var(--accent,#3a8870);outline-offset:2px}"
     ".authcard button{margin-top:18px;width:100%;font:inherit;font-size:15px;font-weight:600;padding:11px;"
-    "border:0;border-radius:8px;background:var(--accent,#b9542c);color:#fff;cursor:pointer}"
+    "border:0;border-radius:16px;background:var(--accent-grad,#3a8870);color:var(--onacc,#070b10);cursor:pointer}"
     ".authcard .err{color:var(--danger,#b5563f);font-size:13px;margin-top:12px}"
     ".authcard .foot{font-size:12px;color:var(--muted,#6f6857);margin-top:16px;line-height:1.5}"
 )
