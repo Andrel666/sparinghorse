@@ -35,7 +35,7 @@
     if (!state.enabled){
       msgs.innerHTML = `<div class="cp-note"><p><b>Coach chat is switched off.</b></p><p>It sends Claude your question
         and what the engine computed for you (race, plan weeks, recent runs with heart rate, readiness, settings).
-        Turn on <b>AI — coach chat</b> in Settings → Connections.</p>
+        Turn on <b>AI — coach chat</b> in Settings → Connections → AI features, then Save.</p>
         <button type="button" class="primary cp-open-settings">Open Settings</button></div>`;
       const b = msgs.querySelector(".cp-open-settings");
       b && b.addEventListener("click", ()=>{ close(); const s=document.getElementById("settingsBtn"); s && s.click(); });
@@ -59,7 +59,14 @@
   }
   async function load(){
     try{
-      const d = await fetch("/api/coach/messages").then(r=>r.json());
+      const res = await fetch("/api/coach/messages");
+      if (res.status === 404){        // the page is newer than the running server
+        msgs.innerHTML = `<div class="cp-note"><p><b>Restart the app to use the coach.</b></p><p>This page was
+          updated but the server is still running the previous version (stop it and run <code>./run.sh</code>
+          again, then reload).</p></div>`;
+        ta.disabled = send.disabled = true; return;
+      }
+      const d = await res.json();
       state.enabled = !!d.enabled; state.available = !!d.available; state.loaded = true;
       render(d.messages||[]);
     }catch(e){ msgs.innerHTML = `<div class="cp-note">The coach is unavailable right now.</div>`; }
