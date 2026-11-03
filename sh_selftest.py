@@ -22278,7 +22278,7 @@ def _stc_mcp_activity_fallback():
     old run is patched without a detail call; (e) a non-403 error, or SH_ACTIVITY_SOURCE=rest,
     still raises; (f) a detail that failed keeps the full walk open, and the next sync fetches it;
     (g) an import cut off by the network resumes BELOW the oldest point it reached, not from today;
-    (h) a dropped connection is retried.
+    (h) a dropped connection is retried; (i) no write transaction is held across an MCP call.
     Mocks fetch_activities_page and mcp_call (no network)."""
     import json
     import sqlite3 as _sq
@@ -22306,8 +22306,11 @@ def _stc_mcp_activity_fallback():
     calls = {"list": 0, "detail": [], "races": 0, "windows": []}
     fail_detail = set()
     net = {"drop_list_before": None, "drops": 0}   # (g)/(h): drop connections on chosen calls
+    lock = {"db": None, "held": 0}                  # (i): a write transaction open across a network call
 
     def fake_mcp(tool, args):
+        if lock["db"] is not None and lock["db"].in_transaction:
+            lock["held"] += 1
         if tool == "get_activities":
             calls["list"] += 1
             s, e = args["start_date"], args["end_date"]
@@ -22348,7 +22351,13 @@ def _stc_mcp_activity_fallback():
                        MCPA_RETRIES=(0, 0))
         vars(S)["sync_activities_mcp"] = lambda db, backfill=False: real_mcpa(db, backfill, today=today)
         # (a) 403 → MCP; limit 2 with 3 activities in the newest window forces a split
+        lock["db"] = mem
         r = S.sync_activities(mem)
+        lock["db"] = None
+        # (i) the import never holds the write lock while it waits on the network: a window of detail
+        # pulls takes minutes, and the page's own writes would fail with "database is locked"
+        if lock["held"]:
+            fails.append(f"(i) a write transaction was open across {lock['held']} MCP call(s)")
         ids = {x["id"] for x in mem.execute("SELECT id FROM activities")}
         if r.get("source") != "mcp" or ids != {11, 12, 13, 14}:
             fails.append(f"(a) 403 did not sync everything through the MCP: {r}, ids {sorted(ids)}")
