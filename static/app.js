@@ -3581,7 +3581,7 @@ if(_hform) _hform.addEventListener("submit", async e=>{
 // touches Connections. The AI switches sit next to the Claude key they gate; a key the app adds later
 // lands on Athlete until this table names its tab.
 const SETTINGS_TABS = {
-  athlete: ["athlete_context","athlete_age","manual_lthr","units","long_run_day","rest_day_rank","max_runs_per_week","taper_weeks"],
+  athlete: ["athlete_context","athlete_age","manual_lthr","units","long_run_day","rest_day_rank","max_runs_per_week","taper_weeks","injury_history"],
   connections: ["ai_narration","ai_parsing","ai_judgment"],
   console: ["house_url","house_name","private_url"]
 };
@@ -3635,8 +3635,22 @@ async function loadSettings(){
       crammed. Single day: leave the second date empty. Private — away days never appear on
       the public page. Saved as you add them.</div>
     <div class="err" id="averr"></div>
+  </div>
+  <div class="setrow" style="margin-top:14px" id="calbox">
+    <label>Calibrate to my history</label>
+    <div class="help">Re-fits the engine's load and safety numbers on your own runs (and the injury
+      history above, if you filled it in), then shows the evidence. Nothing changes until you approve;
+      Revert puts the defaults back. Regenerate the plan after approving.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0">
+      <button type="button" class="ghost" id="calfit">Fit</button>
+      <button type="button" class="ghost" id="calok" disabled>Approve</button>
+      <button type="button" class="ghost" id="calrev" disabled>Revert to defaults</button>
+    </div>
+    <pre class="mono" id="calout" style="white-space:pre-wrap;font-size:12px;margin:0"></pre>
+    <div class="err" id="calerr"></div>
   </div>`;
   $("#setform").addEventListener("submit", saveSettings);
+  wireCalibration();
   const ai=$("#aiBox");
   if(ai){
     ai.innerHTML=`<form class="setform" id="setform-connections" data-scope="connections">
@@ -3667,6 +3681,37 @@ async function loadSettings(){
     $("#setform-console").addEventListener("submit", saveSettings);
   }
   wireAway();
+}
+
+// Fork §CAL — the calibration card: fit → read the evidence → approve (or revert to defaults).
+async function wireCalibration(){
+  const out=$("#calout"), err=$("#calerr"), ok=$("#calok"), rev=$("#calrev"), fit=$("#calfit");
+  if(!out) return;
+  const show=d=>{
+    const p=d.proposal, inf=d.in_force||{};
+    const n=Object.keys(inf).length;
+    ok.disabled=!p||p.approved; rev.disabled=!p&&!n;
+    if(!p){ out.textContent=n?"":"No calibration — the engine runs on its defaults."; return; }
+    const lines=[`${p.approved?"In force":"Proposed — not applied"} · fitted ${String(p.created_at).slice(0,10)} on ${p.history.runs} runs`];
+    p.params.forEach(q=>{
+      lines.push(`${q.status==="fitted"?"▸ CHANGE":q.status==="insufficient"?"· no data":"· keep  "}  ${q.key}: ${q.default} → ${q.value}`);
+      lines.push(`      ${q.basis}`); if(q.effect) lines.push(`      ${q.effect}`);
+    });
+    if(p.injury_errors&&p.injury_errors.length) lines.push("Injury lines not read: "+p.injury_errors.join("; "));
+    if(p.breaks&&p.breaks.length) lines.push(`Breaks of 14+ days not in your injury list: ${p.breaks.slice(0,8).map(b=>b.from+" → "+b.to).join(", ")}${p.breaks.length>8?" …":""}`);
+    out.textContent=lines.join("\n");
+  };
+  const call=async(url,method)=>{
+    err.textContent="";
+    try{
+      const r=await fetch(url,{method:method||"GET",headers:{"Content-Type":"application/json"},body:method==="POST"?"{}":undefined});
+      const d=await r.json(); if(!d.ok){ err.textContent=d.error||"failed"; return; } show(d);
+    }catch(e){ err.textContent="Could not reach the server."; }
+  };
+  fit.addEventListener("click",async()=>{ fit.disabled=true; out.textContent="Fitting on your history…"; await call("/api/calibration/fit","POST"); fit.disabled=false; });
+  ok.addEventListener("click",()=>call("/api/calibration/approve","POST"));
+  rev.addEventListener("click",()=>call("/api/calibration/revert","POST"));
+  call("/api/calibration");
 }
 
 // §AV — the away-days list: add/remove re-lay the plan immediately (the response is the replan
