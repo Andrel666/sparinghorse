@@ -22278,7 +22278,8 @@ def _stc_mcp_activity_fallback():
     old run is patched without a detail call; (e) a non-403 error, or SH_ACTIVITY_SOURCE=rest,
     still raises; (f) a detail that failed keeps the full walk open, and the next sync fetches it;
     (g) an import cut off by the network resumes BELOW the oldest point it reached, not from today;
-    (h) a dropped connection is retried; (i) no write transaction is held across an MCP call.
+    (h) a dropped connection is retried; (i) no write transaction is held across an MCP call;
+    (j) a race unticked in Runalyze is untagged locally (never on an unreadable race list).
     Mocks fetch_activities_page and mcp_call (no network)."""
     import json
     import sqlite3 as _sq
@@ -22392,6 +22393,27 @@ def _stc_mcp_activity_fallback():
         a11 = json.loads(mem.execute("SELECT raw FROM activities WHERE id=11").fetchone()[0])
         if (a11.get("race_result") or {}).get("official_distance") != 10000.0 or 11 in calls["detail"]:
             fails.append(f"(d) late race tag not patched cheaply: {a11.get('race_result')}, {calls['detail']}")
+        # (j) a race UNticked in Runalyze loses its race_result on the next sync; an unreadable race
+        # list untags nothing
+        saved_races = list(races)
+        races[:] = [r for r in races if r["activity_id"] != 11]
+        S.sync_activities(mem)
+        if json.loads(mem.execute("SELECT raw FROM activities WHERE id=11").fetchone()[0]).get("race_result"):
+            fails.append("(j) an unticked race kept its race_result")
+        if not json.loads(mem.execute("SELECT raw FROM activities WHERE id=12").fetchone()[0]).get("race_result"):
+            fails.append("(j) untagging removed a race still in the list")
+        races[:] = saved_races
+        S.sync_activities(mem)                         # 11 tagged again
+        real_fake = fake_mcp
+        def fake_no_races(tool, args):
+            if tool == "get_historical_races":
+                raise S.RunalyzeError("MCP get_historical_races: boom")
+            return real_fake(tool, args)
+        vars(S)["mcp_call"] = fake_no_races
+        S.sync_activities(mem)
+        vars(S)["mcp_call"] = fake_mcp
+        if not json.loads(mem.execute("SELECT raw FROM activities WHERE id=11").fetchone()[0]).get("race_result"):
+            fails.append("(j) an unreadable race list untagged races")
         # (e) other errors and the rest-only setting still raise
         for src, err in (("auto", "HTTP 500 on activity: 'oops'"), ("rest", "HTTP 403 on activity: 'x'")):
             vars(S)["ACTIVITY_SOURCE"] = src
