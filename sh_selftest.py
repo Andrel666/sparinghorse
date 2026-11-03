@@ -15492,6 +15492,111 @@ def _stc_race_tags():
                passed=not fail, expect=str(want), got={"corpus": got, "failures": fail or "none"})
 
 
+def _stc_max_runs():
+    """Fork §MAXRUNS — the athlete's runs-per-week ceiling, judged on the invariants that make it SAFE
+    rather than on the uncapped engine's fixtures (most of which pin 5–6-run behaviour by design).
+    For caps 3 and 4, on a marathon and a half-marathon road over real history, a cold block with no
+    biomechanical baseline, and a mid-week straddle with a run already done: (a) no week lays — or,
+    with the lived runs, runs — more than the cap; (b) the long run is the week's longest, ≥
+    LONG_RUN_MIN_RATIO × every easy day; (c) no week's long run passes its step cap and no
+    non-race week's CTL gain passes the ramp cap; (d) the shape-neutral ACWR the governor decides on
+    stays ≤ ACWR_SOFT and the in-week peak under the §H1 rescue line; where no biomechanical baseline
+    exists, the raw end-of-week reading holds ACWR_HARD; (e) every building week of ≥ 3 runs keeps an
+    easy run besides the long one, and carries at most one mid-week quality session plus the carved
+    threshold run; (f) a week's intent is what it lays, give or take its flagged shed — no search
+    runaway; (g) the same input regenerates the same plan through Runalyze's rounding, and a returning
+    athlete's road still grows (the uncapped dets, re-run under the cap). Uncapped byte-identity is
+    det/golden-plans' job; this det restores the cap it found."""
+    from datetime import date, timedelta
+    E = S
+    fails, seen = [], {}
+    prev = E.max_runs()
+    QUAL = {"interval", "threshold", "tempo", "progression", "vo2", "race_pace", "fartlek", "hills"}
+
+    def check(tag, weeks, cap, bio_known=True):
+        for w in weeks:
+            if w.get("frozen") or w.get("elapsed"):
+                continue
+            ss = [x for x in (w.get("sessions") or []) if (x.get("kind") or "") != "rest" and (x.get("km") or 0) > 0]
+            wid = f"{tag}/{w.get('start') or w.get('wk')}"
+            seen[tag] = seen.get(tag, 0) + 1
+            if len(ss) > cap:
+                fails.append(f"(a) {wid}: {len(ss)} runs > cap {cap}")
+            race = any(x.get("race") for x in ss)
+            longs = [x for x in ss if (x.get("kind") or "").startswith("long")]
+            easies = [x for x in ss if (x.get("kind") or "") == "easy"]
+            if longs and easies and not race:
+                lg = max(x["km"] for x in longs)
+                if lg + 0.05 < E.LONG_RUN_MIN_RATIO * max(x["km"] for x in easies) and not w.get("long_flat"):
+                    fails.append(f"(b) {wid}: long {lg} not ≥ {E.LONG_RUN_MIN_RATIO}× easy {max(x['km'] for x in easies)}")
+            L = w.get("limits") or {}
+            if "long_step" in L and L["long_step"]["laid"] > L["long_step"]["ceiling"] + E.LIMITS_LAID_TOL:
+                fails.append(f"(c) {wid}: long {L['long_step']['laid']} over its step cap {L['long_step']['ceiling']}")
+            if "chronic" in L and not race and L["chronic"]["laid"] > L["chronic"]["ceiling"] + 0.05:
+                fails.append(f"(c) {wid}: CTL gain {L['chronic']['laid']} over the ramp cap {L['chronic']['ceiling']}")
+            soft = w.get("proj_acwr_soft")
+            if soft and not w.get("prog_ridden") and soft > E.ACWR_SOFT + 0.01:
+                fails.append(f"(d) {wid}: governed ACWR {soft} > {E.ACWR_SOFT}")
+            if w.get("peak_acwr") and not race and w["peak_acwr"] > E.H1_RESCUE_ACWR + 0.01:   # a race is not laid load
+                fails.append(f"(d) {wid}: in-week peak {w['peak_acwr']} past the rescue line")
+            if not bio_known and w.get("proj_acwr") and w["proj_acwr"] > E.ACWR_HARD + 0.01:
+                fails.append(f"(d) {wid}: raw eow {w['proj_acwr']} > {E.ACWR_HARD} with no baseline")
+            building = not (E._is_down(w) or E._is_taper(w)) and not race
+            if building and len(ss) >= 3:
+                if not easies:
+                    fails.append(f"(e) {wid}: no easy run in a {len(ss)}-run week: {[x['kind'] for x in ss]}")
+                mid_q = [x for x in ss if (x.get("kind") or "") in QUAL
+                         and not (x.get("note") or "").startswith("threshold run")]   # the carved run
+                if len(mid_q) > 1:
+                    fails.append(f"(e) {wid}: {len(mid_q)} mid-week quality sessions")
+            ik, km = w.get("intent_km"), w.get("km")
+            # the bar and the sheet agree within a few percent on a normal week (MANUAL §6); a runaway
+            # search read 85 km of intent on a 48 km week
+            if building and ik and km is not None and ik > 1.10 * (km + (w.get("rest_shed_km") or 0.0)) + 1.0:
+                fails.append(f"(f) {wid}: intent {ik} km vs laid {km} km (+shed {w.get('rest_shed_km')}) — runaway")
+
+    try:
+        for cap in (3, 4):
+            E.set_max_runs(str(cap))
+            for rt in ("marathon", "half"):
+                fx, fx_today = _race_fixture_db(rt)
+                plan = S.generate_plan(fx, today=fx_today)
+                check(f"{rt}@{cap}", [w for v in plan.values() if isinstance(v, dict) and "weeks" in v
+                                      for w in v["weeks"]], cap)
+                fx.close()
+            easy = 425
+            zones = {"easy_top": easy, "easy": 460, "marathon": 360, "threshold": 330, "interval": 300}
+            bw, bm = S.generate_block(S.base_shape(8, 19), date(2026, 8, 1), 70.0, 70.0, easy,
+                                      zones=zones, regime="assertive")
+            check(f"cold@{cap}", bw[:1], cap, bio_known=False)    # week 1: no trailing baseline at all
+            check(f"cold@{cap}", bw[1:], cap)
+            shape = {"wk": 1, "km": 20, "runs": 5, "long": 6, "strides": 0, "intent": "General — aerobic"}
+            mon = date(2026, 8, 3)
+            st, _ = S.generate_block([dict(shape)], mon, 50.0, 45.0, easy, today=mon + timedelta(days=1),
+                                     week_actuals=(1, 5.0), regime="assertive", last_nondown=400.0)
+            ahead = [x for x in st[0]["sessions"] if (x.get("kind") or "") != "rest" and (x.get("km") or 0) > 0
+                     and x["date"] > mon.isoformat()]
+            if 1 + len(ahead) > cap:
+                fails.append(f"(a) straddle@{cap}: 1 lived + {len(ahead)} ahead > cap {cap}")
+            for name, fn in (("regen-follow-rounding", _stc_regen_follow_rounding),
+                             ("restart-dose", _stc_restart_dose)):
+                r = fn()
+                if not r.get("passed"):
+                    g = r.get("got")
+                    fails.append(f"(g) {name}@{cap}: {str((g or {}).get('failures') if isinstance(g, dict) else g)[:160]}")
+    finally:
+        E.set_max_runs("" if prev is None else str(prev))
+    for tag in ("marathon@3", "half@3", "marathon@4", "half@4", "cold@3", "cold@4"):
+        if not seen.get(tag):
+            fails.append(f"fixture vacuous — {tag} laid no plannable week")
+    return _st("det", "max-runs",
+               "fork §MAXRUNS — under a 3- or 4-run cap every week stays at or under the cap (lived runs "
+               "included), keeps a real long run and an easy day, holds every ceiling the governor "
+               "decides on, lays what it intends, and regenerates stably",
+               passed=not fails, expect="no violations at caps 3 and 4",
+               got={"weeks_checked": seen, "failures": fails or "none"})
+
+
 def _stc_durability_builds():
     """SH-94 — durability_builds: the build-vs-build read behind the durability card's chart/table.
     Hand-computed fixture: three past marathon races (two sharing 2024 → 'Sep 2024'/'Dec 2024' labels,
@@ -23980,7 +24085,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

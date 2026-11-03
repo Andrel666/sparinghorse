@@ -85,6 +85,7 @@ from sh_engine import (
     RUN_MIN_KM, SESSION_EQ_STEP, SETTINGS_BY_KEY, SETTINGS_SPEC, SJ_MAX_GAP_MIN, SJ_PART_MIN_S,
     TAPER_BOTTOM, TAPER_LONG_FRAC, TAPER_SHARP_FRAC, TAPER_TOP, TAU_ATL, TAU_CTL,
     TRIMP_PER_MIN, WEEK_TRIMP_SEARCH_MAX, set_day_preferences, trimp_per_min,
+    MAX_RUNS_RANGE, set_max_runs, max_runs, _cap_runs,
     V5K_VVO2MAX_FRAC, _actual_week_caps, _adj_directive, _adj_fingerprint, _adj_summary,
     _apply_adjustment, _athlete_age, _av_blocked_dates, _av_run_days, _build_long_mp,
     _parse_day,
@@ -1888,6 +1889,10 @@ def validate_setting(key, value):
                            "(or empty to derive from your runs)")
     if key == "taper_weeks" and value.strip() and value.strip() not in ("2", "3"):
         return False, "2 or 3 weeks (or empty for automatic: 3 on a road of 16 weeks or more, else 2)"
+    if key == "max_runs_per_week" and value.strip():
+        lo, hi = MAX_RUNS_RANGE
+        if not value.strip().isdigit() or not (lo <= int(value.strip()) <= hi):
+            return False, f"a whole number of runs, {lo}–{hi} (or empty for no cap)"
     if key == "athlete_age" and value.strip():
         v = value.strip()
         if not v.isdigit() or not (10 <= int(v) <= 100):
@@ -1949,6 +1954,7 @@ def apply_settings_overrides(db):
     set_day_preferences(
         _resolve_setting(db, SETTINGS_BY_KEY["long_run_day"])[0],
         _resolve_setting(db, SETTINGS_BY_KEY["rest_day_rank"])[0])
+    set_max_runs(_resolve_setting(db, SETTINGS_BY_KEY["max_runs_per_week"])[0])   # fork §MAXRUNS
     # §TZ — the SAME zone owns the engine's calendar day, not just the nightly job's wall clock. This
     # is the authoritative apply: the import-time bootstrap only sees the env var, and the stored
     # setting overrides it. Applying it here also means a tz changed in the Settings window moves

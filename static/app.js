@@ -3580,7 +3580,7 @@ if(_hform) _hform.addEventListener("submit", async e=>{
 // touches Connections. The AI switches sit next to the Claude key they gate; a key the app adds later
 // lands on Athlete until this table names its tab.
 const SETTINGS_TABS = {
-  athlete: ["athlete_context","athlete_age","manual_lthr","units","long_run_day","rest_day_rank","taper_weeks"],
+  athlete: ["athlete_context","athlete_age","manual_lthr","units","long_run_day","rest_day_rank","max_runs_per_week","taper_weeks"],
   connections: ["ai_narration","ai_parsing","ai_judgment"],
   console: ["house_url","house_name","private_url"]
 };

@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Max runs per week** (Settings → athlete, `SH_MAX_RUNS`, 3–6). The plan never lays more runs than
+  the cap, and runs already done this week count towards it. A capped week drops the volume it cannot
+  hold (flagged) instead of inflating its easy runs, and a cap of 3 or 4 adds low-frequency rules: one
+  mid-week quality session (plus the carved threshold run at 4), an easy run beside the long run, a
+  long-run share up to what keeps it the week's longest run, a stricter check against an
+  unabsorbable search charge, and the 1.30 raw acute ceiling while no biomechanical baseline exists.
+  No cap set: every plan is byte-identical (golden plans unchanged). Covered by `det/max-runs`, which
+  checks caps 3 and 4 on marathon, half, cold-start and mid-week fixtures and re-runs
+  `det/regen-follow-rounding` and `det/restart-dose` under the cap.
 - **Races tagged in Runalyze calibrate the finish-time model at every distance.** The model used to
   learn only from marathons found by distance and from races finished inside the app, so a runner's
   halves and 10ks were ignored. A run carrying Runalyze's `race_result` now joins the calibration
