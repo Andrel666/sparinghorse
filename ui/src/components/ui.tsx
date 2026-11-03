@@ -42,10 +42,19 @@ export function Table<T>({ cols, rows, keyOf }: { cols: Col<T>[]; rows: T[]; key
   return (
     <div className="table-wrap">
       <table className="steps">
-        <thead><tr>{cols.map(c => <th key={c.head}>{c.head}</th>)}</tr></thead>
+        <thead><tr>{cols.map(c => <th key={c.head} className={c.num ? "num" : undefined}>{c.head}</th>)}</tr></thead>
         <tbody>{rows.map(r => <tr key={keyOf(r)}>{cols.map(c => (
           <td key={c.head} className={c.num ? "num" : undefined} style={c.wide ? { minWidth: 200 } : undefined}>{c.cell(r)}</td>))}</tr>)}</tbody>
       </table>
     </div>
   );
+}
+
+/** A page's headline numbers: one row of big figures on hairlines (see DESIGN.md "figures row"). */
+export interface FigureT { k: ReactNode; v: ReactNode; s?: ReactNode; signal?: boolean; tone?: Tone }
+export function Figures({ items }: { items: FigureT[] }) {
+  return <div className="figures">{items.map((f, i) => (
+    <div key={i} className={cls("figure", f.signal && "signal", f.tone && `tone-${f.tone}`)}>
+      <span className="k">{f.k}</span><span className={cls("v", f.tone && "toned")}>{f.v}</span>{f.s && <span className="s">{f.s}</span>}
+    </div>))}</div>;
 }

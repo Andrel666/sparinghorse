@@ -29,12 +29,12 @@ export function TopBar({ s }: { s: ShellT }) {
   const next: Record<Theme, Theme> = { auto: "dark", dark: "light", light: "auto" };
   return (
     <div className="topbar">
-      <span className={`pill${s.stale ? " stale" : ""}`} title={s.last_sync ? `Last successful sync: ${new Date(s.last_sync).toLocaleString()}` : undefined}>
+      <span className={`sync-state${s.stale ? " stale" : ""}`} title={s.last_sync ? `Last successful sync: ${new Date(s.last_sync).toLocaleString()}` : undefined}>
         {since(s.sync_hours)}</span>
-      <button type="button" className="btn primary" disabled={sync.isPending} onClick={() => sync.mutate()}>{sync.isPending ? "Syncing…" : "Sync now"}</button>
-      <button type="button" className="btn" aria-label={`Theme: ${theme === "auto" ? "follows the system" : theme}`}
+      <button type="button" className="btn primary" disabled={sync.isPending} onClick={() => sync.mutate()}>{sync.isPending ? "Syncing…" : "Sync"}</button>
+      <button type="button" className="linkish" aria-label={`Theme: ${theme === "auto" ? "follows the system" : theme}. Change`}
               onClick={() => { const t = next[theme]; setTheme(t); applyTheme(t); }}>
-        Theme · {theme === "auto" ? "auto" : theme === "dark" ? "dark" : "light"}</button>
+        {theme === "auto" ? "Auto" : theme === "dark" ? "Dark" : "Light"}</button>
     </div>);
 }
 
@@ -88,7 +88,7 @@ export function Frame({ children }: { children: ReactNode }) {
   const s = q.data;
   if (s) setUnits(s.units);
   return <>
-    {s && <div className="page frame-top"><TopBar s={s} />{s.first_run && <FirstRun steps={s.first_run} />}<DataQuality s={s} /></div>}
+    {s && <div className="page frame-top"><div className="phone-only"><TopBar s={s} /></div>{s.first_run && <FirstRun steps={s.first_run} />}<DataQuality s={s} /></div>}
     {children}
     {s && <footer className="page footer"><span>Sparing Horse v{s.version}</span>
       <a href="https://runalyze.com" target="_blank" rel="noopener noreferrer">powered by Runalyze</a>

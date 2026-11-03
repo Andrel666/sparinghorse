@@ -5,7 +5,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePlan, usePlanCalendar, useRacePlan, useShell, type PlanPage, type SessionDetail } from "../lib/api";
 import { useAction } from "../lib/actions";
 import { dateLong, dateShort, km, pace } from "../lib/format";
-import { Card, ListItem, PageHead, Pill } from "../components/ui";
+import { Card, Figures, ListItem, PageHead, Pill } from "../components/ui";
 import { Drawer, MonthGrid, Tabs } from "../components/layout";
 import { Road } from "../components/Road";
 import { Week } from "../components/Week";
@@ -191,7 +191,6 @@ export function Plan() {
     return (
     <div className="page">
       <PageHead title="Plan">
-        {p.race && <Pill>Goal {p.race.target ?? "—"} · predicted {p.race.prediction ?? "—"}</Pill>}
         <button className="btn" aria-expanded={races} onClick={() => setRaces(true)}>Edit races</button>
         {genBtn}
         <Tabs label="Plan views" value={view} options={VIEWS} onChange={setView} />
@@ -201,6 +200,13 @@ export function Plan() {
       {diff && !diff.first && diff.summary && <Banner tone="ok" action={<button className="btn" onClick={() => setDiff(undefined)}>✕</button>}>
         <b>Re-planned — {diff.summary}</b>{diff.changes?.length ? <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{diff.changes.map((c, i) => <li key={i}>{c}</li>)}</ul> : null}</Banner>}
       {p.adjustment && <AdjustmentBanner a={p.adjustment} onDiff={setDiff} />}
+      <Figures items={[
+        ...(p.race ? [{ k: `${p.race.label} · ${dateShort(p.race.date)}`, v: `${Math.max(0, Math.round((Date.parse(p.race.date) - Date.parse(p.today)) / 864e5))} d`,
+                        s: `${p.races[0]?.weeks ?? "—"} weeks to go` }] : []),
+        ...(p.race ? [{ k: "Predicted finish", v: p.race.prediction ?? "—", signal: true, s: `${p.race.lo}–${p.race.hi} · goal ${p.race.target ?? "—"}` }] : []),
+        { k: "Fitness on race day", v: p.races[0]?.proj_ctl != null ? `${Math.round(p.races[0].proj_ctl)}` : "—", s: `CTL · verdict ${p.race?.verdict ?? "—"}` },
+        { k: `This week · ${p.week.phase_name ?? ""} ${p.week.n ?? ""}`, v: km(p.week.km, 1), s: p.week.km_done != null ? `${km(p.week.km_done)} run so far` : `${p.week.runs ?? p.week.sessions.length} runs` },
+      ]} />
       <div className="grid">
         <Card span={8} label={p.race ? `The road to ${p.race.label} · ${dateShort(p.race.date)}` : "The road"}>
           <Road road={p.road} phases={p.phases} today={p.today} tuneUps={p.tune_ups} onPick={s => { setSel({ week: s }); setView("week"); }} />

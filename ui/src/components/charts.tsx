@@ -13,13 +13,14 @@ function yScale(vals: number[], h: number, pad = 0.08, from0 = false) {
 const xScale = (lo: number, hi: number, w: number) => (x: number) => ((x - lo) / (hi - lo || 1)) * w;
 const line = (pts: [number, number][]) => pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
 
-export function Spark({ pts, color = "var(--accent)" }: { pts: Pt[]; color?: string }) {
+export function Spark({ pts, color = "var(--text)" }: { pts: Pt[]; color?: string }) {
   if (pts.length < 2) return null;
   const w = 120, h = 36, y = yScale(pts.map(p => p.v), h), x = xScale(0, pts.length - 1, w);
   const d = line(pts.map((p, i) => [x(i), y(p.v)]));
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" aria-hidden="true">
-      <path d={d + `L${w},${h}L0,${h}Z`} fill={color} opacity={0.12} />
+      <path d={d + `L${w},${h}L0,${h}Z`} fill={color} opacity={0.06} />
+      <circle cx={x(pts.length - 1)} cy={y(pts.at(-1)!.v)} r={2.5} fill="var(--signal)" />
       <path d={d} fill="none" stroke={color} strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
     </svg>
   );
@@ -81,8 +82,8 @@ export function Bars({ items, height = 140, unit = "", scroll = false }:
          role="img" aria-label={`${items.length} weeks, latest ${items.at(-1)?.v} ${unit}`}>
       {items.map((it, i) => (
         <div key={it.label} title={`${it.label}: ${it.v} ${unit}`}
-             style={{ height: `${Math.max(2, (it.v / max) * 100)}%`, borderRadius: "3px 3px 0 0",
-                      background: i === items.length - 1 ? "var(--accent)" : "color-mix(in oklab, var(--accent), transparent 62%)" }} />
+             style={{ height: `${Math.max(2, (it.v / max) * 100)}%`,
+                      background: i === items.length - 1 ? "var(--signal)" : "var(--ph-base)" }} />
       ))}
     </div>);
   return scroll ? <div ref={ref} style={{ overflowX: "auto", paddingBottom: 4 }}>{grid}</div> : grid;

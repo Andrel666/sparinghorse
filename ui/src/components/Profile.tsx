@@ -48,8 +48,8 @@ export function Profile({ id }: { id: number }) {
              onMouseMove={e => { const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect(); setHx(d0 + ((e.clientX - r.left) / r.width) * (d1 - d0)); }}
              onMouseLeave={() => setHx(null)}>
           {path.length > 1 && <>
-            <path d={`M${path[0]!.split(",")[0]},${H}L${path.join("L")}L${path.at(-1)!.split(",")[0]},${H}Z`} fill="var(--accent)" opacity={0.14} />
-            <path d={`M${path.join("L")}`} fill="none" stroke="var(--accent)" strokeWidth={1.8} vectorEffect="non-scaling-stroke" />
+            <path d={`M${path[0]!.split(",")[0]},${H}L${path.join("L")}L${path.at(-1)!.split(",")[0]},${H}Z`} fill="var(--text)" opacity={0.07} />
+            <path d={`M${path.join("L")}`} fill="none" stroke="var(--text)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
           </>}
           {ch.k === "hr" && p.hr_avg && <line x1={0} x2={W} y1={Y(p.hr_avg)} y2={Y(p.hr_avg)} stroke="var(--muted)" strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />}
           {hi_ != null && <line x1={X(p.dist[hi_])} x2={X(p.dist[hi_])} y1={0} y2={H} stroke="var(--text)" opacity={0.3} vectorEffect="non-scaling-stroke" />}

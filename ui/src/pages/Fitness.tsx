@@ -3,7 +3,7 @@
 // Every number, sentence and verdict arrives from /api/ui/fitness.
 import { useFitness, type FitnessPage } from "../lib/api";
 import { bpm, dateShort, dayNum, km, numDay, pace, verdictTone } from "../lib/format";
-import { Card, ListItem, PageHead, Pill, Table } from "../components/ui";
+import { Card, Figures, ListItem, PageHead, Pill, Table } from "../components/ui";
 import { Banner } from "../components/feedback";
 import { useState } from "react";
 import { Bars, Gauge, Lines, Scatter, Spark, type Dot } from "../components/charts";
@@ -29,23 +29,20 @@ export function Fitness() {
   return <Query q={useFitness()}>{d => {
     const ed = d.efficiency_detail;
     const t0 = ed.points[0] ? day(ed.points[0].date) : 0;
-    const efDots: Dot[] = ed.points.map(p => ({ x: day(p.date) - t0, y: p.v, color: "var(--accent)",
+    const efDots: Dot[] = ed.points.map((p, i) => ({ x: day(p.date) - t0, y: p.v, color: i === ed.points.length - 1 ? "var(--signal)" : "var(--text)",
       label: `${p.date}: ${p.v} · ${p.km} km at ${p.pace}/km, ${p.hr} bpm${p.temp != null ? `, ${p.temp} °C` : ""}` }));
     return (
       <div className="page">
         <PageHead title="Fitness" />
         <div className="grid">
-          {d.tiles.map(t => (
-            <Card key={t.key} label={t.label} span={3} aside={<span className="muted" title={t.hint} style={{ fontSize: "var(--fs-label)" }}>{t.unit}</span>}>
-              <div className="stat-value num">{t.value == null ? "—" : t.value.toFixed(1)}</div>
-              <span className="stat-sub">{t.word || signed(t.delta)}</span>
-              <Spark pts={t.series} />
-            </Card>
-          ))}
+          <div className="span-12"><Figures items={d.tiles.map(t => ({
+            k: <span title={t.hint}>{t.label}{t.unit ? ` · ${t.unit}` : ""}</span>,
+            v: t.value == null ? "—" : t.value.toFixed(1),
+            s: <>{t.word || signed(t.delta)}<Spark pts={t.series} /></> }))} /></div>
           <Card label="Fitness & fatigue · 6 months and the plan to race day" span={8}>
-            <Lines series={[{ pts: d.chart.ctl, color: "var(--accent)", label: "Fitness" },
-                            { pts: d.chart.atl, color: "var(--ph-build)", label: "Fatigue" },
-                            { pts: d.chart.plan, color: "var(--accent)", label: "Planned fitness", dashed: true },
+            <Lines series={[{ pts: d.chart.ctl, color: "var(--text)", label: "Fitness" },
+                            { pts: d.chart.atl, color: "var(--ph-base)", label: "Fatigue" },
+                            { pts: d.chart.plan, color: "var(--signal)", label: "Planned fitness", dashed: true },
                             { pts: d.chart.tsb, color: "", label: "Form", hidden: true },
                             { pts: d.chart.acwr, color: "", label: "Load ratio", hidden: true }]} />
             {d.chart.check && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
@@ -117,10 +114,10 @@ function Durability({ d }: { d: FitnessPage }) {
   const [cmp, setCmp] = useState<string | null>(m.default_compare);
   const set = (v: "chart" | "table") => { setView(v); try { localStorage.setItem(DUR_KEY, v); } catch { /* private window */ } };
   const cur = m.builds.find(b => b.current), other = m.builds.find(b => b.key === cmp);
-  const color = (b: { current: boolean; key: string }) => b.current ? "var(--accent)" : b.key === cmp ? "var(--ok)" : "var(--ph-rebase)";
+  const color = (b: { current: boolean; key: string }) => b.current ? "var(--signal)" : b.key === cmp ? "var(--text)" : "var(--ph-base)";
   const raceKey = new Set(m.builds.flatMap(b => b.runs.filter(r => r.race).map(r => `${r.km}|${r.pct}`)));
   const dots: Dot[] = [
-    ...dd.points.filter(p => !raceKey.has(`${p.km}|${p.pct}`)).map(p => ({ x: p.km, y: p.pct, color: "var(--muted)", label: `${p.date}: ${p.km} km, fade ${p.pct}%` })),
+    ...dd.points.filter(p => !raceKey.has(`${p.km}|${p.pct}`)).map(p => ({ x: p.km, y: p.pct, color: "var(--ph-base)", label: `${p.date}: ${p.km} km, fade ${p.pct}%` })),
     ...m.builds.filter(b => b.current || b.key === cmp).flatMap(b => b.runs.filter(r => r.pct != null).map(r => ({ x: r.km, y: r.pct as number,
       color: color(b), ring: r.race, label: `${b.label}${r.race ? " race" : ""}: ${r.km} km, fade ${r.pct}%` })))];
   const fitLine = (b?: typeof cur) => b?.fit ? [[m.min_km, b.fit.intercept + b.fit.slope * m.min_km], [42, b.fit.intercept + b.fit.slope * 42]] as [number, number][] : undefined;

@@ -31,7 +31,7 @@ function MarkerCard({ m }: { m: Marker }) {
         {m.state && <Pill tone={m.state === "ok" ? "ok" : "warn"}>{m.state}{refText(m) ? ` · range ${refText(m)}` : ""}</Pill>}
       </div>
       {pts.length > 1 ? <Lines height={120} band={m.ref} fmt={v => `${reading(v)} ${m.unit}`}
-                               series={[{ pts, color: m.state === "watch" ? "var(--warn)" : "var(--accent)", label: m.label }]} />
+                               series={[{ pts, color: m.state === "watch" ? "var(--warn)" : "var(--text)", label: m.label }]} />
         : <span className="muted">One reading so far.</span>}
       <span className="stat-sub">{pts.length === m.n ? `${m.n} readings` : `${pts.length} of ${m.n} readings`} · {dateShort(pts[0].date)} → {dateShort(m.date)}
         {m.delta != null ? ` · ${m.delta > 0 ? "+" : ""}${m.delta} in 30 days` : ""}{m.stale && m.stale_days != null ? ` · last reading ${m.stale_days} days ago` : ""}</span>

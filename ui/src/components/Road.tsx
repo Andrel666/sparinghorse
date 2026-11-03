@@ -13,7 +13,7 @@ export function Road({ road, phases, today, tuneUps = [], onPick }: { road: Plan
         {road.map((w, i) => [...w.flags.map(f => ({ ...f, tune: false })),
                              ...tuneUps.filter(t => t.date >= w.start && t.date < (road[i + 1]?.start ?? "9999")).map(t => ({ label: t.label, date: t.date, day: 3, tune: true }))]
           .map(f => <span key={f.date + f.label} className={`flagpin${f.tune ? " tune" : ""}`} title={`${f.label} · ${dateShort(f.date)}${f.tune ? " (tune-up)" : ""}`}
-                          style={{ left: `${((i + (f.day + 0.5) / 7) / road.length) * 100}%` }}>🏁</span>))}
+                          style={{ left: `${((i + (f.day + 0.5) / 7) / road.length) * 100}%` }}>{f.label}</span>))}
       </div>
       <div className="road" role="list" aria-label="Weekly distance through the plan">
         {road.map(w => (

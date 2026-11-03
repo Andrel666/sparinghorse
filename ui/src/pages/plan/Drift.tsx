@@ -81,25 +81,25 @@ export function DriftView({ race }: { race?: string }) {
           <Block title="Cumulative distance" note="The founding road against what you ran and what's now projected."
             fmt={v => `${dist(v).toFixed(0)} ${unit()}`}
             series={[{ pts: pts(d.distance?.initial, "cum"), color: "var(--muted)", label: "Original road", dashed: true },
-                     { pts: curDist.filter(x => x.kind === "actual").map(x => ({ date: x.date, v: x.cum })), color: "var(--accent)", label: "Run so far" },
-                     { pts: curDist.filter(x => x.kind !== "actual").map(x => ({ date: x.date, v: x.cum })), color: "var(--accent)", label: "Projected", dashed: true }]} />
+                     { pts: curDist.filter(x => x.kind === "actual").map(x => ({ date: x.date, v: x.cum })), color: "var(--text)", label: "Run so far" },
+                     { pts: curDist.filter(x => x.kind !== "actual").map(x => ({ date: x.date, v: x.cum })), color: "var(--text)", label: "Projected", dashed: true }]} />
           <Block title="Weekly training load · effort" note="TRIMP per week: founding plan, actual, and the road now." fmt={v => v.toFixed(0)}
             series={[{ pts: pts(d.effort?.initial, "trimp"), color: "var(--muted)", label: "Original", dashed: true },
-                     { pts: pts(d.effort?.actual, "trimp"), color: "var(--accent)", label: "Actual" },
-                     { pts: pts(d.effort?.current, "trimp"), color: "var(--ph-build)", label: "Now", dashed: true }]} />
+                     { pts: pts(d.effort?.actual, "trimp"), color: "var(--text)", label: "Actual" },
+                     { pts: pts(d.effort?.current, "trimp"), color: "var(--signal)", label: "Now", dashed: true }]} />
           <Card span={6} label="Fitness trajectory · CTL">
             <Lines height={180} series={[{ pts: pts(d.ctl?.initial, "ctl"), color: "var(--muted)", label: "Original", dashed: true },
-                     { pts: pts(d.ctl?.actual, "ctl"), color: "var(--accent)", label: "Actual" },
-                     { pts: pts(d.ctl?.current, "ctl"), color: "var(--ph-build)", label: "Now", dashed: true }]} />
+                     { pts: pts(d.ctl?.actual, "ctl"), color: "var(--text)", label: "Actual" },
+                     { pts: pts(d.ctl?.current, "ctl"), color: "var(--signal)", label: "Now", dashed: true }]} />
             <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
               {d.ctl_forecast_bias?.n ? `The weekly fitness forecast runs ${d.ctl_forecast_bias.direction} by ${d.ctl_forecast_bias.median_err_pct}% (${d.ctl_forecast_bias.n} settled).`
                 : "No weekly fitness forecast has settled yet."}
               <Help>Each week the engine forecasts end-of-week fitness; once the week is lived, the forecast is scored against what happened.</Help></span>
           </Card>
           <Block title="Projected race-day fitness" note="Each re-plan's projected fitness on race day." fmt={v => v.toFixed(0)}
-            series={[{ pts: (d.outcome || []).map(o => ({ date: o.date, v: o.ctl })), color: "var(--accent)", label: "Race-day CTL" }]} />
+            series={[{ pts: (d.outcome || []).map(o => ({ date: o.date, v: o.ctl })), color: "var(--text)", label: "Race-day CTL" }]} />
           {(d.finish_drift?.length || 0) > 0 && <Block title="Predicted finish · the ledger" note="Each re-plan's predicted finish with its 80 % band." fmt={hmm}
-            series={[{ pts: (d.finish_drift || []).map(f => ({ date: f.date, v: f.p50 })), color: "var(--accent)", label: "Median" },
+            series={[{ pts: (d.finish_drift || []).map(f => ({ date: f.date, v: f.p50 })), color: "var(--text)", label: "Median" },
                      { pts: (d.finish_drift || []).map(f => ({ date: f.date, v: f.lo })), color: "var(--muted)", label: "Fast end", dashed: true },
                      { pts: (d.finish_drift || []).map(f => ({ date: f.date, v: f.hi })), color: "var(--muted)", label: "Slow end", dashed: true }]} />}
         </> : cq.isPending ? <Card><span className="muted">Building the comparison…</span></Card>
@@ -107,14 +107,14 @@ export function DriftView({ race }: { race?: string }) {
           <Block title="Cumulative distance" note={`${NAME[cf.vs]} is your road now; ${NAME[cf.regime]} is ${cf.regime === "assertive" ? "what earning it unlocks" : "the floor if the gate re-closes"}.`}
             fmt={v => `${dist(v).toFixed(0)} ${unit()}`}
             series={[{ pts: curDist.filter(x => x.kind === "actual").map(x => ({ date: x.date, v: x.cum })), color: "var(--text)", label: "Run" },
-                     { pts: curDist.map(x => ({ date: x.date, v: x.cum })), color: "var(--accent)", label: `${NAME[cf.vs]} — now` },
-                     { pts: pts(cf.distance, "cum"), color: "var(--ph-build)", label: NAME[cf.regime], dashed: true }]} />
+                     { pts: curDist.map(x => ({ date: x.date, v: x.cum })), color: "var(--text)", label: `${NAME[cf.vs]} — now` },
+                     { pts: pts(cf.distance, "cum"), color: "var(--signal)", label: NAME[cf.regime], dashed: true }]} />
           <Block title="Weekly training load" note="TRIMP per week under each posture." fmt={v => v.toFixed(0)}
-            series={[{ pts: pts(d.effort?.current, "trimp"), color: "var(--accent)", label: NAME[cf.vs] },
-                     { pts: pts(cf.effort, "trimp"), color: "var(--ph-build)", label: NAME[cf.regime], dashed: true }]} />
+            series={[{ pts: pts(d.effort?.current, "trimp"), color: "var(--text)", label: NAME[cf.vs] },
+                     { pts: pts(cf.effort, "trimp"), color: "var(--signal)", label: NAME[cf.regime], dashed: true }]} />
           <Block title="Fitness · CTL" note="Projected fitness under each posture."
-            series={[{ pts: pts(d.ctl?.current, "ctl"), color: "var(--accent)", label: NAME[cf.vs] },
-                     { pts: pts(cf.ctl, "ctl"), color: "var(--ph-build)", label: NAME[cf.regime], dashed: true }]} />
+            series={[{ pts: pts(d.ctl?.current, "ctl"), color: "var(--text)", label: NAME[cf.vs] },
+                     { pts: pts(cf.ctl, "ctl"), color: "var(--signal)", label: NAME[cf.regime], dashed: true }]} />
           <Card span={6} label="Projected race outcome">
             <div className="list">
               <ListItem k={`${NAME[cf.vs]} (now)`}>peak CTL {cf.outcome.now_peak_ctl} · finish {cf.outcome.now_finish}</ListItem>

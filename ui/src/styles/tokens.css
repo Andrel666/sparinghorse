@@ -1,64 +1,63 @@
-/* The new UI's design tokens — the ONE place colours, type, spacing and shape are defined.
-   Components read only these variables. Light is the base; dark redefines the same names.
-   Floor: no text below --fs-label (13px). */
+/* The design tokens — the ONE place colours, type, spacing and shape are defined (see ui/DESIGN.md).
+   Swiss / data-dense: black and white, one signal colour, hairline rules, type as hierarchy.
+   Light is the base; dark redefines the same names. Floor: no text below --fs-label (13px). */
 :root {
-  /* colour — neutrals lean slightly blue, one accent for actions, state colours only for state */
-  --bg: #f4f6f9;
-  --surface: #ffffff;
-  --surface-2: #eef1f5;
-  --line: #dde2ea;
-  --text: #121620;
-  --muted: #586174;
-  --accent: #2b59c3;
-  --accent-soft: #e6edfb;
+  --bg: #fafaf9;
+  --surface: #ffffff;          /* floating things only: drawer, dialog, toast, menu */
+  --surface-2: #f1f1ee;        /* tracks, meters, hover */
+  --line: #e2e2de;             /* hairlines */
+  --rule: #0b0b0b;             /* section rules */
+  --text: #0b0b0b;
+  --muted: #6a6a66;
+  --signal: #ff4f00;           /* now / selected / primary data — used sparingly */
+  --signal-soft: #ffe7dc;
+  --signal-ink: #c93a00;       /* signal for small text: 4.9:1 on --bg (AA) */
+  --accent: var(--signal);     /* charts and "current" read this name */
+  --accent-soft: var(--signal-soft);
   --on-accent: #ffffff;
-  --ok: #217a47;
-  --ok-soft: #e3f3ea;
-  --warn: #946200;
-  --warn-soft: #fbf0d9;
-  --bad: #b42531;
-  --bad-soft: #fbe6e8;
-  /* training phases — the same four hues everywhere (road, calendar, week) */
-  --ph-rebase: #8a94a6;
-  --ph-base: #4f86e8;
-  --ph-build: #c95a93;
-  --ph-peak: #c08a2d;
-  --ph-taper: #3f9672;
+  --ok: #0d7a3d;   --ok-soft: #e4f2ea;
+  --warn: #a86400; --warn-soft: #f8ecd8;
+  --bad: #cf1f1f;  --bad-soft: #fae3e3;
+  /* training phases: a grey ramp, peak darkest; the current week is signal */
+  --ph-rebase: #d4d4cf;
+  --ph-base: #b3b3ad;
+  --ph-build: #85857f;
+  --ph-peak: #4a4a46;
+  --ph-taper: #9c9c96;
 
-  /* type — one sans family, a mono for aligned numbers */
-  --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --fs-display: 36px;
-  --fs-title: 24px;
-  --fs-heading: 18px;
-  --fs-body: 16px;
+  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --display: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --fs-display: 56px;
+  --fs-title: 30px;
+  --fs-heading: 17px;
+  --fs-body: 15px;
   --fs-small: 14px;
   --fs-label: 13px;
 
-  /* space and shape */
-  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
-  --radius: 12px;
-  --radius-sm: 8px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.06);
-  --nav-w: 224px;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 40px;
+  --radius: 2px;
+  --radius-sm: 2px;
+  --shadow: none;
+  --float-shadow: 0 12px 40px rgb(0 0 0 / .14);
   --content-max: 1440px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0e1116; --surface: #161a22; --surface-2: #1d222c; --line: #2b313d;
-    --text: #e8ebf1; --muted: #9aa3b4; --accent: #84a6ff; --accent-soft: #1e2a47; --on-accent: #0e1116;
-    --ok: #6fd49a; --ok-soft: #15301f; --warn: #f0c25c; --warn-soft: #33280f; --bad: #ff8b95; --bad-soft: #3a191d;
-    --ph-rebase: #8d96a8; --ph-base: #6d9cf0; --ph-build: #df7aae; --ph-peak: #d9a64b; --ph-taper: #5fb58f;
-    --shadow: none;
+    --bg: #0b0b0b; --surface: #161615; --surface-2: #1e1e1c; --line: #2a2a28; --rule: #f2f2ef;
+    --text: #f2f2ef; --muted: #9a9a94; --signal: #ff6a2b; --signal-soft: #3a1a0c; --signal-ink: #ff7a3d; --on-accent: #0b0b0b;
+    --ok: #4fcf86; --ok-soft: #10281a; --warn: #f0b04a; --warn-soft: #2f230d; --bad: #ff6b6b; --bad-soft: #351414;
+    --ph-rebase: #3a3a37; --ph-base: #55554f; --ph-build: #7e7e77; --ph-peak: #c8c8c1; --ph-taper: #66665f;
+    --float-shadow: 0 12px 40px rgb(0 0 0 / .5);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0e1116; --surface: #161a22; --surface-2: #1d222c; --line: #2b313d;
-  --text: #e8ebf1; --muted: #9aa3b4; --accent: #84a6ff; --accent-soft: #1e2a47; --on-accent: #0e1116;
-  --ok: #6fd49a; --ok-soft: #15301f; --warn: #f0c25c; --warn-soft: #33280f; --bad: #ff8b95; --bad-soft: #3a191d;
-  --ph-rebase: #8d96a8; --ph-base: #6d9cf0; --ph-build: #df7aae; --ph-peak: #d9a64b; --ph-taper: #5fb58f;
-  --shadow: none;
+  --bg: #0b0b0b; --surface: #161615; --surface-2: #1e1e1c; --line: #2a2a28; --rule: #f2f2ef;
+  --text: #f2f2ef; --muted: #9a9a94; --signal: #ff6a2b; --signal-soft: #3a1a0c; --signal-ink: #ff7a3d; --on-accent: #0b0b0b;
+  --ok: #4fcf86; --ok-soft: #10281a; --warn: #f0b04a; --warn-soft: #2f230d; --bad: #ff6b6b; --bad-soft: #351414;
+  --ph-rebase: #3a3a37; --ph-base: #55554f; --ph-build: #7e7e77; --ph-peak: #c8c8c1; --ph-taper: #66665f;
+  --float-shadow: 0 12px 40px rgb(0 0 0 / .5);
   color-scheme: dark;
 }

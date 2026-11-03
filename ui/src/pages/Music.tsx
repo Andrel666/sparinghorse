@@ -243,7 +243,7 @@ function MusicSettings() {
         </div>
         {jobLine && <span className="muted">{jobLine}</span>}
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${bands.length || 1}, 1fr)`, gap: 3, alignItems: "end", height: 48 }}>
-          {bands.map(([k, v]) => <div key={k} title={`${k} bpm: ${v} tracks`} style={{ height: `${Math.max(4, (v / mx) * 100)}%`, background: "color-mix(in oklab, var(--accent), transparent 50%)", borderRadius: "3px 3px 0 0" }} />)}</div>
+          {bands.map(([k, v]) => <div key={k} title={`${k} bpm: ${v} tracks`} style={{ height: `${Math.max(4, (v / mx) * 100)}%`, background: "var(--ph-base)" }} />)}</div>
         <span className="muted" style={{ fontSize: "var(--fs-label)" }}>Tracks per 5-bpm band, 150–189{lib.unresolved_scrobbles ? ` · ${lib.unresolved_scrobbles} scrobbles unmatched` : ""}{lib.feature_misses ? ` · ${lib.feature_misses} without a tempo` : ""}</span>
         {srcRows.length > 0 && <Table cols={[{ head: "Source", cell: ([k]: [string, A]) => SRC[k] || k }, { head: "Tempo/tracks", cell: ([, v]) => `${v.with_tempo}/${v.tracks}`, num: true },
           { head: "Listed", cell: ([, v]) => v.served, num: true }, { head: "Read", cell: ([, v]) => v.read, num: true },
