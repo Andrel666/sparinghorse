@@ -22269,6 +22269,218 @@ def _stc_sync_refresh():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_mcp_activity_fallback():
+    """§MCPA (fork) — a token refused on GET /activity (403) syncs through the Runalyze MCP instead:
+    (a) the 403 routes to the MCP and every activity lands, a window that fills the list limit is
+    split; (b) the MCP record maps onto the REST shape (sport object, hr_avg/hr_max, use_vo2max,
+    race_result in metres that `_tagged_race` reads, bulky streams dropped); (c) once the full walk
+    has finished, an incremental sync re-details only recent runs; (d) a race tagged later on an
+    old run is patched without a detail call; (e) a non-403 error, or SH_ACTIVITY_SOURCE=rest,
+    still raises; (f) a detail that failed keeps the full walk open, and the next sync fetches it;
+    (g) an import cut off by the network resumes BELOW the oldest point it reached, not from today;
+    (h) a dropped connection is retried; (i) no write transaction is held across an MCP call;
+    (j) a race unticked in Runalyze is untagged locally (never on an unreadable race list).
+    Mocks fetch_activities_page and mcp_call (no network)."""
+    import json
+    import sqlite3 as _sq
+    from datetime import date as _d
+    today = _d(2026, 3, 10)
+    acts = {   # id → MCP detail record
+        11: {"id": 11, "title": "Old easy", "sport": "Running", "date": "2024-05-01",
+             "datetime": "2024-05-01T07:00:00+03:00", "distance": 8.0, "duration": 2900,
+             "average_heart_rate": 140, "maximum_heart_rate": 150, "trimp": 70, "vo2max": None,
+             "streams": {"time": [0, 1]}, "tags": []},
+        12: {"id": 12, "title": "Half", "sport": "Running", "date": "2026-02-27",
+             "datetime": "2026-02-27T06:20:51+02:00", "distance": 21.3, "duration": 8780,
+             "average_heart_rate": 170, "maximum_heart_rate": 182, "trimp": 260, "vo2max": 40.1,
+             "streams": None, "rr_intervals": [800, 810], "tags": []},
+        13: {"id": 13, "title": "Shakeout", "sport": "Running", "date": "2026-03-05",
+             "datetime": "2026-03-05T18:00:00+02:00", "distance": 5.0, "duration": 1800,
+             "average_heart_rate": 135, "maximum_heart_rate": 145, "trimp": 40, "vo2max": 38.0},
+        14: {"id": 14, "title": "Tennis", "sport": "Tennis", "date": "2026-03-06",
+             "datetime": "2026-03-06T10:00:00+02:00", "distance": 0, "duration": 3600,
+             "average_heart_rate": 120, "maximum_heart_rate": 160, "trimp": 50},
+    }
+    races = [{"activity_id": 12, "name": "Tel Aviv", "date": "2026-02-27", "official_distance": 21.1,
+              "official_time": 8767, "officially_measured": False, "priority_level": 0,
+              "status": "Finished", "is_funrace": False}]
+    calls = {"list": 0, "detail": [], "races": 0, "windows": []}
+    fail_detail = set()
+    net = {"drop_list_before": None, "drops": 0}   # (g)/(h): drop connections on chosen calls
+    lock = {"db": None, "held": 0}                  # (i): a write transaction open across a network call
+
+    def fake_mcp(tool, args):
+        if lock["db"] is not None and lock["db"].in_transaction:
+            lock["held"] += 1
+        if tool == "get_activities":
+            calls["list"] += 1
+            s, e = args["start_date"], args["end_date"]
+            calls["windows"].append((s, e))
+            if net["drop_list_before"] and e < net["drop_list_before"]:
+                raise S.requests.ConnectionError("Connection reset by peer")
+            if net["drops"]:
+                net["drops"] -= 1
+                raise S.requests.ConnectionError("Connection reset by peer")
+            items = [{k: a[k] for k in ("id", "date", "sport", "distance")}
+                     for a in acts.values() if s <= a["date"] <= e]
+            return {"items": sorted(items, key=lambda x: x["date"], reverse=True)[:args["limit"]]}
+        if tool == "get_activity_details":
+            calls["detail"].append(args["activity_id"])
+            if args["activity_id"] in fail_detail:
+                raise S.RunalyzeError("MCP get_activity_details: boom")
+            return {"activity": dict(acts[args["activity_id"]])}
+        if tool == "get_historical_races":
+            calls["races"] += 1
+            return {"items": [dict(r) for r in races]}
+        raise AssertionError(tool)
+
+    def denied(page=1):
+        raise S.RunalyzeError('HTTP 403 on activity: \'{"detail":"Access Denied."}\'')
+
+    def mk():
+        m = _sq.connect(":memory:"); m.row_factory = _sq.Row; m.executescript(S.SCHEMA); return m
+
+    saved = {k: vars(S).get(k) for k in ("fetch_activities_page", "mcp_call", "PAGE_DELAY",
+                                          "ACTIVITY_SOURCE", "MCPA_LIST_LIMIT", "MCPA_FLOOR",
+                                          "MCPA_RETRIES")}
+    real_mcpa = S.sync_activities_mcp
+    fails = []
+    mem = mk()
+    try:
+        vars(S).update(fetch_activities_page=denied, mcp_call=fake_mcp, PAGE_DELAY=0,
+                       ACTIVITY_SOURCE="auto", MCPA_LIST_LIMIT=2, MCPA_FLOOR=_d(2024, 1, 1),
+                       MCPA_RETRIES=(0, 0))
+        vars(S)["sync_activities_mcp"] = lambda db, backfill=False: real_mcpa(db, backfill, today=today)
+        # (a) 403 → MCP; limit 2 with 3 activities in the newest window forces a split
+        lock["db"] = mem
+        r = S.sync_activities(mem)
+        lock["db"] = None
+        # (i) the import never holds the write lock while it waits on the network: a window of detail
+        # pulls takes minutes, and the page's own writes would fail with "database is locked"
+        if lock["held"]:
+            fails.append(f"(i) a write transaction was open across {lock['held']} MCP call(s)")
+        ids = {x["id"] for x in mem.execute("SELECT id FROM activities")}
+        if r.get("source") != "mcp" or ids != {11, 12, 13, 14}:
+            fails.append(f"(a) 403 did not sync everything through the MCP: {r}, ids {sorted(ids)}")
+        # (b) mapping onto the REST shape
+        row = mem.execute("SELECT * FROM activities WHERE id=12").fetchone()
+        a = json.loads(row["raw"])
+        if (row["sport"], row["hr_avg"], row["hr_max"], row["date"]) != ("Running", 170, 182, "2026-02-27"):
+            fails.append(f"(b) columns off: {dict(row)}")
+        if a.get("sport") != {"id": None, "name": "Running"} or a.get("use_vo2max") is not True:
+            fails.append(f"(b) sport/use_vo2max off: {a.get('sport')}, {a.get('use_vo2max')}")
+        if "rr_intervals" in a or "streams" in a:
+            fails.append("(b) bulky streams/rr_intervals kept in raw")
+        if json.loads(mem.execute("SELECT raw FROM activities WHERE id=13").fetchone()[0]).get("race_result"):
+            fails.append("(b) an untagged run got a race_result")
+        tr = E._tagged_race(row["raw"], row["distance"])
+        if not tr or tr[0] != "half" or (a.get("race_result") or {}).get("official_distance") != 21100.0:
+            fails.append(f"(b) race tag not read as a half: {tr}, {a.get('race_result')}")
+        if "Running" not in str(S._activity_payload(mem, a).get("sport")):
+            fails.append("(b) the activity tile can't read the mapped sport")
+        if S.get_meta(mem, "mcpa_full_done") != "1":
+            fails.append("(a) a clean full walk did not mark itself done")
+        # (c) incremental: only the recent runs are re-detailed, nothing new
+        calls["detail"].clear()
+        r = S.sync_activities(mem)
+        if r.get("added") != 0 or sorted(calls["detail"]) != [12, 13, 14]:   # 14 days back: not 11
+            fails.append(f"(c) incremental re-detailed old runs: {calls['detail']}, {r}")
+        # (d) a race tagged later on the old run → patched, no detail call for it
+        races.append({"activity_id": 11, "name": "Spring 10k", "date": "2024-05-01",
+                      "official_distance": 10.0, "official_time": 2850, "status": "Finished"})
+        calls["detail"].clear()
+        S.sync_activities(mem)
+        a11 = json.loads(mem.execute("SELECT raw FROM activities WHERE id=11").fetchone()[0])
+        if (a11.get("race_result") or {}).get("official_distance") != 10000.0 or 11 in calls["detail"]:
+            fails.append(f"(d) late race tag not patched cheaply: {a11.get('race_result')}, {calls['detail']}")
+        # (j) a race UNticked in Runalyze loses its race_result on the next sync; an unreadable race
+        # list untags nothing
+        saved_races = list(races)
+        races[:] = [r for r in races if r["activity_id"] != 11]
+        S.sync_activities(mem)
+        if json.loads(mem.execute("SELECT raw FROM activities WHERE id=11").fetchone()[0]).get("race_result"):
+            fails.append("(j) an unticked race kept its race_result")
+        if not json.loads(mem.execute("SELECT raw FROM activities WHERE id=12").fetchone()[0]).get("race_result"):
+            fails.append("(j) untagging removed a race still in the list")
+        races[:] = saved_races
+        S.sync_activities(mem)                         # 11 tagged again
+        real_fake = fake_mcp
+        def fake_no_races(tool, args):
+            if tool == "get_historical_races":
+                raise S.RunalyzeError("MCP get_historical_races: boom")
+            return real_fake(tool, args)
+        vars(S)["mcp_call"] = fake_no_races
+        S.sync_activities(mem)
+        vars(S)["mcp_call"] = fake_mcp
+        if not json.loads(mem.execute("SELECT raw FROM activities WHERE id=11").fetchone()[0]).get("race_result"):
+            fails.append("(j) an unreadable race list untagged races")
+        # (e) other errors and the rest-only setting still raise
+        for src, err in (("auto", "HTTP 500 on activity: 'oops'"), ("rest", "HTTP 403 on activity: 'x'")):
+            vars(S)["ACTIVITY_SOURCE"] = src
+            vars(S)["fetch_activities_page"] = lambda page=1, _e=err: (_ for _ in ()).throw(S.RunalyzeError(_e))
+            try:
+                S.sync_activities(mk())
+                fails.append(f"(e) {src} / {err[:8]} did not raise")
+            except S.RunalyzeError:
+                pass
+        vars(S).update(ACTIVITY_SOURCE="auto", fetch_activities_page=denied)
+        # (f) a failed detail keeps the full walk open; the next sync picks it up
+        m2 = mk()
+        fail_detail.add(11)
+        r = S.sync_activities(m2)
+        if r.get("failed") != 1 or S.get_meta(m2, "mcpa_full_done") == "1":
+            fails.append(f"(f) a failed detail closed the full walk: {r}")
+        fail_detail.clear()
+        S.sync_activities(m2)
+        if not m2.execute("SELECT 1 FROM activities WHERE id=11").fetchone():
+            fails.append("(f) the resumed walk did not fetch the missed activity")
+        if S.get_meta(m2, "mcpa_full_done") != "1":
+            fails.append("(f) the resumed walk did not mark itself done")
+        m2.close()
+        # (g) a first import cut off by the network keeps its progress, and the next sync RESUMES below
+        # the oldest point reached — it lists only the recent stretch above it, not the imported years
+        m3 = mk()
+        net["drop_list_before"] = "2025-01-01"           # every window older than 2025 drops
+        try:
+            S.sync_activities(m3)
+            fails.append("(g) a connection that never comes back did not fail the sync")
+        except S.RunalyzeError:
+            pass
+        net["drop_list_before"] = None
+        got = {x["id"] for x in m3.execute("SELECT id FROM activities")}
+        if got != {12, 13, 14} or S.get_meta(m3, "mcpa_full_done") == "1":
+            fails.append(f"(g) progress before the cut not kept / walk closed: {sorted(got)}")
+        reached = S.get_meta(m3, "mcpa_walked_to")
+        calls["windows"].clear()
+        S.sync_activities(m3)
+        above = [w for w in calls["windows"] if w[1] >= (reached or "9") and w[0] < "2026-02-01"]
+        if above:
+            fails.append(f"(g) the resume re-listed imported history above {reached}: {above}")
+        if 11 not in {x["id"] for x in m3.execute("SELECT id FROM activities")} \
+                or S.get_meta(m3, "mcpa_full_done") != "1":
+            fails.append("(g) the resumed import did not reach the oldest run / close the walk")
+        m3.close()
+        # (h) a dropped connection is retried, not fatal
+        m4 = mk()
+        net["drops"] = 2
+        r = S.sync_activities(m4)
+        if {x["id"] for x in m4.execute("SELECT id FROM activities")} != {11, 12, 13, 14}:
+            fails.append(f"(h) two dropped connections were not retried through: {r}")
+        net["drops"] = 0
+        m4.close()
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        vars(S).update({k: v for k, v in saved.items() if v is not None})
+        vars(S)["sync_activities_mcp"] = real_mcpa
+    mem.close()
+    return _st("det", "mcp-activity-fallback",
+               "a token refused on the REST activity list (403) syncs through the Runalyze MCP: full "
+               "history (split windows), REST-shaped rows incl. race tags, cheap incremental, late race "
+               "tags patched, other errors still raise, an interrupted import resumes",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_rebase_runway_clamp():
     """§PER1 F1 — the re-base is clamped to the runway so phases never overrun the first race (a taper
     scheduled AFTER race day, leaving the runner under-tapered). Ample runway ⇒ re-base stays full (a
@@ -24432,7 +24644,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),
-                 lambda: _stc_rebase_runway_clamp(), lambda: _stc_sync_refresh(),
+                 lambda: _stc_rebase_runway_clamp(), lambda: _stc_sync_refresh(), lambda: _stc_mcp_activity_fallback(),
                  lambda: _stc_block_generator(), lambda: _stc_base_phase(),
                  lambda: _stc_caution_baseline(), lambda: _stc_ramp_rate(),
                  lambda: _stc_soft_ctl_floor(), lambda: _stc_prog_floor(),

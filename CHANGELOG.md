@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Activities through the Runalyze MCP when the REST list is refused** (`SH_ACTIVITY_SOURCE`, default
+  `auto`). A token that reads statistics and metrics but gets 403 on `GET /activity` now syncs: activities
+  are listed by date window through the MCP (`get_activities`, a window that fills the 200 limit is split),
+  each new one is detailed (`get_activity_details`) and mapped onto the REST shape (sport object,
+  `hr_avg`/`hr_max`, `date_time`, `use_vo2max` from a present VO2max), and `get_historical_races` supplies
+  `race_result` (km → m) so race tags work as on REST; a tag added later is patched without a detail call.
+  The first walk resumes after an interruption (`mcpa_full_done` in meta); later syncs re-detail the last 14
+  days. `gap` has no MCP counterpart (plain pace is the existing fallback). Covered by
+  `det/mcp-activity-fallback` (mutation-tested) and a live sync against a refused token.
 - **Calibrate the engine to your history** (Settings → Calibrate to my history, or
   `python SparingHorse.py calibrate [--approve|--revert] [--injuries FILE] [--json FILE]`). New module
   `sh_calibrate.py` re-runs the engine's own calibrations on the database's runs: the TRIMP price of an easy
