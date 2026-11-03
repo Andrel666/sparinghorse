@@ -22276,7 +22276,9 @@ def _stc_mcp_activity_fallback():
     race_result in metres that `_tagged_race` reads, bulky streams dropped); (c) once the full walk
     has finished, an incremental sync re-details only recent runs; (d) a race tagged later on an
     old run is patched without a detail call; (e) a non-403 error, or SH_ACTIVITY_SOURCE=rest,
-    still raises; (f) a detail that failed keeps the full walk open, and the next sync fetches it.
+    still raises; (f) a detail that failed keeps the full walk open, and the next sync fetches it;
+    (g) an import cut off by the network resumes BELOW the oldest point it reached, not from today;
+    (h) a dropped connection is retried.
     Mocks fetch_activities_page and mcp_call (no network)."""
     import json
     import sqlite3 as _sq
@@ -22301,13 +22303,20 @@ def _stc_mcp_activity_fallback():
     races = [{"activity_id": 12, "name": "Tel Aviv", "date": "2026-02-27", "official_distance": 21.1,
               "official_time": 8767, "officially_measured": False, "priority_level": 0,
               "status": "Finished", "is_funrace": False}]
-    calls = {"list": 0, "detail": [], "races": 0}
+    calls = {"list": 0, "detail": [], "races": 0, "windows": []}
     fail_detail = set()
+    net = {"drop_list_before": None, "drops": 0}   # (g)/(h): drop connections on chosen calls
 
     def fake_mcp(tool, args):
         if tool == "get_activities":
             calls["list"] += 1
             s, e = args["start_date"], args["end_date"]
+            calls["windows"].append((s, e))
+            if net["drop_list_before"] and e < net["drop_list_before"]:
+                raise S.requests.ConnectionError("Connection reset by peer")
+            if net["drops"]:
+                net["drops"] -= 1
+                raise S.requests.ConnectionError("Connection reset by peer")
             items = [{k: a[k] for k in ("id", "date", "sport", "distance")}
                      for a in acts.values() if s <= a["date"] <= e]
             return {"items": sorted(items, key=lambda x: x["date"], reverse=True)[:args["limit"]]}
@@ -22328,13 +22337,15 @@ def _stc_mcp_activity_fallback():
         m = _sq.connect(":memory:"); m.row_factory = _sq.Row; m.executescript(S.SCHEMA); return m
 
     saved = {k: vars(S).get(k) for k in ("fetch_activities_page", "mcp_call", "PAGE_DELAY",
-                                          "ACTIVITY_SOURCE", "MCPA_LIST_LIMIT", "MCPA_FLOOR")}
+                                          "ACTIVITY_SOURCE", "MCPA_LIST_LIMIT", "MCPA_FLOOR",
+                                          "MCPA_RETRIES")}
     real_mcpa = S.sync_activities_mcp
     fails = []
     mem = mk()
     try:
         vars(S).update(fetch_activities_page=denied, mcp_call=fake_mcp, PAGE_DELAY=0,
-                       ACTIVITY_SOURCE="auto", MCPA_LIST_LIMIT=2, MCPA_FLOOR=_d(2024, 1, 1))
+                       ACTIVITY_SOURCE="auto", MCPA_LIST_LIMIT=2, MCPA_FLOOR=_d(2024, 1, 1),
+                       MCPA_RETRIES=(0, 0))
         vars(S)["sync_activities_mcp"] = lambda db, backfill=False: real_mcpa(db, backfill, today=today)
         # (a) 403 → MCP; limit 2 with 3 activities in the newest window forces a split
         r = S.sync_activities(mem)
@@ -22395,6 +22406,37 @@ def _stc_mcp_activity_fallback():
         if S.get_meta(m2, "mcpa_full_done") != "1":
             fails.append("(f) the resumed walk did not mark itself done")
         m2.close()
+        # (g) a first import cut off by the network keeps its progress, and the next sync RESUMES below
+        # the oldest point reached — it lists only the recent stretch above it, not the imported years
+        m3 = mk()
+        net["drop_list_before"] = "2025-01-01"           # every window older than 2025 drops
+        try:
+            S.sync_activities(m3)
+            fails.append("(g) a connection that never comes back did not fail the sync")
+        except S.RunalyzeError:
+            pass
+        net["drop_list_before"] = None
+        got = {x["id"] for x in m3.execute("SELECT id FROM activities")}
+        if got != {12, 13, 14} or S.get_meta(m3, "mcpa_full_done") == "1":
+            fails.append(f"(g) progress before the cut not kept / walk closed: {sorted(got)}")
+        reached = S.get_meta(m3, "mcpa_walked_to")
+        calls["windows"].clear()
+        S.sync_activities(m3)
+        above = [w for w in calls["windows"] if w[1] >= (reached or "9") and w[0] < "2026-02-01"]
+        if above:
+            fails.append(f"(g) the resume re-listed imported history above {reached}: {above}")
+        if 11 not in {x["id"] for x in m3.execute("SELECT id FROM activities")} \
+                or S.get_meta(m3, "mcpa_full_done") != "1":
+            fails.append("(g) the resumed import did not reach the oldest run / close the walk")
+        m3.close()
+        # (h) a dropped connection is retried, not fatal
+        m4 = mk()
+        net["drops"] = 2
+        r = S.sync_activities(m4)
+        if {x["id"] for x in m4.execute("SELECT id FROM activities")} != {11, 12, 13, 14}:
+            fails.append(f"(h) two dropped connections were not retried through: {r}")
+        net["drops"] = 0
+        m4.close()
     except Exception as e:
         fails.append(f"raised {type(e).__name__}: {e}")
     finally:
