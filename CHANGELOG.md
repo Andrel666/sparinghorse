@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **New UI: every page.** Plan (the road coloured by phase; Week with days, sessions, the limits that size it
+  and paces; Month; Race day; History, each day opening in a drawer), Runs (calendar with totals; a run's
+  numbers, read-back, verdict and map), Body (markers grouped with their state against the reference range;
+  injury history), Coach (full-page chat) and Settings (typed pickers and switches through the server's own
+  validation; calibration). New endpoints `/api/ui/{plan,run/<id>,body,settings}` (private) build on
+  `block_log`, the plan's limits, `training_zones`, the activity tile, `MARKERS` and `SETTINGS_SPEC`;
+  existing backend-decided endpoints (plan calendar, race plan, plan drift, coach, calibration) are read as
+  they are. Shared tabs, drawer, one month grid (plan and run calendars), road and session components.
+  Pages load on demand. Installable (manifest, the server's icons). `ui/Dockerfile` (Node build → nginx) and a
+  `sparinghorse-ui` compose service on 5180. `det/ui-pages`, mutation-tested.
 - **New UI: the Fitness page** — Classic's dashboard numbers on one page: VO₂max, fitness, fatigue and form
   tiles with 6-month sparklines and the 4-week change; fitness & fatigue over 6 months; the load ratio on a
   gauge with its meaning and the 7-day ramp; 26 weeks of distance; zones; the easy-run check per run;

@@ -16335,6 +16335,87 @@ def _stc_ui_fitness():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_ui_pages():
+    """Fork §UI — the Plan, Run, Body and Settings endpoints: (a) all four private; (b) Plan on a race
+    fixture: the road has a bar per plan week, the phase band's weeks add up to it, `day=` selects the
+    week holding that day, the held limit is the week's own binding limit, each session carries the
+    zones-table target; (c) Run: the stats are the activity tile's numbers; (d) marker_state reads a
+    reading against its band by the marker's good direction; (e) Settings: fixed-answer settings are
+    typed choices, and a stored 'Sunday' selects the 'sun' choice."""
+    import json
+    from datetime import date as _d, timedelta as _td
+    fails = []
+    U = UIAPI
+    saved_ro, saved_auth = S.READONLY, S._AUTH_ACTIVE
+    # (d) pure
+    cases = [((5, [10, 20], "band"), "watch"), ((15, [10, 20], "band"), "ok"), ((25, [10, 20], "band"), "watch"),
+             ((60, [55, None], "high"), "ok"), ((50, [55, None], "high"), "watch"), ((130, [None, 115], "low"), "watch"),
+             ((100, [None, 115], "low"), "ok"), ((40, [None, None], "high"), None)]
+    for (v, ref, good), want in cases:
+        if U.marker_state(v, ref, good) != want:
+            fails.append(f"(d) marker_state({v}, {ref}, {good}) != {want}")
+    fx, today = _race_fixture_db("half", today=_d.today())
+    try:
+        plan = S.generate_plan(fx, today=today)
+        fx.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)",
+                   (today.isoformat() + "T06:00:00", today.isoformat(), "{}", json.dumps(plan)))
+        fx.commit()
+        pw = E._plan_all_weeks(plan)
+        p = U.plan_page(S, fx)
+        if len(p["road"]) != len(pw) or sum(x["weeks"] for x in p["phases"]) != len(pw):
+            fails.append(f"(b) road/phases do not cover the plan: {len(p['road'])}, {sum(x['weeks'] for x in p['phases'])} vs {len(pw)}")
+        later = pw[min(3, len(pw) - 1)]
+        mid = (S._date(later["start"]) + _td(days=3)).isoformat()
+        p2 = U.plan_page(S, fx, day=mid)
+        if p2["week"]["start"] != later["start"]:
+            fails.append(f"(b) day={mid} selected {p2['week']['start']}, not {later['start']}")
+        bk = (later.get("limits") or {}).get("binding")
+        held = [x["key"] for x in p2["week"]["limits"] if x["holds"]]
+        if bk and held != [bk]:
+            fails.append(f"(b) holds-the-week {held} is not the binding limit {bk}")
+        z = S.training_zones(fx)
+        for x in p2["week"]["sessions"]:
+            if x["kind"] in ("easy", "long") and x["target"] != U.session_target(S, fx, x["kind"], z):
+                fails.append(f"(b) {x['date']} target is not the zones table's"); break
+        # (c) a run
+        aid = fx.execute("SELECT id FROM activities WHERE distance>0 ORDER BY date DESC LIMIT 1").fetchone()["id"]
+        r = U.run_page(S, fx, aid)
+        tile = S._activity_payload(fx, U.activity_dict(fx, aid))
+        dist = next((x["v"] for x in r.get("stats", []) if x["k"] == "Distance"), None)
+        if not r.get("ok") or dist != f"{tile['distance']:.2f} km":
+            fails.append(f"(c) run stats are not the activity tile's: {dist} vs {tile.get('distance')}")
+        if U.run_page(S, fx, 999999999).get("ok"):
+            fails.append("(c) a missing run answered ok")
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        fx.close()
+    try:
+        with S.app.test_request_context("/api/ui/settings"):
+            st = U.settings_page(S, S.get_db())
+            f = {x["key"]: x for g in st["groups"] for x in g["fields"]}
+            for k in U.CHOICES:
+                if k in f and f[k]["kind"] != "choice":
+                    fails.append(f"(e) {k} is not a typed choice")
+        fake = {"kind": "choice", "choices": [{"v": "", "t": "Monday"}, {"v": "sun", "t": "Sunday"}], "value": "Sunday"}
+        vals = [c["v"] for c in fake["choices"]]
+        if next((v for v in vals if v and fake["value"].strip().lower().startswith(v)), fake["value"]) != "sun":
+            fails.append("(e) the stored-value match rule changed")
+        S.READONLY, S._AUTH_ACTIVE = True, False
+        c = S.app.test_client()
+        for path in ("/api/ui/plan", "/api/ui/run/1", "/api/ui/body", "/api/ui/settings"):
+            if c.get(path).status_code != 403:
+                fails.append(f"(a) the public view served {path}")
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        S.READONLY, S._AUTH_ACTIVE = saved_ro, saved_auth
+    return _st("det", "ui-pages",
+               "the new UI's Plan, Run, Body and Settings endpoints are private and built from the engine's "
+               "own plan weeks, limits, zones, activity tile and settings spec",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -25180,7 +25261,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

@@ -323,6 +323,204 @@ def fitness_page(S, db):
             "easy": easy, **side}
 
 
+# ── Plan ──────────────────────────────────────────────────────────────────────────────────────
+PHASE_NAMES = {"rebase": "Re-base", "base": "Base", "build": "Build", "peak": "Peak", "taper": "Taper",
+               "bridge": "Bridge", "recovery": "Recovery"}
+
+
+def phase_name(pk):
+    """'build2' → 'Build' (chain segments share their phase's name)."""
+    base = re.sub(r"\d+$", "", pk or "")
+    return PHASE_NAMES.get(base, base.capitalize() if base else None)
+
+
+def phase_key(pk):
+    return re.sub(r"\d+$", "", pk or "") or None
+
+
+def _limits_list(limits):
+    out = []
+    for k, v in (limits or {}).items():
+        if isinstance(v, dict) and "laid" in v and "ceiling" in v and k in LIMITS:
+            out.append({"key": k, "name": LIMITS[k]["name"], "laid": v["laid"], "ceiling": v["ceiling"],
+                        "unit": v.get("unit", ""), "holds": limits.get("binding") == k,
+                        "over": v["laid"] > v["ceiling"] + 1e-9,
+                        "fill": round(min(1.0, v["laid"] / v["ceiling"]), 3) if v["ceiling"] else None})
+    return sorted(out, key=lambda x: (not x["holds"], x["name"]))
+
+
+def _session_detail(S, db, x, zones):
+    return {"date": x["date"], "kind": x.get("kind"), "title": KIND_TITLE.get(x.get("kind"), x.get("kind")),
+            "km": x.get("km"), "minutes": x.get("minutes"), "note": x.get("note"), "race": bool(x.get("race")),
+            "strides": strides_of(x), "target": session_target(S, db, x.get("kind"), zones),
+            "steps": workout_steps(x), "actual": x.get("actual"), "moved_to": x.get("moved_to"),
+            "status": ("extra" if x.get("unplanned") else "moved" if x.get("moved_to") else "done" if x.get("done")
+                       else "missed" if x.get("missed") else "planned")}
+
+
+def plan_page(S, db, week=None, day=None):
+    log = S.block_log(db)
+    if not log:
+        return {"ok": False, "error": "No plan yet — generate one in Classic first."}
+    row = db.execute("SELECT plan FROM plans ORDER BY id DESC LIMIT 1").fetchone()
+    plan = json.loads(row["plan"])
+    tiso = datetime.now().date().isoformat()
+    zones = S.training_zones(db)
+    weeks = log["weeks"]
+    end = lambda w: (S._date(w["start"]) + timedelta(days=6)).isoformat()
+    cur = next((w for w in weeks if w["start"] <= tiso <= end(w)), weeks[0])
+    sel = next((w for w in weeks if w["start"] == week), None) or \
+        next((w for w in weeks if day and w["start"] <= day <= end(w)), cur)
+    road = []
+    for w in weeks:
+        ran = sum((x.get("actual") or {}).get("km") or 0 for x in w["sessions"])
+        road.append({"start": w["start"], "phase": phase_key(w.get("pk")), "km": w.get("km"), "ran": round(ran, 1),
+                     "current": w is cur, "selected": w is sel,
+                     "race": any(x.get("race") for x in w["sessions"])})
+    phases = []
+    for r in road:
+        if phases and phases[-1]["key"] == r["phase"]:
+            phases[-1]["weeks"] += 1
+        else:
+            phases.append({"key": r["phase"], "name": phase_name(r["phase"]), "start": r["start"], "weeks": 1})
+    obj = plan.get("objective") or {}
+    ft = (plan.get("feasibility") or {}).get("finish_time") or {}
+    i = weeks.index(sel)
+    return {"ok": True, "today": tiso,
+            "race": {"label": obj.get("label"), "date": obj.get("date"), "type": obj.get("type"),
+                     "target": obj.get("target"), "prediction": ft.get("hms"),
+                     "lo": (ft.get("band") or {}).get("lo_hms"), "hi": (ft.get("band") or {}).get("hi_hms"),
+                     "verdict": (plan.get("feasibility") or {}).get("verdict")} if obj else None,
+            "road": road, "phases": phases,
+            "week": {"start": sel["start"], "end": end(sel), "phase": phase_key(sel.get("pk")),
+                     "phase_name": phase_name(sel.get("pk")), "n": sel.get("wk"), "km": sel.get("km"),
+                     "intent": sel.get("intent"), "current": sel is cur,
+                     "days": _week_days(S, sel, tiso), "held": limit_held(sel.get("limits")),
+                     "limits": _limits_list(sel.get("limits")),
+                     "sessions": [_session_detail(S, db, x, zones) for x in sel["sessions"]],
+                     "prev": weeks[i - 1]["start"] if i > 0 else None,
+                     "next": weeks[i + 1]["start"] if i + 1 < len(weeks) else None},
+            "paces": [{"key": k, "label": {"easy": "Easy", "marathon": "Marathon", "threshold": "Threshold",
+                                           "interval": "Interval", "lt1": "LT1 (easy ceiling)", "p5k": "5k"}.get(k, k),
+                       "pace": (v or "").split("/")[0]}
+                      for k, v in (plan.get("pace_zones") or {}).items() if k != "easy_top"]}
+
+
+# ── Runs ──────────────────────────────────────────────────────────────────────────────────────
+def activity_dict(db, aid):
+    """The stored activity as the REST shape (its raw copy, or its columns when there is none)."""
+    r = db.execute("SELECT id, date_time, date, sport, distance, duration, elapsed_time, hr_avg, hr_max, trimp, raw "
+                   "FROM activities WHERE id=?", (aid,)).fetchone()
+    if not r:
+        return None
+    try:
+        a = json.loads(r["raw"] or "{}")
+    except ValueError:
+        a = {}
+    return a or {"id": r["id"], "date_time": r["date_time"] or r["date"], "sport": {"name": r["sport"]},
+                 "distance": r["distance"], "duration": r["duration"], "elapsed_time": r["elapsed_time"],
+                 "hr_avg": r["hr_avg"], "hr_max": r["hr_max"], "trimp": r["trimp"]}
+
+
+def run_page(S, db, aid):
+    raw = activity_dict(db, aid)
+    if not raw:
+        return {"ok": False, "error": "No such run."}
+    a = S._activity_payload(db, raw)
+    st, _err = S._structure_cached(db, aid, date_iso=a.get("date"), fetch=not S.READONLY)
+    ed = S.effort_discipline(db, window_days=3650) or {}
+    er = next((x for x in ed.get("runs") or [] if x.get("date") == a.get("date")), {})
+    dur = a.get("duration") or 0
+    return {"ok": True, "id": aid, "date": a.get("date"), "title": a.get("title"), "sport": a.get("sport"),
+            "stats": [{"k": "Distance", "v": f"{a['distance']:.2f} km" if a.get("distance") else None},
+                      {"k": "Time", "v": f"{int(dur // 3600)}:{int(dur % 3600 // 60):02d}:{int(dur % 60):02d}" if dur else None},
+                      {"k": "Pace", "v": f"{_pace((a.get('pace_min_km') or 0) * 60)}/km" if a.get("pace_min_km") else None},
+                      {"k": "Avg HR", "v": f"{a['hr_avg']} bpm" if a.get("hr_avg") else None},
+                      {"k": "Max HR", "v": f"{a['hr_max']} bpm" if a.get("hr_max") else None},
+                      {"k": "Cadence", "v": f"{a['cadence']} spm" if a.get("cadence") else None},
+                      {"k": "Climb", "v": f"{a['elevation_up']} m" if a.get("elevation_up") else None},
+                      {"k": "Load", "v": f"{a['trimp']} TRIMP" if a.get("trimp") else None}],
+            "readback": {"kind": (st or {}).get("kind_label"), "summary": (st or {}).get("summary")} if st else None,
+            "verdict": er.get("verdict"), "verdict_text": VERDICT_TEXT.get(er.get("verdict") or "")}
+
+
+# ── Body ──────────────────────────────────────────────────────────────────────────────────────
+def marker_state(value, ref, good):
+    """'ok' | 'watch' | None for a reading against its reference band ('band' / 'high' / 'low' good)."""
+    lo, hi = (ref or [None, None])
+    if value is None or (lo is None and hi is None):
+        return None
+    if lo is not None and value < lo:
+        return "ok" if good == "low" else "watch"
+    if hi is not None and value > hi:
+        return "ok" if good == "high" else "watch"
+    return "ok"
+
+
+def body_page(S, db):
+    rows = db.execute("SELECT marker, date, value FROM health_markers ORDER BY date ASC").fetchall()
+    series = {}
+    for r in rows:
+        series.setdefault(r["marker"], []).append({"date": r["date"], "v": r["value"]})
+    stale = (S.health_staleness({k: [{"date": p["date"], "value": p["v"]} for p in v] for k, v in series.items()})
+             or {}).get("markers", {})
+    cut = (datetime.now().date() - timedelta(days=365)).isoformat()
+    out = []
+    for key, m in S.MARKERS.items():
+        pts = series.get(key) or []
+        if not pts:
+            continue
+        last = pts[-1]
+        out.append({"key": key, "label": m["label"], "unit": m.get("unit", ""), "value": last["v"],
+                    "date": last["date"], "ref": m.get("ref"), "good": m.get("good"),
+                    "state": marker_state(last["v"], m.get("ref"), m.get("good")),
+                    "stale": bool((stale.get(key) or {}).get("stale")), "delta": _delta(pts, 30),
+                    "series": [p for p in pts if p["date"] >= cut][-120:]})
+    group = lambda k: "sleep" if k.startswith("sleep") else "heart" if k in ("hrv", "resting_hr", "night_hr", "systolic") \
+        else "weight" if k == "weight" else "labs"
+    inj = []
+    spec = S.SETTINGS_BY_KEY.get("injury_history")
+    if spec:
+        try:
+            import sh_calibrate
+            inj, _bad = sh_calibrate.parse_injuries(S._resolve_setting(db, spec)[0])
+        except Exception:
+            inj = []
+    return {"ok": True, "markers": [{**x, "group": group(x["key"])} for x in out],
+            "injuries": [{"start": i["start"], "end": i.get("end"), "label": i.get("label")} for i in inj]}
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────────────────────
+# Typed inputs for the settings that have a fixed set of answers (Classic shows free-text boxes).
+CHOICES = {
+    "units": [("km", "Kilometres"), ("mi", "Miles")],
+    "week_start": [("", "Monday (default)"), ("sun", "Sunday"), ("sat", "Saturday")],
+    "long_run_day": [("", "Default (last day of the week)")] + [(d, d.capitalize()) for d in
+                     ("mon", "tue", "wed", "thu", "fri", "sat", "sun")],
+    "max_runs_per_week": [("", "No cap")] + [(str(n), str(n)) for n in (3, 4, 5, 6)],
+}
+SETTING_GROUPS = [("Athlete", ["athlete_context", "athlete_age", "manual_lthr", "injury_history"]),
+                  ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "taper_weeks"]),
+                  ("Display", ["units"]),
+                  ("AI features", ["ai_narration", "ai_parsing", "ai_judgment", "ai_coach"])]
+
+
+def settings_page(S, db):
+    by = {}
+    for spec in S.SETTINGS_SPEC:
+        v, src = S._resolve_setting(db, spec)
+        by[spec["key"]] = {"key": spec["key"], "label": spec["label"], "help": spec.get("help", ""),
+                           "kind": "choice" if spec["key"] in CHOICES else spec.get("kind", "line"),
+                           "choices": [{"v": a, "t": b} for a, b in CHOICES.get(spec["key"], [])],
+                           "value": v or "", "source": src}
+    for k, f in by.items():                          # a stored "Sunday" selects the "sun" choice
+        vals = [c["v"] for c in f["choices"]]
+        if vals and f["value"] not in vals:
+            f["value"] = next((v for v in vals if v and f["value"].strip().lower().startswith(v)), f["value"])
+    groups = [{"name": n, "fields": [by[k] for k in ks if k in by]} for n, ks in SETTING_GROUPS]
+    return {"ok": True, "groups": [g for g in groups if g["fields"]]}
+
+
 def register(app, S):
     from flask import jsonify
 
@@ -338,3 +536,20 @@ def register(app, S):
     @app.get("/api/ui/fitness")
     def api_ui_fitness():
         return private() or jsonify(fitness_page(S, S.get_db()))
+
+    @app.get("/api/ui/plan")
+    def api_ui_plan():
+        from flask import request
+        return private() or jsonify(plan_page(S, S.get_db(), request.args.get("week"), request.args.get("day")))
+
+    @app.get("/api/ui/run/<int:aid>")
+    def api_ui_run(aid):
+        return private() or jsonify(run_page(S, S.get_db(), aid))
+
+    @app.get("/api/ui/body")
+    def api_ui_body():
+        return private() or jsonify(body_page(S, S.get_db()))
+
+    @app.get("/api/ui/settings")
+    def api_ui_settings():
+        return private() or jsonify(settings_page(S, S.get_db()))

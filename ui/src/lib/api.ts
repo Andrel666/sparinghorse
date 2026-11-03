@@ -25,6 +25,7 @@ export interface Day {
   date: string; dow: string; kind: string; title: string; km: number | null; race: boolean; strides: number;
   status: "rest" | "planned" | "today" | "done" | "moved" | "missed" | "extra"; actual: Actual | null; moved_to: string | null;
 }
+export interface Held { key: string; name: string; text: string }
 export interface TodayPage {
   ok: true; today: string; sync_minutes: number | null;
   race: { label: string; date: string; type: string; days: number; target: string | null } | null;
@@ -37,7 +38,7 @@ export interface TodayPage {
   next: { date: string; dow: string; kind: string; title: string; km: number | null; minutes: number | null;
           strides: number; race: boolean; target: Target | null; days: number } | null;
   week: { start: string; phase: string | null; km: number; runs: number; days: Day[];
-          held: { key: string; name: string; text: string } | null } | null;
+          held: Held | null } | null;
   latest_run: { id: number; date: string; km: number; pace: string | null; hr: number | null;
                 verdict: string | null; verdict_text: string | null } | null;
 }
@@ -60,10 +61,67 @@ export interface FitnessPage {
   track: { scored: number; text: string };
 }
 
+export interface SessionDetail { date: string; kind: string; title: string; km: number | null; minutes: number | null;
+  note: string | null; race: boolean; strides: number; target: Target | null; steps: Step[]; actual: Actual | null;
+  moved_to: string | null; status: string }
+export interface Limit { key: string; name: string; laid: number; ceiling: number; unit: string; holds: boolean;
+  over: boolean; fill: number | null }
+export interface PlanPage {
+  ok: true; today: string;
+  race: { label: string; date: string; type: string; target: string | null; prediction: string | null;
+          lo: string | null; hi: string | null; verdict: string | null } | null;
+  road: { start: string; phase: string | null; km: number; ran: number; current: boolean; selected: boolean; race: boolean }[];
+  phases: { key: string | null; name: string | null; start: string; weeks: number }[];
+  week: { start: string; end: string; phase: string | null; phase_name: string | null; n: number | null; km: number;
+          intent: string | null; current: boolean; days: Day[]; held: Held | null;
+          limits: Limit[]; sessions: SessionDetail[]; prev: string | null; next: string | null };
+  paces: { key: string; label: string; pace: string }[];
+}
+export interface RunPage { ok: true; id: number; date: string; title: string; sport: string;
+  stats: { k: string; v: string | null }[]; readback: { kind: string | null; summary: string | null } | null;
+  verdict: string | null; verdict_text: string | null }
+export interface Marker { key: string; label: string; unit: string; value: number; date: string; ref: [number | null, number | null] | null;
+  good: string | null; state: "ok" | "watch" | null; stale: boolean; delta: number | null; group: string;
+  series: { date: string; v: number }[] }
+export interface BodyPage { ok: true; markers: Marker[]; injuries: { start: string; end: string | null; label: string | null }[] }
+export interface Field { key: string; label: string; help: string; kind: string; choices: { v: string; t: string }[];
+  value: string; source: string }
+export interface SettingsPage { ok: true; groups: { name: string; fields: Field[] }[] }
+
+// existing backend-decided endpoints the new UI reads as they are
+export interface CalDay { date: string; kind: string; km: number | null; status: string; race?: boolean; pk?: string;
+  strides?: number; actual?: Actual | null; from?: string }
+export interface PlanCalendar { ok: true; month: string; week_start: number; today: string; first: string; last: string;
+  start: string; end: string; race: { date: string; label: string } | null; days: Record<string, CalDay[]>;
+  phase: Record<string, string> }
+export interface RunsMonth { ok: true; month: string; week_start: number; first: string; last: string;
+  days: Record<string, { id: number; km: number; pace: string | null; t: string; z: number | null }[]>;
+  stats: Record<string, unknown>; stats12: Record<string, unknown>; statsAll: Record<string, unknown> }
+export interface RacePlanT { ok: true; race: { label: string; date: string; type: string; km: number; start_time: string | null };
+  target: { seconds: number; hms: string; pace: string; source: string; goal: string | null };
+  prediction: { hms: string | null; lo: string | null; hi: string | null; verdict: string | null } | null;
+  best: { hms: string; date: string } | null; lthr: number | null;
+  segments: { label: string; from_km: number; to_km: number; pace: string; hr: { lo?: number; hi: number } | null; cue: string }[];
+  splits: { km: number; clock: string; checkpoint: boolean }[]; notes: string[] }
+export interface CoachMsg { id: number; ts: string; role: "user" | "coach"; text: string }
+
 // ── one hook per page ──
 const page = <T,>(name: string) => () => useQuery({ queryKey: ["ui", name], queryFn: () => api<T>(`/api/ui/${name}`) });
 export const useToday = page<TodayPage>("today");
 export const useFitness = page<FitnessPage>("fitness");
+export const useBody = page<BodyPage>("body");
+export const useSettings = page<SettingsPage>("settings");
+const q = <T,>(key: unknown[], path: string, enabled = true) =>
+  useQuery({ queryKey: key, queryFn: () => api<T>(path), enabled, placeholderData: prev => prev });   // keep the last view while the next loads
+export const usePlan = (sel: { week?: string; day?: string }) =>
+  q<PlanPage>(["ui", "plan", sel.week, sel.day], `/api/ui/plan?${new URLSearchParams(Object.entries(sel).filter(([, v]) => v) as [string, string][])}`);
+export const useRun = (id?: number) => q<RunPage>(["ui", "run", id], `/api/ui/run/${id}`, !!id);
+export const usePlanCalendar = (month?: string) => q<PlanCalendar>(["ui", "plancal", month], `/api/plan/calendar${month ? `?month=${month}` : ""}`);
+export const useRunsMonth = (month?: string) => q<RunsMonth>(["ui", "runs", month], `/api/runs${month ? `?month=${month}` : ""}`);
+export const useRacePlan = (target?: string) => q<RacePlanT>(["ui", "race", target], `/api/race/plan${target ? `?target=${encodeURIComponent(target)}` : ""}`);
+export const useRunMap = (id?: number) => q<{ has_gps: boolean; path: [number, number][] }>(["ui", "map", id], `/api/activity/${id}/map`, !!id);
+export const useCoach = () => q<{ ok: boolean; enabled: boolean; available: boolean; messages: CoachMsg[] }>(["ui", "coach"], "/api/coach/messages");
+export const postJSON = <T,>(path: string, body?: unknown) => api<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
 
 // The check-in posts to the endpoint Classic already uses (readiness owns the rule set).
 export interface Checkin { energy: "" | "good" | "ok" | "heavy"; sleep: "" | "good" | "ok" | "poor"; note: string; stop_symptom: boolean }

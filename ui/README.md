@@ -38,4 +38,21 @@ forwarding. `npm test` runs the unit tests, `npm run typecheck` the type check.
 | API client, types, one data hook per page | `src/lib/api.ts` |
 | Page data, decided and worded | `sh_ui_api.py` (server) |
 
-Built so far: Today. The other pages link to their Classic equivalent until they are built.
+## Pages
+
+| Page | Shows | Data |
+|---|---|---|
+| Today | readiness, today's session (or the next one), check-in, the week, the latest run | `/api/ui/today` |
+| Plan | the road to the race; Week (days, sessions, the limits that size it, paces), Month, Race day, History | `/api/ui/plan`, `/api/plan/calendar`, `/api/race/plan`, `/api/plandrift` |
+| Runs | calendar with totals; a run's numbers, read-back, verdict and map | `/api/runs`, `/api/ui/run/<id>`, `/api/activity/<id>/map` |
+| Fitness | shape tiles, fitness & fatigue, load, weekly distance, zones, easy-run check, durability, efficiency, track record | `/api/ui/fitness` |
+| Body | resting HR, sleep, weight, lab values with their state; injury history | `/api/ui/body` |
+| Coach | the coach chat (switch it on in Settings) | `/api/coach/*` |
+| Settings | typed settings, calibration (keys and connections stay in Classic) | `/api/ui/settings`, `/api/settings`, `/api/calibration*` |
+
+Every page but Today loads when first opened; the map library only ships with Runs.
+
+## Docker
+
+`docker compose up -d` also starts `sparinghorse-ui` on port 5180: nginx serving the built app and
+forwarding the API and icons to the `sparinghorse` container (`SH_API_UPSTREAM`).

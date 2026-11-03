@@ -3,6 +3,8 @@ export const km = (v: number | null | undefined, digits = 1) => (v == null ? "�
 export const pace = (p: string | null | undefined) => (p ? `${p}/km` : "—");
 export const bpm = (v: number | null | undefined) => (v == null ? "—" : `${v} bpm`);
 export const minutes = (v: number | null | undefined) => (v == null ? "—" : `${Math.round(v)} min`);
+/** A reading: whole numbers without decimals, the rest to one place. */
+export const reading = (v: number | null | undefined) => (v == null ? "—" : Number.isInteger(v) || Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1));
 
 const D = (iso: string) => new Date(iso + "T00:00:00");
 export const dayName = (iso: string) => D(iso).toLocaleDateString(undefined, { weekday: "short" });
