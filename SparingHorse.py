@@ -85,7 +85,8 @@ from sh_engine import (
     RESPONSE_MIN, RESPONSE_ONTRACK, RUN_DAY_LAYOUTS, RUN_FAMILY_SQL,
     RUN_MIN_KM, SESSION_EQ_STEP, SETTINGS_BY_KEY, SETTINGS_SPEC, SJ_MAX_GAP_MIN, SJ_PART_MIN_S,
     TAPER_BOTTOM, TAPER_LONG_FRAC, TAPER_SHARP_FRAC, TAPER_TOP, TAU_ATL, TAU_CTL,
-    TRIMP_PER_MIN, WEEK_TRIMP_SEARCH_MAX, set_day_preferences, trimp_per_min,
+    TRIMP_PER_MIN, WEEK_TRIMP_SEARCH_MAX, set_day_preferences, set_week_start, week_start_of,
+    trimp_per_min,
     MAX_RUNS_RANGE, set_max_runs, max_runs, _cap_runs,
     LONG_RUN_MAX_BY_RACE, _long_run_max,
     V5K_VVO2MAX_FRAC, _actual_week_caps, _adj_directive, _adj_fingerprint, _adj_summary,
@@ -2123,6 +2124,10 @@ def validate_setting(key, value):
             return False, f"a weekday — one of {_days} (or empty for the default, sun)"
         if len(value.split()) > 1 or "," in value:
             return False, "one day only — the long run has a single home in the week"
+    if key == "week_start" and value.strip():
+        import sh_engine as _E
+        if _E._parse_week_start(value) is None:
+            return False, "mon, sun or sat (or empty for Monday)"
     if key == "rest_day_rank" and value.strip():
         parts = value.replace(",", " ").split()
         bad = [w for w in parts if _parse_day(w) is None]
@@ -2172,6 +2177,7 @@ def apply_settings_overrides(db):
         _resolve_setting(db, SETTINGS_BY_KEY["long_run_day"])[0],
         _resolve_setting(db, SETTINGS_BY_KEY["rest_day_rank"])[0])
     set_max_runs(_resolve_setting(db, SETTINGS_BY_KEY["max_runs_per_week"])[0])   # fork §MAXRUNS
+    set_week_start(_resolve_setting(db, SETTINGS_BY_KEY["week_start"])[0])        # fork §WEEK
     # Fork §CAL — an APPROVED calibration overlays the engine's fitted constants; none ⇒ defaults.
     # Like the day preference it changes how the NEXT plan is laid, not one already generated.
     try:
@@ -3543,7 +3549,7 @@ def session_to_coros_course(session, hrz=None, pace_zones=None):
 def _coros_plan_end(start, total_weeks):
     """The plan's last day: the Sunday of week total_weeks (natural Mon–Sun weeks; a mid-week
     start makes the first week partial but still week 1)."""
-    return start - timedelta(days=start.weekday()) + timedelta(days=7 * total_weeks - 1)
+    return week_start_of(start) + timedelta(days=7 * total_weeks - 1)
 
 
 def _coros_rollover_start(plan_end):
@@ -3563,7 +3569,7 @@ def _coros_total_weeks(plan, start, min_weeks=COROS_MIN_WEEKS):
                default=None)
     if not last:
         return None
-    m0 = start - timedelta(days=start.weekday())
+    m0 = week_start_of(start)
     n = (_date(last) - m0).days // 7 + 1
     total = max(min_weeks, min(COROS_MAX_WEEKS, n))
     have = {w["start"] for w in weeks
@@ -3584,7 +3590,7 @@ def _coros_periodization(plan, start, total_weeks):
     kinds = {}
     for w in _plan_all_weeks(plan):
         kinds[w["start"]] = key2kind.get(w.get("pk")) or w.get("pk") or "base"
-    m0 = start - timedelta(days=start.weekday())
+    m0 = week_start_of(start)
     seq = [kinds.get((m0 + timedelta(days=7 * i)).isoformat(), "base") for i in range(total_weeks)]
     runs = []
     for kind in seq:
@@ -9526,8 +9532,11 @@ def _actual_weekly_km():
     """{Monday(date): running km} for every ISO week we own — actuals for the cumulative line."""
     out = {}
     for r in db_weekly_running():
-        y, w = (int(x) for x in r["week"].split("-W"))
-        out[isoweek_monday(y, w)] = r["km"]
+        if "-W" in r["week"]:
+            y, w = (int(x) for x in r["week"].split("-W"))
+            out[isoweek_monday(y, w)] = r["km"]
+        else:                                   # fork §WEEK — keyed by the week's first day
+            out[_date(r["week"])] = r["km"]
     return out
 
 
@@ -10241,8 +10250,7 @@ def api_availability():
     an empty-house broadcast."""
     from datetime import timedelta
     db = get_db()
-    monday = datetime.now().date()
-    monday -= timedelta(days=monday.weekday())
+    monday = week_start_of(datetime.now().date())
     # SH-49 — plus the windows ✕ cleared in the last 24 h whose days are still ahead, so the console
     # can offer put back (active=0 + removed_at tells them apart). Active first, then newest-cleared.
     today = datetime.now().date().isoformat()
@@ -10992,7 +11000,8 @@ def api_runs():
     month = request.args.get("month") or datetime.now().strftime("%Y-%m")
     if not re.fullmatch(r"\d{4}-\d{2}", month):
         return jsonify(ok=False, error="month must be YYYY-MM"), 400
-    return jsonify(_runs_month(get_db(), month))
+    import sh_engine as _E
+    return jsonify({**_runs_month(get_db(), month), "week_start": _E.WEEK_START})
 
 
 @app.get("/api/activity/<int:aid>/profile")
@@ -11092,11 +11101,16 @@ def db_weekly_running():
     rows = db.execute(
         "SELECT date, distance FROM activities WHERE " + RUN_FAMILY_SQL + " AND date IS NOT ''"
     ).fetchall()
+    import sh_engine as _E
     buckets = {}
     for r in rows:
         try:
-            iso = datetime.strptime(r["date"], "%Y-%m-%d").isocalendar()
-            key = f"{iso[0]}-W{iso[1]:02d}"
+            d = datetime.strptime(r["date"], "%Y-%m-%d").date()
+            if _E.WEEK_START:     # fork §WEEK — a non-Monday week is keyed by its first day's date
+                key = week_start_of(d).isoformat()
+            else:
+                iso = d.isocalendar()
+                key = f"{iso[0]}-W{iso[1]:02d}"
         except (ValueError, TypeError):
             continue
         buckets[key] = buckets.get(key, 0.0) + (r["distance"] or 0.0)
