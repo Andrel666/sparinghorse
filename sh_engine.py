@@ -6528,11 +6528,52 @@ def _race_seconds(act):
     return e or act["duration"]
 
 
+FT_RACE_TAG_TOL = 0.05     # a Runalyze-tagged race joins the corpus within ±5% of a standard distance
+FT_RACE_PACE_MIN = (2.5, 12.0)   # min/km sanity gate for a tagged race (a mis-tag, a walk, a bad clock)
+_RACE_NOT_FINISHED = {"dnf", "dns", "did_not_finish", "did_not_start", "not_finished",
+                      "cancelled", "canceled", "aborted"}
+
+
+def _tagged_race(raw, distance_km):
+    """A Runalyze `race_result`-tagged run → (race type, official seconds or None), else None.
+
+    A tag is the runner's own word that the run was a race, so — unlike the distance heuristic —
+    it can admit a 5k, 10k or half. The type comes from the result's `official_distance` (metres;
+    the course length, not the GPS's) when present, else the recorded distance, and must sit
+    within ±FT_RACE_TAG_TOL of a RACE_KM distance (a 15k or a trail race has no model and is
+    skipped). A result whose status says it was not finished is skipped. `official_time`
+    (seconds) is used when Runalyze carries one; otherwise the caller falls back to gun-to-mat."""
+    try:
+        rr = (json.loads(raw) if isinstance(raw, str) else raw or {}).get("race_result")
+    except (ValueError, TypeError, AttributeError):
+        return None
+    if not isinstance(rr, dict):
+        return None
+    if str(rr.get("status") or "").strip().lower().replace(" ", "_") in _RACE_NOT_FINISHED:
+        return None
+    try:
+        km = float(rr["official_distance"]) / 1000.0 if rr.get("official_distance") else float(distance_km or 0)
+    except (TypeError, ValueError):
+        return None
+    if km <= 0:
+        return None
+    typ = min(RACE_KM, key=lambda t: abs(km - RACE_KM[t]) / RACE_KM[t])
+    if abs(km - RACE_KM[typ]) / RACE_KM[typ] > FT_RACE_TAG_TOL:
+        return None
+    try:
+        official = float(rr.get("official_time") or 0) or None
+    except (TypeError, ValueError):
+        official = None
+    return typ, official
+
+
 def _ft_race_corpus(db):
     """The runner's raced datapoints: historical marathons auto-detected by distance (within
     ±FT_MARA_TOL of 42.195 — a marathon is never a casual training distance; shorter races are NOT
-    auto-detected, a 21.1 km row is usually just a long run) + resolved race objectives with a
-    finished result (§RL outcome), deduped by date. Sorted oldest-first."""
+    auto-detected, a 21.1 km row is usually just a long run) + runs the runner TAGGED as a race in
+    Runalyze (`race_result`, any standard distance — see `_tagged_race`; a tag beats the distance
+    guess on the same date) + resolved race objectives with a finished result (§RL outcome),
+    deduped by date. Sorted oldest-first."""
     lo, hi = RACE_KM["marathon"] * (1 - FT_MARA_TOL), RACE_KM["marathon"] * (1 + FT_MARA_TOL)
     drop = dropped_ids(db)
     races = {}
@@ -6542,6 +6583,16 @@ def _ft_race_corpus(db):
         if r["id"] in drop or not secs or not (150 <= secs / 60 <= 480):   # jog/walk sanity gates
             continue
         races[r["date"]] = {"date": r["date"], "type": "marathon", "seconds": secs}
+    for r in db.execute("SELECT id, date, distance, duration, elapsed_time, raw FROM activities WHERE " +
+                        RUN_FAMILY_SQL + " AND json_extract(raw,'$.race_result') IS NOT NULL").fetchall():
+        tag = _tagged_race(r["raw"], r["distance"])
+        if r["id"] in drop or not tag or not r["date"]:
+            continue
+        typ, official = tag
+        secs = official or _race_seconds(r)
+        if not secs or not (FT_RACE_PACE_MIN[0] <= secs / 60 / RACE_KM[typ] <= FT_RACE_PACE_MIN[1]):
+            continue
+        races[r["date"]] = {"date": r["date"], "type": typ, "seconds": secs}
     for o in db.execute("SELECT date, type, outcome FROM objectives WHERE status='done'").fetchall():
         try:
             oc = json.loads(o["outcome"] or "{}")
