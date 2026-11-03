@@ -11537,6 +11537,42 @@ def _stc_lthr():
     if not (r["source"] == "derived" and r["confidence"] == "low" and r["n_recent"] == 0):
         fails.append(f"stale qualifiers not low-confidence: {r}")
 
+    # 6) fork §LTHR-PACE — on a table WITH distance: high-HR runs at an easy pace are not threshold
+    # efforts (the circular read), a tagged race is, a fun race is not, and so is a run at or under
+    # marathon pace; a minimal table keeps the HR-only rule (cases 1–5 above).
+    def mkdb2(acts):
+        m = _sq.connect(":memory:"); m.row_factory = _sq.Row
+        m.execute("CREATE TABLE activities(id INTEGER PRIMARY KEY, date TEXT, sport TEXT, hr_avg INTEGER, "
+                  "hr_max INTEGER, duration REAL, distance REAL, raw TEXT);")
+        m.execute("CREATE TABLE shape_snapshots(snapshot_date TEXT, effective_vo2max REAL)")
+        m.execute("INSERT INTO shape_snapshots VALUES(?, 45.0)", (ago(400),))
+        for i, (d, hra, hrm, dur, km, raw) in enumerate(acts):
+            m.execute("INSERT INTO activities VALUES(?,?,?,?,?,?,?,?)", (i + 1, d, "Running", hra, hrm, dur, km, raw))
+        return m
+    mp = (E._zones_asof(mkdb2([]), ago(1)) or {}).get("marathon")
+    slow_hi = [(ago(i * 4 + 1), 168, 189, 40 * 60, 40 * 60 / (mp * 1.25), "{}") for i in range(6)]
+    r = S.derive_lthr(mkdb2(slow_hi), today=tdy)
+    if r["source"] == "derived":
+        fails.append(f"(6) easy-paced high-HR runs were read as threshold efforts: {r}")
+    race = '{"race_result": {"official_distance": 10000, "status": "Finished", "is_funrace": false}}'
+    fun = '{"race_result": {"official_distance": 10000, "status": "Finished", "is_funrace": true}}'
+    races = [(ago(i * 9 + 2), 172, 189, 55 * 60, 10.0 * 1.4, race) for i in range(3)]
+    r = S.derive_lthr(mkdb2(slow_hi + races), today=tdy)
+    if not (r["source"] == "derived" and r["n"] == 3 and r["lthr"] == 172):
+        fails.append(f"(6) tagged races did not anchor the estimate: {r}")
+    r = S.derive_lthr(mkdb2(slow_hi + [(ago(5), 172, 189, 55 * 60, 14.0, fun)]), today=tdy)
+    if r["source"] == "derived":
+        fails.append(f"(6) a fun race counted as a hard effort: {r}")
+    fast = [(ago(i * 6 + 3), 170, 189, 30 * 60, 30 * 60 / (mp * 0.97), "{}") for i in range(3)]
+    r = S.derive_lthr(mkdb2(slow_hi + fast), today=tdy)
+    if not (r["source"] == "derived" and r["n"] == 3):
+        fails.append(f"(6) runs at marathon pace or faster did not qualify: {r}")
+    # 7) nothing recent: the last three years win over an older, higher pool
+    old_hi = [(ago(1500 + i * 9), 182, 189, 55 * 60, 14.0, race) for i in range(4)]
+    mid = [(ago(400 + i * 9), 170, 189, 55 * 60, 14.0, race) for i in range(3)]
+    r = S.derive_lthr(mkdb2(old_hi + mid), today=tdy)
+    if r.get("lthr") != 170:
+        fails.append(f"(7) the 3-year pool did not win over the decade-old one: {r}")
     return _st("det", "lthr",
                "LTHR slice #1 (streamless): no-HR⇒none; no sustained effort⇒honest %HRmax proxy "
                "(low/provisional); qualifiers⇒derived robust-high + spike-resistant; 20–70min×≥85%HRmax "

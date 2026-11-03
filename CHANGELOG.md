@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LTHR is no longer read off easy runs.** The derived LTHR pooled every 20–70 min run at ≥ 85 % of HRmax,
+  so a runner whose EASY runs sit that high (a restart, heat, a high-HR physiology) got an LTHR set by those
+  same runs, and the effort monitor then called them threshold days (circular: one real history read 159
+  from 5 easy runs at 6:17–7:05/km; its races point to ~168–172). An effort now qualifies only with
+  evidence beyond HR: a Runalyze-tagged race (not a fun race), or a pace at or under that day's marathon
+  pace (+3 %). Rows with no distance keep the HR-only rule. With nothing recent, the last 3 years are
+  preferred over the whole history (HRmax falls with age). With no trusted LTHR the monitor falls back to
+  its pace anchor, as before; a Manual LTHR in Settings restores the HR read. `det/lthr` (6)–(7),
+  mutation-tested; goldens unchanged.
 - **Strides open like a workout.** A run with strides used to show them only as a hover tooltip; it now
   expands, in the week list and on Today, into the same instruction card as an interval session: the easy
   run, the strides block (count × 4–6, ~20″ each, at about interval pace, relaxed) and walk-back recovery.

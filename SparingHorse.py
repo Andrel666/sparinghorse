@@ -4439,6 +4439,15 @@ LTHR_QUAL_FRAC = 0.85       # … at ≥85% robust HRmax — a genuine threshold
 LTHR_PCTL = 0.85            # robust-HIGH statistic over the pool (spike-resistant vs a raw max)
 LTHR_HRMAX_PROXY = 0.92     # thin-data fallback: LTHR ≈ 92% HRmax (Friel-ish run default), provisional
 LTHR_RECENT_DAYS = 120      # efforts within this window are "recent" (LTHR drifts up as fitness returns)
+# Fork §LTHR-PACE — heart rate alone cannot say an effort was hard: a runner whose easy runs sit at
+# 85 % of HRmax (a restart, heat, a high-HR physiology) fills the pool with EASY runs, and the
+# estimate then calls those same runs threshold work (circular). An effort qualifies only with
+# evidence beyond HR: a Runalyze-tagged race (not a fun race), or a pace at or faster than the
+# runner's marathon pace AS OF that day × LTHR_PACE_SLACK. A row with no distance can't be judged
+# and is kept (legacy behaviour). When nothing recent qualifies, the last LTHR_STALE_DAYS are
+# preferred over the whole history (HRmax falls with age, so a decade-old pool reads high).
+LTHR_PACE_SLACK = 1.03
+LTHR_STALE_DAYS = 3 * 365
 
 # Friel run-zone grid as a fraction of LTHR (5 zones → 4 ascending boundaries). The classic Friel run
 # split: Z1<0.85, Z2 0.85–0.89, Z3 0.90–0.94, Z4 0.95–0.99, Z5 ≥1.00 (LTHR sits at the top of Z4).
@@ -4515,6 +4524,23 @@ def _manual_lthr(db, today):
     return int(raw), conf, set_on, age
 
 
+def _lthr_hard_enough(db, r):
+    """§LTHR-PACE — is this sustained high-HR effort a HARD one by something other than its HR?"""
+    keys = r.keys() if hasattr(r, "keys") else ()
+    if "distance" not in keys or not r["distance"]:
+        return True                               # nothing to judge pace by — HR-only, as before
+    try:
+        rr = json.loads(r["raw"] or "{}").get("race_result") if "raw" in keys else None
+    except (ValueError, TypeError):
+        rr = None
+    if isinstance(rr, dict):
+        return rr.get("is_funrace") is not True   # a tagged race is a hard effort; a fun race is not
+    mp = (_zones_asof(db, r["date"][:10]) or {}).get("marathon")
+    if not mp:
+        return True                               # no fitness reading to compare against
+    return (r["duration"] / r["distance"]) <= mp * LTHR_PACE_SLACK
+
+
 def derive_lthr(db, today=None):
     """Estimate LTHR (lactate-threshold HR) from sustained hard efforts the athlete already ran — no
     field test, self-calibrating. For a CONTINUOUS hard effort (a race, or a tempo with little
@@ -4541,12 +4567,20 @@ def derive_lthr(db, today=None):
         auto = {**base, "lthr": None, "source": None, "confidence": "none", "pct_hrmax": None}
     else:
         floor = int(rmax * LTHR_QUAL_FRAC)
-        rows = db.execute(
-            "SELECT date, hr_avg, duration FROM activities WHERE " + RUN_FAMILY_SQL +
-            " AND hr_avg IS NOT NULL AND duration IS NOT NULL AND duration BETWEEN ? AND ? AND hr_avg>=?",
-            (LTHR_MIN_SEC, LTHR_MAX_SEC, floor)).fetchall()
+        try:
+            rows = db.execute(
+                "SELECT date, hr_avg, duration, distance, raw FROM activities WHERE " + RUN_FAMILY_SQL +
+                " AND hr_avg IS NOT NULL AND duration IS NOT NULL AND duration BETWEEN ? AND ? AND hr_avg>=?",
+                (LTHR_MIN_SEC, LTHR_MAX_SEC, floor)).fetchall()
+        except sqlite3.OperationalError:          # a minimal table (no distance/raw): HR-only, as before
+            rows = db.execute(
+                "SELECT date, hr_avg, duration FROM activities WHERE " + RUN_FAMILY_SQL +
+                " AND hr_avg IS NOT NULL AND duration IS NOT NULL AND duration BETWEEN ? AND ? AND hr_avg>=?",
+                (LTHR_MIN_SEC, LTHR_MAX_SEC, floor)).fetchall()
         quals = []   # (days_ago, hr_avg) for every qualifying sustained hard effort
         for r in rows:
+            if not _lthr_hard_enough(db, r):
+                continue
             try:
                 days_ago = (today - _d.fromisoformat(r["date"][:10])).days
             except (TypeError, ValueError):
@@ -4562,7 +4596,9 @@ def derive_lthr(db, today=None):
             # Prefer the RECENT pool when it's substantial (LTHR drifts up as fitness returns);
             # otherwise read all qualifiers but let confidence reflect the staleness.
             recent_hrs = [hr for d, hr in quals if d is not None and 0 <= d <= LTHR_RECENT_DAYS]
-            pool = recent_hrs if len(recent_hrs) >= 3 else [hr for _, hr in quals]
+            mid_hrs = [hr for d, hr in quals if d is not None and 0 <= d <= LTHR_STALE_DAYS]
+            pool = (recent_hrs if len(recent_hrs) >= 3 else
+                    mid_hrs if len(mid_hrs) >= 2 else [hr for _, hr in quals])
             lthr = _pctile(pool, LTHR_PCTL)
             confidence = ("high" if n_recent >= 5 else "moderate" if n_recent >= 2 else "low")
             auto = {**base, "lthr": lthr, "source": "derived", "confidence": confidence,
