@@ -15895,7 +15895,8 @@ def _stc_calibration():
     (e) every value stays inside CALIBRATION_BOUNDS; (f) an UNAPPROVED proposal changes nothing,
     an approved one moves the engine globals, and revert restores the defaults exactly; (g) applied,
     the TRIMP scale makes the same weekly load lay ~1/scale of the kilometres; (h) the injury
-    parser reads every documented form and names a bad line."""
+    parser reads every documented form and names a bad line; (i) an injury after ordinary load (no
+    spike, no fast ramp) is not implicated and moves neither safety limit."""
     import sh_calibrate as C
     from datetime import date as _date
     fails, got = [], {}
@@ -15908,6 +15909,8 @@ def _stc_calibration():
     try:
         bare = C.fit(db, injuries_text="", today=today)
         listed = C.fit(db, injuries_text="2024-03-11 4w calf\n2025-06-09 to 2025-06-30 achilles", today=today)
+        quiet = C.fit(db, injuries_text="2024-03-11 4w calf\n2025-06-09 to 2025-06-30 achilles\n2024-09-16 2w knee",
+                      today=today)
     finally:
         pass
     pb = {p["key"]: p for p in bare["params"]}
@@ -15927,12 +15930,12 @@ def _stc_calibration():
     if len(pre) != 2:
         fails.append(f"(c) expected both injuries' pre-injury steps, got {pre}")
     for x in pre:
-        if x["largest_step"] > lo_eq and not x["largest_step"] > pl["BIO_EQ_STEP"]["value"]:
+        if x.get("implicated") and x["largest_step"] > lo_eq and not x["largest_step"] > pl["BIO_EQ_STEP"]["value"]:
             fails.append(f"(c) the {x['largest_step']} step before {x['injury']} is not refused by "
                          f"{pl['BIO_EQ_STEP']['value']}")
     lo_r = E.CALIBRATION_BOUNDS["CTL_RAMP_MAX"][0]
     for x in pl["CTL_RAMP_MAX"].get("replay", {}).get("pre_injury") or []:
-        if x["peak_gain"] > 0 and not (pl["CTL_RAMP_MAX"]["value"] < x["peak_gain"]
+        if x.get("implicated") and not (pl["CTL_RAMP_MAX"]["value"] < x["peak_gain"]
                                        or pl["CTL_RAMP_MAX"]["value"] == lo_r):
             fails.append(f"(c) ramp {pl['CTL_RAMP_MAX']['value']} does not sit under the "
                          f"{x['peak_gain']} ramp before {x['injury']}")
@@ -15984,6 +15987,18 @@ def _stc_calibration():
     finally:
         E.reset_calibration()
         db.close()
+    # (i) an injury that followed ordinary load (no step over 1.10×, a ramp no faster than the typical
+    # building week) is reported as not implicated and moves neither limit
+    pq = {p["key"]: p for p in quiet["params"]}
+    qs = [x for x in pq["BIO_EQ_STEP"]["replay"]["pre_injury"] if x["injury"] == "2024-09-16"]
+    qr = [x for x in pq["CTL_RAMP_MAX"]["replay"]["pre_injury"] if x["injury"] == "2024-09-16"]
+    if not qs or qs[0]["implicated"] or not qr or qr[0]["implicated"]:
+        fails.append(f"(i) the quiet injury was read as implicated: {qs} {qr}")
+    if abs(pq["BIO_EQ_STEP"]["value"] - pl["BIO_EQ_STEP"]["value"]) > 0.01 \
+            or abs(pq["CTL_RAMP_MAX"]["value"] - pl["CTL_RAMP_MAX"]["value"]) > 1e-9:
+        fails.append(f"(i) a quiet injury moved a limit: step {pl['BIO_EQ_STEP']['value']} → "
+                     f"{pq['BIO_EQ_STEP']['value']}, ramp {pl['CTL_RAMP_MAX']['value']} → "
+                     f"{pq['CTL_RAMP_MAX']['value']}")
     inj, errs = C.parse_injuries("2023-03-10 to 2023-04-20 calf strain\n2021-06-01..2021-06-30 knee\n"
                                  "2019-09-15 6w achilles\n2018-01-02 hip\n# a comment\nlast spring sore foot")
     got["parsed"] = [(i["start"], i["end"], i["label"]) for i in inj]
