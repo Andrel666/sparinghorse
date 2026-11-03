@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Plan calendar.** Under the plan, a month grid (the run browser's, opening on the chosen week start)
+  shows every planned session on its day — kind and distance, ✓ done / ✕ missed / ↷ moved / + extra — with
+  each day striped in its phase's colour and race day outlined; a day opens its target and instruction card.
+  `/api/plan/calendar?month=` returns the days already merged from `block_log` (thin page); private only.
 - **The week shows what to aim for and what you ran.** A planned easy or long run carries its target — the
   easy HR ceiling (≤ N bpm, the same boundary the effort check grades against) when the threshold is
   trusted, else the easy pace bar ("slower than 6:21") — and a logged run shows its average heart rate next

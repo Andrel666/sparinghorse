@@ -2860,6 +2860,80 @@ async function refreshPlan(p){
   try{ LOG = await getJSON("/api/log"); }catch(e){ LOG=null; }
   renderPlan(p || await getJSON("/api/plan"));
   loadDrift();   // the plan (or its history) may have moved — refresh the drift view
+  loadPlanCal(PCAL.month);   // fork §PCAL — the month view follows every plan refresh
+}
+// ── Fork §PCAL — the plan as a month ───────────────────────────────────────────────────────────
+// The backend (/api/plan/calendar) hands back each day already merged: planned session, its status
+// against what was run, the actual, the phase. This only lays it on the same grid as the run
+// browser and opens a day's instruction card on click.
+let PCAL={month:null, sel:null, data:null};
+const PCAL_KIND={easy:"Easy",long:"Long",interval:"Intervals",tempo:"Tempo",threshold:"Threshold",
+  race_pace:"Race pace",progression:"Progression",fartlek:"Fartlek",hills:"Hills",recovery:"Recovery"};
+const PCAL_MARK={done:"✓",moved:"✓",missed:"✕",planned:"",unplanned:"+",moved_in:"↷"};
+const pcalDow=iso=>new Date(iso+"T00:00:00Z").toLocaleDateString(undefined,{weekday:"short",timeZone:"UTC"});
+function pcalLabel(x){
+  if(x.kind==="moved_in") return `from ${pcalDow(x.from)}`;
+  if(x.unplanned) return x.actual?`${U.d(x.actual.km)}${U.k}`:"run";
+  let k = x.race ? "Race" : x.kind==="long_mp" ? (x.zone==="half"?"Long+HM":"Long+MP") : (PCAL_KIND[x.kind]||x.kind);
+  if(stridesOf(x)) k+="+str";
+  return `${k}${x.km!=null?` ${U.d(x.km)}${U.k}`:""}`;
+}
+async function loadPlanCal(month){
+  const host=$("#plancal"); if(!host) return;
+  if(SH_READONLY){ host.hidden=true; return; }
+  let d; try{ d=await getJSON("/api/plan/calendar"+(month?`?month=${encodeURIComponent(month)}`:"")); }
+  catch(e){ host.hidden=true; return; }
+  if(!d||!d.ok){ host.hidden=true; return; }
+  host.hidden=false; PCAL.data=d; PCAL.month=d.month;
+  const [y,m]=d.month.split("-").map(Number), pad=n=>String(n).padStart(2,"0");
+  const ws=d.week_start||0, dim=new Date(y,m,0).getDate();
+  const firstDow=((new Date(y,m-1,1).getDay()+6)%7-ws+7)%7;
+  const DOW=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const dows=DOW.slice(ws).concat(DOW.slice(0,ws)).map(w=>`<div class="rcal-dow">${w}</div>`).join("");
+  const title=new Date(y,m-1,1).toLocaleDateString(undefined,{month:"long",year:"numeric"});
+  let cells="";
+  for(let i=0;i<firstDow;i++) cells+=`<div class="rcal-day blank"></div>`;
+  for(let day=1;day<=dim;day++){
+    const date=`${d.month}-${pad(day)}`, xs=d.days[date]||[];
+    const inPlan=date>=d.start&&date<=d.end, race=d.race&&d.race.date===date;
+    const pk=(d.phase||{})[date]||(xs.find(x=>x.pk)||{}).pk||"";
+    const lines=xs.map(x=>`<div class="pcal-s st-${x.status}${x.reps&&x.reps.length?" q":""}">`+
+      `${PCAL_MARK[x.status]?`<span class="pcal-mk">${PCAL_MARK[x.status]}</span>`:""}${esc(pcalLabel(x))}</div>`).join("");
+    const cls=["rcal-day","pcal-day",xs.length?"has":"",inPlan?"":"out",race?"race":"",
+               date===d.today?"today":"",date===PCAL.sel?"sel":""].filter(Boolean).join(" ");
+    const kb=xs.length?` role="button" tabindex="0" aria-label="${day}: ${esc(xs.map(pcalLabel).join(", "))}"`:"";
+    cells+=`<div class="${cls}" data-date="${date}"${pk?` data-pk="${esc(pk)}"`:""}${kb}><span class="pcal-n">${day}</span>${lines}`+
+           `${!xs.length&&inPlan?'<div class="pcal-s st-rest">Rest</div>':""}</div>`;
+  }
+  const sel=PCAL.sel&&PCAL.sel.slice(0,7)===d.month?PCAL.sel:null;
+  host.innerHTML=`<div class="rcal-head">
+      <button class="rcal-nav" id="pcprev" ${d.month<=d.first?"disabled":""} aria-label="Previous month">‹</button>
+      <b>${esc(title)}${d.race?` <span class="pcal-race">· ${esc(d.race.label||"race")} ${esc(d.race.date)}</span>`:""}</b>
+      <button class="rcal-nav" id="pcnext" ${d.month>=d.last?"disabled":""} aria-label="Next month">›</button></div>
+    <div class="rcal-grid">${dows}${cells}</div>
+    <div class="rcal-legend"><span>✓ done</span><span>✕ missed</span><span>↷ moved</span><span>+ extra run</span><span>colour = phase</span></div>
+    <div id="pcaldetail">${sel?pcalDetail(sel):""}</div>`;
+  const go=k=>{ const t=new Date(y,m-1+k,1); loadPlanCal(`${t.getFullYear()}-${pad(t.getMonth()+1)}`); };
+  $("#pcprev").onclick=()=>go(-1); $("#pcnext").onclick=()=>go(1);
+  host.querySelectorAll(".pcal-day.has").forEach(el=>{
+    const open=()=>{ PCAL.sel=el.dataset.date;
+      host.querySelectorAll(".pcal-day.sel").forEach(e=>e.classList.remove("sel")); el.classList.add("sel");
+      $("#pcaldetail").innerHTML=pcalDetail(PCAL.sel); };
+    el.addEventListener("click",open);
+    el.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); open(); } });
+  });
+}
+function pcalDetail(date){
+  const xs=(PCAL.data&&PCAL.data.days[date])||[];
+  return `<div class="pcal-detail"><div class="pcal-dtitle">${esc(new Date(date+"T00:00:00Z").toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long",timeZone:"UTC"}))}</div>`+
+    xs.map(x=>{
+      if(x.kind==="moved_in") return `<div class="pcal-dline muted">↷ ${esc(pcalDow(x.from))}'s session, run today</div>`;
+      const act=x.actual?` → ran ${U.d(x.actual.km)}${U.k}${x.actual.pace?` @ ${U.p(x.actual.pace)}`:""}${x.actual.hr?` · ${x.actual.hr} bpm`:""}`:"";
+      const st={done:"done",moved:`done on ${pcalDow(x.moved_to)}`,missed:"missed",unplanned:"extra run",planned:""}[x.status]||"";
+      const card=x.status==="planned"?(x.reps&&x.reps.length?workoutCard(x,true):stridesCard(x,true)):"";
+      return `<div class="pcal-dline"><b>${esc(pcalLabel(x))}</b>${x.unplanned?"":sessTarget(x)}${act?`<span class="sact">${esc(act)}</span>`:""}`+
+             `${st?` <span class="muted">· ${esc(st)}</span>`:""}</div>${card}`;
+    }).join("")+`</div>`;
 }
 async function loadPlan(){ try{ await refreshPlan(); }catch(e){ tileFail($("#plan"), "Training plan", loadPlan, e);
   // refreshPlan() is what normally fires loadDrift(), so a failed plan load would leave #drift parked on
