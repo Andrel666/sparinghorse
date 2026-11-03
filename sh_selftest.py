@@ -15885,6 +15885,83 @@ def _stc_race_correction_fitness():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_week_start():
+    """Fork §WEEK — the training week's first day (mon / sun / sat). For a half-marathon road over a
+    race fixture, at a Sunday and a Saturday week start: (a) every plan week starts on that weekday;
+    (b) every session falls inside its own week; (c) the house long run keeps its place in the week —
+    the week's last day (Saturday on a Sunday week); (d) the race session sits on race day inside the
+    week that contains it; (e) a named long-run day keeps meaning that calendar day; (f) the helpers:
+    week_start_of() lands on the chosen weekday, a bad value means Monday, and Monday is the default
+    (the byte-identical path the goldens hold)."""
+    from datetime import date as _d, timedelta as _td
+    E_ = E
+    P = _d.fromisoformat
+    fails = []
+    prev_ws, prev_pref = E_.WEEK_START, E_._DAY_PREF
+    try:
+        for name, ws in (("sun", 6), ("sat", 5)):
+            E_.set_week_start(name)
+            E_.set_day_preferences(None, None)
+            fx, today = _race_fixture_db("half", today=_d(2026, 6, 3))
+            try:
+                plan = S.generate_plan(fx, today=today)
+            finally:
+                fx.close()
+            race = P((plan.get("objective") or {}).get("date") or "1900-01-01")
+            weeks = E_._plan_all_weeks(plan)
+            if not weeks:
+                fails.append(f"{name}: no weeks laid")
+            longs_on_last = longs = 0
+            for w in weeks:
+                st = P(w["start"])
+                if st.weekday() != ws:
+                    fails.append(f"(a) {name}: week {w['start']} starts on weekday {st.weekday()}, not {ws}")
+                for x in w.get("sessions") or []:
+                    sd = P(x["date"])
+                    if not (st <= sd <= st + _td(days=6)):
+                        fails.append(f"(b) {name}: session {x['date']} outside its week {w['start']}")
+                    if (x.get("kind") or "").startswith("long") and sd < race - _td(days=13):
+                        longs += 1
+                        longs_on_last += (sd - st).days == 6
+            if longs and longs_on_last < 0.8 * longs:
+                fails.append(f"(c) {name}: only {longs_on_last} of {longs} long runs on the week's last day")
+            rw = [w for w in weeks if P(w["start"]) <= race <= P(w["start"]) + _td(days=6)]
+            rs = [x for w in rw for x in (w.get("sessions") or []) if x.get("kind") == "race"]
+            if not rs or rs[0]["date"] != race.isoformat() or P(rw[0]["start"]) != E_.week_start_of(race):
+                fails.append(f"(d) {name}: race week/session off: {[(w['start']) for w in rw]} {rs[:1]}")
+            # (e) a named long-run day: Friday stays Friday
+            E_.set_day_preferences("fri", None)
+            fx, today = _race_fixture_db("half", today=_d(2026, 6, 3))
+            try:
+                plan = S.generate_plan(fx, today=today)
+            finally:
+                fx.close()
+            lg = [P(x["date"]) for w in E_._plan_all_weeks(plan) for x in (w.get("sessions") or [])
+                  if (x.get("kind") or "").startswith("long") and P(x["date"]) < race - _td(days=13)]
+            if not lg or any(d.weekday() != 4 for d in lg):
+                fails.append(f"(e) {name}: long_run_day=fri laid long runs on weekdays "
+                             f"{sorted(set(d.weekday() for d in lg))}")
+        # (f) helpers
+        E_.set_week_start("sun")
+        if E_.week_start_of(_d(2026, 11, 4)) != _d(2026, 11, 1):
+            fails.append("(f) Sunday week of Wed 2026-11-04 is not Sun 2026-11-01")
+        E_.set_week_start("bogus")
+        if E_.WEEK_START != 0 or E_.week_start_of(_d(2026, 11, 4)) != _d(2026, 11, 2):
+            fails.append("(f) a bad value did not fall back to Monday")
+        E_.set_week_start("")
+        if E_.WEEK_START != 0:
+            fails.append("(f) empty is not Monday")
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        E_.WEEK_START, E_._DAY_PREF = prev_ws, prev_pref
+    return _st("det", "week-start",
+               "a Sunday or Saturday week start rotates every plan week, keeps the house long run on the "
+               "week's last day, keeps race week and a named long-run day on their real dates; Monday is "
+               "the default",
+               passed=not fails, got={"failures": fails[:8] or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -24597,8 +24674,10 @@ def _pinned_engine_globals():
     `set:rest_day_rank = fri,mon,wed`) polices every layout det the same code path polices the athlete's real
     plan with, and the seed DB's dets go red or green depending on whose database they happen to run
     against. Pinned to the unset pair for the run; the athlete's own setting goes back after."""
-    saved = E.day_preferences()
+    saved = E._DAY_PREF                 # the raw weekday pair (day_preferences() returns offsets, §WEEK)
     E.set_day_preferences(None, None)
+    saved_ws = E.WEEK_START             # fork §WEEK — the athlete's week start, pinned to Monday
+    E.WEEK_START = 0
     # Fork — the athlete's runs-per-week cap (§MAXRUNS) and an approved calibration (§CAL) are the
     # same class of settings-seeded engine global: pinned to the defaults for the run, put back after.
     saved_mr, saved_cal = E.max_runs(), E.calibration_in_force()
@@ -24615,6 +24694,7 @@ def _pinned_engine_globals():
     finally:
         S.LLM_PROVIDER = saved_prov
         E._DAY_PREF = saved          # restore the parsed pair as-is
+        E.WEEK_START = saved_ws
         E.set_max_runs("" if saved_mr is None else str(saved_mr))
         E.apply_calibration(saved_cal)
 
@@ -24727,7 +24807,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

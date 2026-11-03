@@ -162,6 +162,11 @@ SETTINGS_SPEC = [
      "help": "The weekday your long run should fall on — mon, tue, wed, thu, fri, sat or sun. "
              "Empty = the house default, Sunday. This day anchors the week: hard sessions keep a "
              "clear day either side of it, and the easy runs are sized by how far they sit from it."},
+    {"key": "week_start", "env": "SH_WEEK_START", "label": "Week starts on", "kind": "line",
+     "help": "mon, sun or sat — the first day of a training week (Runalyze calls it 'Beginning of the "
+             "week'). Plan weeks, weekly load, the weekly-volume chart and the run calendar all use it. "
+             "The house layouts keep their shape inside the week, so on a Sunday week the house long "
+             "run falls on Saturday. Empty = Monday. Regenerate the plan after changing it."},
     {"key": "rest_day_rank", "env": "SH_REST_DAY_RANK", "label": "Rest days, most wanted first",
      "kind": "line",
      "help": "Your rest days as a RANKED list, e.g. 'fri,mon,wed'. A plan's run count changes week "
@@ -932,7 +937,7 @@ def _taper_kept(prior_plan, phases, today):
         rd = str(p.get("date") or "")[:10]
         if p.get("kind") != "taper" or rd not in saved or not saved[rd] or saved[rd] == p["weeks"]:
             continue
-        race_mon = _date(rd) - timedelta(days=_date(rd).weekday())
+        race_mon = week_start_of(_date(rd))
         first_moved = race_mon - timedelta(weeks=max(saved[rd], p["weeks"]) - 1)
         if today >= first_moved:
             kept[rd] = saved[rd]
@@ -1161,7 +1166,41 @@ RUN_DAY_LAYOUTS = {
 #
 # ⚠ NOTHING SET ⇒ BYTE-IDENTICAL. Both default to empty and every path below then returns the house
 # table exactly as before. That is what keeps the ten goldens, and every plan already generated, still.
-DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")   # 0=Mon … 6=Sun, the week-offset basis
+DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")   # 0=Mon … 6=Sun (Python weekday)
+
+# ── Fork §WEEK — the first day of the training week ──────────────────────────────────────────────
+# Every week in the engine is a 7-day block from `week_start_of(d)`, and every in-week position is an
+# OFFSET from that day (0 = the week's first day … 6 = its last). The house layouts are written in
+# offsets, so a Sunday-start week keeps their shape and the house long run (offset 6) falls on
+# Saturday. Named days (`long_run_day`, `rest_day_rank`) are calendar weekdays and are converted to
+# offsets at read time, so they keep meaning the day the athlete named. WEEK_START is a Python
+# weekday: 0 = Monday (default — every path is then byte-identical), 6 = Sunday, 5 = Saturday.
+WEEK_START_CHOICES = {"mon": 0, "sun": 6, "sat": 5}
+WEEK_START = 0
+
+
+def _parse_week_start(text):
+    t = (text or "").strip().lower()
+    for k, v in WEEK_START_CHOICES.items():
+        if len(t) >= 3 and (k.startswith(t) or t.startswith(k)):
+            return v
+    return None
+
+
+def set_week_start(text):
+    """Publish the week's first day (mon/sun/sat; anything else → Monday)."""
+    global WEEK_START
+    v = _parse_week_start(text)
+    WEEK_START = 0 if v is None else v
+
+
+def week_start_of(d):
+    """The first day of the training week containing date `d`."""
+    from datetime import timedelta
+    return d - timedelta(days=(d.weekday() - WEEK_START) % 7)
+
+
+set_week_start(os.environ.get("SH_WEEK_START"))
 
 REST_CLUMP_MAX = 2   # §DAYPREF — the most consecutive REST days a derived layout may create. Two is
 #                      an ordinary training pattern (a weekend off, a mid-week double rest); three
@@ -1209,8 +1248,13 @@ def _parse_day_rank(text):
 
 
 def day_preferences():
-    """The effective (long_run_day, rest_day_rank) in ONE read, so the two can never disagree."""
-    return _DAY_PREF
+    """The effective (long_run_day, rest_day_rank) in ONE read, so the two can never disagree — as
+    week OFFSETS from the week's first day (§WEEK; identical to the weekday on a Monday week)."""
+    long_day, rank = _DAY_PREF
+    if not WEEK_START:
+        return _DAY_PREF
+    return ((None if long_day is None else (long_day - WEEK_START) % 7),
+            tuple((d - WEEK_START) % 7 for d in rank))
 
 
 def set_day_preferences(long_day_text, rest_rank_text):
@@ -4110,7 +4154,7 @@ def _current_week_actuals(db, today):
     current week's prescribed run COUNT *and* volume are both already met, an additional same-week run
     isn't forced (a short junk run on a met week does nothing for aerobic shape). Returns (runs, km)."""
     from datetime import timedelta
-    mon = today - timedelta(days=today.weekday())
+    mon = week_start_of(today)
     sun = mon + timedelta(days=6)
     drop = dropped_ids(db)
     rows = db.execute(
@@ -4151,7 +4195,7 @@ def _recent_long_runs(db, before, n_weeks=LONG_RUN_STEP_WINDOW):
     contribute nothing (a gap can't set the baseline; the cap then binds off whatever recent runs exist)."""
     from datetime import timedelta
     drop = dropped_ids(db)
-    mon0 = before - timedelta(days=before.weekday())        # Monday of `before`'s week
+    mon0 = week_start_of(before)        # the first day of `before`'s week
     out = []
     for w in range(n_weeks, 0, -1):                          # oldest → most recent
         ws = mon0 - timedelta(days=7 * w)
@@ -4290,7 +4334,7 @@ def _recent_eq_km(db, before, zones, n_weeks=BIO_EQ_WINDOW):
     from datetime import timedelta
     import json as _json
     drop = dropped_ids(db)
-    mon0 = before - timedelta(days=before.weekday())
+    mon0 = week_start_of(before)
     out = []
     for w in range(n_weeks, 0, -1):
         ws = mon0 - timedelta(days=7 * w)
@@ -4327,7 +4371,7 @@ def _recent_session_eq(db, before, zones, n_weeks=BIO_EQ_WINDOW):
     from datetime import timedelta
     import json as _json
     drop = dropped_ids(db)
-    mon0 = before - timedelta(days=before.weekday())
+    mon0 = week_start_of(before)
     out = []
     for w in range(n_weeks, 0, -1):
         ws = mon0 - timedelta(days=7 * w)
@@ -7142,7 +7186,7 @@ def _ft_weekly_series(db):
     wk_v, wk_t = {}, {}
     for iso, v in _ft_vo2_series(db):
         d = _date(iso)
-        wk_v[(d - timedelta(days=d.weekday())).isoformat()] = v
+        wk_v[week_start_of(d).isoformat()] = v
     # §33f-8 — RUN-ONLY, to match what the projection is fed: the laid plan's weekly TRIMPs are
     # run sessions, so calibrating the response against whole-body load (my non-run share ≈ 5.6%)
     # would fit a rate the plan side can never deliver. §33f-2 — and de-duped, like every sibling.
@@ -7151,7 +7195,7 @@ def _ft_weekly_series(db):
         if r["id"] in drop:
             continue
         d = _date(r["date"])
-        mon = (d - timedelta(days=d.weekday())).isoformat()
+        mon = week_start_of(d).isoformat()
         wk_t[mon] = wk_t.get(mon, 0.0) + (r["trimp"] or 0.0)
     return wk_v, wk_t
 
@@ -7294,7 +7338,7 @@ def _ft_plan_weekly_trimps(plan, today, race_date_iso):
                 except (ValueError, TypeError):
                     continue
                 if today <= sd < rd:
-                    mon = (sd - timedelta(days=sd.weekday())).isoformat()
+                    mon = week_start_of(sd).isoformat()
                     wk[mon] = wk.get(mon, 0.0) + (s.get("trimp") or 0.0)
     return [t for _, t in sorted(wk.items())]
 
@@ -8599,7 +8643,7 @@ def _av_blocked_dates(db, today):
     still anchors the week's re-laid layout for display/matching), horizon-bounded. Read by
     generate_plan so the plan stays a pure function of its inputs. Returns a (possibly empty) set."""
     from datetime import timedelta
-    monday = today - timedelta(days=today.weekday())
+    monday = week_start_of(today)
     rows = db.execute(
         "SELECT date_from, date_to FROM availability WHERE active=1 AND date_to >= ?",
         (monday.isoformat(),)).fetchall()
@@ -8670,5 +8714,5 @@ def _plan_all_weeks(plan):
 
 
 def _monday(d):
-    from datetime import timedelta
-    return d - timedelta(days=d.weekday())
+    """The first day of `d`'s training week (§WEEK — a Monday unless the athlete chose otherwise)."""
+    return week_start_of(d)

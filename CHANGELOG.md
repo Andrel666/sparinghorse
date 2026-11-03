@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Week start** (Settings → Athlete → *Week starts on*: `mon`, `sun` or `sat`; `SH_WEEK_START`). Like
+  Runalyze's "Beginning of the week". Every week anchor goes through one helper (`week_start_of`): plan
+  weeks, the re-base anchor (re-gridded back-only, as before), race week, weekly load and ramp series,
+  the eVO₂/TRIMP weekly calibration, the COROS week grid, away-day windows, the weekly-volume chart
+  (a non-Monday week is keyed by its first day's date) and the run calendar's grid. In-week positions are
+  offsets from the week's first day, so the house layouts keep their shape (on a Sunday week the house
+  long run falls on Saturday); a named `long_run_day` / `rest_day_rank` keeps meaning the calendar day.
+  Monday stays the default and is byte-identical (goldens unchanged). Covered by `det/week-start`
+  (mutation-tested); the battery pins Monday.
 - **Calibration: only injuries that followed unusual load tighten a limit.** Every listed injury used to
   tighten the session-step and CTL-ramp limits to just under whatever preceded it, so an injury after
   ordinary running (a knee that went in a race after a 1.9/wk ramp) pinned the ramp at its 3.0 floor. Now an

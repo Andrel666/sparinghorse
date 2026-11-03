@@ -246,7 +246,10 @@ function isoWeekMonday(year, wk){
 // are comparable across the whole span).
 const WEEKLY_WIN=26;
 let WEEKLY_ALL=[], WEEKLY_END=0, WEEKLY_MAX=1, WEEKLY_WIRED=false;
-function weekLabel(wk){ const [y,w]=wk.split("-W").map(Number); const mon=isoWeekMonday(y,w);
+// fork §WEEK — a Monday week arrives as an ISO "YYYY-Www" key; any other start as its first day's date
+function weekStartDate(wk){ if(!wk.includes("-W")) return new Date(wk+"T00:00:00Z");
+  const [y,w]=wk.split("-W").map(Number); return isoWeekMonday(y,w); }
+function weekLabel(wk){ const mon=weekStartDate(wk);
   return mon.toLocaleDateString(undefined,{month:"short",year:"2-digit"}); }
 function renderWeekly(){
   const chart=$("#chart");
@@ -261,8 +264,7 @@ function renderWeekly(){
   // month/year ruler below: mark where the month changes
   let lastMonth="", ticks="";
   rows.forEach((x,i)=>{
-    const [y,w]=x.week.split("-W").map(Number);
-    const mon=isoWeekMonday(y,w);
+    const mon=weekStartDate(x.week);
     const key=mon.getUTCFullYear()+"-"+mon.getUTCMonth();
     if(key!==lastMonth){ lastMonth=key;
       const lbl=mon.toLocaleDateString(undefined,{month:"short"})+
@@ -670,14 +672,16 @@ async function loadRunsCal(month){
   if(!d || !d.ok){ host.innerHTML=`<div class="empty">${esc((d&&d.error)||"Calendar unavailable.")}</div>`; return; }
   RCAL.month=d.month;
   const [y,m]=d.month.split("-").map(Number);
-  const firstDow=(new Date(y,m-1,1).getDay()+6)%7;              // Monday-first grid
+  const ws=d.week_start||0;                                      // fork §WEEK — Python weekday, 0=Mon
+  const firstDow=((new Date(y,m-1,1).getDay()+6)%7-ws+7)%7;      // the grid opens on the week's first day
   const dim=new Date(y,m,0).getDate();
   const now=new Date(), pad=n=>String(n).padStart(2,"0");
   const todayIso=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
   const other=new Set(d.other||[]);
   const title=new Date(y,m-1,1).toLocaleDateString(undefined,{month:"long",year:"numeric"});
   const mAdd=k=>{ const t=new Date(y,m-1+k,1); return `${t.getFullYear()}-${pad(t.getMonth()+1)}`; };
-  const dows=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(w=>`<div class="rcal-dow">${w}</div>`).join("");
+  const DOW=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const dows=DOW.slice(ws).concat(DOW.slice(0,ws)).map(w=>`<div class="rcal-dow">${w}</div>`).join("");
   let cells="";
   for(let i=0;i<firstDow;i++) cells+=`<div class="rcal-day blank"></div>`;
   for(let day=1;day<=dim;day++){
@@ -3581,7 +3585,7 @@ if(_hform) _hform.addEventListener("submit", async e=>{
 // touches Connections. The AI switches sit next to the Claude key they gate; a key the app adds later
 // lands on Athlete until this table names its tab.
 const SETTINGS_TABS = {
-  athlete: ["athlete_context","athlete_age","manual_lthr","units","long_run_day","rest_day_rank","max_runs_per_week","taper_weeks","injury_history"],
+  athlete: ["athlete_context","athlete_age","manual_lthr","units","week_start","long_run_day","rest_day_rank","max_runs_per_week","taper_weeks","injury_history"],
   connections: ["ai_narration","ai_parsing","ai_judgment"],
   console: ["house_url","house_name","private_url"]
 };
