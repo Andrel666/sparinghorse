@@ -15813,6 +15813,78 @@ def _cal_fixture_db(easy_rate=2.0, injuries=(("2024-03-11", 28), ("2025-06-09", 
     return mem
 
 
+def _stc_race_correction_fitness():
+    """§FTS (fork) — the per-runner race correction read at race-day fitness:
+    (a) a small or narrow corpus has no slope, so the correction is the flat c (byte-identical path);
+    (b) a corpus whose races fall further behind the model the fitter the runner was recovers that
+    trend, shrunk toward 0; (c) the correction is clamped to the raced CTL range, so a build projected
+    above every race gets the edge value, not an extrapolation; (d) a pure distance mix (10ks at low
+    CTL, halves at high CTL, same true offset) does not read as a fitness trend; (e) one far-off race
+    (a fun run) does not set the slope; (f) feasibility() with a callable correction equals the flat
+    path when the callable is constant, and moves the finish time when it is not; (g) a race marked as a
+    fun race in Runalyze is left out of the corpus."""
+    import json
+    import math as _m
+    fails = []
+    E_ = E
+    # (a) small / narrow corpora
+    if E_._ft_fitness_slope([20, 25, 30], [0.1] * 3, [0.0] * 3) is not None:
+        fails.append("(a) 3 races produced a slope")
+    if E_._ft_fitness_slope([30, 31, 32, 33, 34, 35], [0.1] * 6, [0.0] * 6) is not None:
+        fails.append("(a) a 5-CTL span produced a slope")
+    if E_._ft_correction_at(1.1, None, 70) != 1.1:
+        fails.append("(a) no slope did not return the flat c")
+    # (b) a planted trend: residual = 0.004 per CTL point around CTL 30
+    ctls = [12, 16, 20, 24, 28, 32, 36, 40]
+    lrs = [0.10 + 0.004 * (x - 30) for x in ctls]
+    sl = E_._ft_fitness_slope(ctls, lrs, [0.0] * len(ctls))
+    want = 0.004 * len(ctls) / (len(ctls) + E_.FTS_SHRINK_K)
+    if not sl or abs(sl["b"] - want) > 1e-9:
+        fails.append(f"(b) planted slope not recovered (shrunk): {sl and sl['b']} vs {want}")
+    # (c) clamp at the fittest race
+    if sl:
+        c40, c70 = E_._ft_correction_at(1.1, sl, 40), E_._ft_correction_at(1.1, sl, 70)
+        c5, c12 = E_._ft_correction_at(1.1, sl, 5), E_._ft_correction_at(1.1, sl, 12)
+        if abs(c40 - c70) > 1e-12 or abs(c5 - c12) > 1e-12 or not (c12 < 1.1 < c40):
+            fails.append(f"(c) clamp/direction off: {c5}, {c12}, {c40}, {c70}")
+    # (d) distance mix only: 10ks at low CTL, halves at high CTL, residual = tilt + constant
+    t10, th = _m.log(E_._ft_scale_tilt("10k")), _m.log(E_._ft_scale_tilt("half"))
+    ctls_d = [14, 16, 18, 20, 36, 38, 40, 42]
+    tilts_d = [t10] * 4 + [th] * 4
+    lrs_d = [0.08 + t for t in tilts_d]
+    sl_d = E_._ft_fitness_slope(ctls_d, lrs_d, tilts_d)
+    if sl_d and abs(sl_d["b"]) > 1e-9:
+        fails.append(f"(d) a distance mix read as a fitness trend: b={sl_d['b']}")
+    # (e) one far-off race at low CTL must not flatten a real trend
+    lrs_e = lrs + [0.45]
+    sl_e = E_._ft_fitness_slope(ctls + [10], lrs_e, [0.0] * len(lrs_e))
+    if not sl_e or sl_e["b"] <= 0 or sl_e["n"] != len(ctls):
+        fails.append(f"(e) the outlier was not dropped from the slope: {sl_e}")
+    # (f) feasibility with a callable correction
+    obj = {"type": "half", "label": "T", "date": "2027-02-26"}
+    flat = E_.feasibility(obj, 30, 40.0, 16, projected_ctl=60, race_long_km=16, correction=1.1)
+    same = E_.feasibility(obj, 30, 40.0, 16, projected_ctl=60, race_long_km=16, correction=lambda c: 1.1)
+    if flat.get("finish_time") != same.get("finish_time"):
+        fails.append("(f) a constant callable changed the finish time")
+    if sl:
+        moved = E_.feasibility(obj, 30, 40.0, 16, projected_ctl=60, race_long_km=16,
+                               correction=lambda c: E_._ft_correction_at(1.1, sl, c))
+        a, b = (flat.get("finish_time") or {}), (moved.get("finish_time") or {})
+        if not (b.get("seconds", 0) > a.get("seconds", 0)):
+            fails.append(f"(f) a rising correction did not slow the race-day read: {a.get('hms')} → {b.get('hms')}")
+    # (g) a race marked as a fun race in Runalyze (paced for someone else) is not a fitness reading
+    fun = {"race_result": {"official_distance": 5000.0, "official_time": 2420, "status": "Finished",
+                           "is_funrace": True}}
+    real = {"race_result": {"official_distance": 5000.0, "official_time": 1500, "status": "Finished",
+                            "is_funrace": False}}
+    if E_._tagged_race(json.dumps(fun), 5.2) is not None or E_._tagged_race(json.dumps(real), 5.1) is None:
+        fails.append("(g) the fun-race flag is not honoured (or a real race was dropped)")
+    return _st("det", "race-correction-fitness",
+               "the race correction follows race-day fitness: flat on small corpora, a shrunk trend on a "
+               "wide one, clamped to the raced range, blind to distance mix and to one far-off race",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -24640,7 +24712,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),
