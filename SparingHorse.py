@@ -1372,12 +1372,14 @@ def _mcpa_items(res):
 
 
 def _mcp_race_results():
-    """activity id → a REST-shaped `race_result` dict. MCP `official_distance` is in km (REST: m)."""
+    """→ ({activity id: REST-shaped `race_result`}, complete). MCP `official_distance` is in km (REST: m).
+    `complete` is False when the list could not be read or hit the tool's limit — then a race missing
+    from it proves nothing, and the sync must not untag anything."""
     try:
         items = _mcpa_items(_mcpa_call("get_historical_races",
                                        {"start_date": MCPA_FLOOR.isoformat(), "limit": 200}))
     except RunalyzeError:
-        return {}
+        return {}, False
     out = {}
     for r in items:
         aid = r.get("activity_id")
@@ -1395,7 +1397,7 @@ def _mcp_race_results():
                     "officially_measured": r.get("officially_measured"), "name": r.get("name"),
                     "priority_level": r.get("priority_level"), "status": r.get("status"),
                     "is_funrace": r.get("is_funrace")}
-    return out
+    return out, len(items) < 200
 
 
 def mcp_activity_to_rest(d, race=None):
@@ -1472,7 +1474,7 @@ def sync_activities_mcp(db, backfill=False, today=None):
                 print(f"[sync] MCP resuming the history import below {reached.isoformat()}", flush=True)
             else:
                 full_done = None                           # nothing left below: the walk is complete
-    races = _mcp_race_results()
+    races, races_complete = _mcp_race_results()
     added = refreshed = windows = details = failed = 0
     clean = True                                           # no failure yet on the deep walk
     deep_ran = False
@@ -1537,6 +1539,18 @@ def sync_activities_mcp(db, backfill=False, today=None):
             a["race_result"] = rr
             upsert_activity(db, a)
             patched += 1
+    if races_complete:                                     # a race UNticked in Runalyze since the sync
+        for aid, raw in list(existing.items()):
+            if aid in races or '"race_result"' not in (raw or ""):
+                continue
+            try:
+                a = json.loads(raw)
+            except ValueError:
+                continue
+            if a.pop("race_result", None) is not None:
+                upsert_activity(db, a)
+                existing[aid] = json.dumps(a, separators=(",", ":"))
+                patched += 1
     if (deep_ran and clean) or full_done is None:
         set_meta(db, "mcpa_full_done", "1")
     db.commit()
