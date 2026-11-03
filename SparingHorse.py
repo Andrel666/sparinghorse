@@ -1374,8 +1374,8 @@ def _mcpa_items(res):
 def _mcp_race_results():
     """activity id → a REST-shaped `race_result` dict. MCP `official_distance` is in km (REST: m)."""
     try:
-        items = _mcpa_items(mcp_call("get_historical_races",
-                                     {"start_date": MCPA_FLOOR.isoformat(), "limit": 200}))
+        items = _mcpa_items(_mcpa_call("get_historical_races",
+                                       {"start_date": MCPA_FLOOR.isoformat(), "limit": 200}))
     except RunalyzeError:
         return {}
     out = {}
@@ -1416,11 +1416,27 @@ def mcp_activity_to_rest(d, race=None):
     return a
 
 
+MCPA_RETRIES = (2, 6, 15)     # seconds to wait before each retry of a dropped connection
+
+
+def _mcpa_call(tool, args):
+    """mcp_call with retries on a dropped connection (a reset mid-import used to end the whole sync).
+    A network error that outlives the retries comes back as a RunalyzeError, like every MCP failure."""
+    for wait in (*MCPA_RETRIES, None):
+        try:
+            return mcp_call(tool, args)
+        except requests.RequestException as e:
+            if wait is None:
+                raise RunalyzeError(f"MCP {tool}: network error after {len(MCPA_RETRIES)} retries: {e}") from e
+            print(f"[sync] MCP {tool}: {type(e).__name__} — retrying in {wait}s", flush=True)
+            time.sleep(wait)
+
+
 def _mcpa_list(start, end):
     """Every activity between start and end (dates, inclusive); splits a window that fills the limit."""
-    items = _mcpa_items(mcp_call("get_activities", {"start_date": start.isoformat(),
-                                                    "end_date": end.isoformat(),
-                                                    "limit": MCPA_LIST_LIMIT}))
+    items = _mcpa_items(_mcpa_call("get_activities", {"start_date": start.isoformat(),
+                                                      "end_date": end.isoformat(),
+                                                      "limit": MCPA_LIST_LIMIT}))
     if len(items) >= MCPA_LIST_LIMIT and start < end:
         mid = start + (end - start) // 2
         return _mcpa_list(start, mid) + _mcpa_list(mid + timedelta(days=1), end)
@@ -1428,62 +1444,82 @@ def _mcpa_list(start, end):
 
 
 def sync_activities_mcp(db, backfill=False, today=None):
-    """The §MCPA pull. Incremental: from MCPA_REFRESH_DAYS before the newest local run to today, so a
-    first sync (empty table) is the full history. backfill=True walks to MCPA_FLOOR and re-details
-    every activity. A race tagged later on an older run is patched from the race list without a
-    detail call. Commits per window, so a long first import keeps its progress."""
+    """The §MCPA pull, newest to oldest by window, committing per window.
+    - first sync (empty table) or backfill=True: today back to MCPA_FLOOR (backfill re-details all).
+    - full history done: only MCPA_REFRESH_DAYS before the newest local run to today.
+    - an unfinished first import (stopped, network): the recent stretch for new runs, then RESUMES
+      below the oldest point it reached (meta `mcpa_walked_to`; without it, the oldest local run) —
+      it does not walk the already-imported years again.
+    A race tagged later on an older run is patched from the race list without a detail call."""
     today = today or datetime.now().date()
     existing = {r["id"]: r["raw"] for r in db.execute("SELECT id, raw FROM activities").fetchall()}
-    newest = db.execute("SELECT MAX(date) FROM activities").fetchone()[0]
-    # A full walk until one has finished cleanly: an import cut short (network, Ctrl+C) resumes on
-    # the next sync instead of the incremental start skipping the history it never reached.
-    full = backfill or not newest or get_meta(db, "mcpa_full_done") != "1"
-    if full:
-        start = MCPA_FLOOR
-    else:
-        start = max(MCPA_FLOOR, _cal_date.fromisoformat(newest[:10]) - timedelta(days=MCPA_REFRESH_DAYS))
+    newest, oldest = db.execute("SELECT MAX(date), MIN(date) FROM activities").fetchone()
     refresh_from = (today - timedelta(days=MCPA_REFRESH_DAYS)).isoformat()
+    full_done = get_meta(db, "mcpa_full_done") == "1"
+    if backfill or not newest:
+        ranges = [(MCPA_FLOOR, today, True)]               # (start, end, deep) — deep tracks the walk
+        set_meta(db, "mcpa_walked_to", "")
+        set_meta(db, "mcpa_full_done", "")
+    else:
+        recent = max(MCPA_FLOOR, _cal_date.fromisoformat(newest[:10]) - timedelta(days=MCPA_REFRESH_DAYS))
+        ranges = [(recent, today, False)]
+        if not full_done:
+            reached = _cal_date.fromisoformat((get_meta(db, "mcpa_walked_to") or oldest)[:10])
+            resume = min(reached, recent) - timedelta(days=1)
+            if resume >= MCPA_FLOOR:
+                ranges.append((MCPA_FLOOR, resume, True))
+                print(f"[sync] MCP resuming the history import below {reached.isoformat()}", flush=True)
+            else:
+                full_done = None                           # nothing left below: the walk is complete
     races = _mcp_race_results()
     added = refreshed = windows = details = failed = 0
-    end = today
-    while end >= start:
-        wstart = max(start, end - timedelta(days=MCPA_WINDOW_DAYS - 1))
-        items = _mcpa_list(wstart, end)
-        windows += 1
-        for it in items:
-            aid = it.get("id")
-            if not aid:
-                continue
-            known = aid in existing
-            if known and not backfill and (it.get("date") or "") < refresh_from:
-                continue
-            if details:
-                time.sleep(PAGE_DELAY)                  # WAF politeness between detail pulls
-            try:
-                det = mcp_call("get_activity_details", {"activity_id": aid})
-            except RunalyzeError as e:                  # one bad activity never sinks the import
-                failed += 1
-                print(f"[sync] MCP detail {aid} failed: {str(e)[:120]}", flush=True)
-                continue
-            details += 1
-            det = det.get("activity", det) if isinstance(det, dict) else det
-            if not isinstance(det, dict) or not det.get("id"):
-                continue
-            a = mcp_activity_to_rest(det, races.get(aid))
-            blob = json.dumps(a, separators=(",", ":"))
-            if not known:
-                upsert_activity(db, a)
-                added += 1
-            elif blob != existing[aid]:
-                upsert_activity(db, a)
-                refreshed += 1
-            existing[aid] = blob
-        db.commit()
-        if items:
-            print(f"[sync] MCP {wstart.isoformat()}…{end.isoformat()}: {len(items)} listed, "
-                  f"{added} new so far", flush=True)
-        end = wstart - timedelta(days=1)
-    patched = 0                                          # a race tag added after the run was synced
+    clean = True                                           # no failure yet on the deep walk
+    deep_ran = False
+    for start, end, deep in ranges:
+        deep_ran = deep_ran or deep
+        while end >= start:
+            wstart = max(start, end - timedelta(days=MCPA_WINDOW_DAYS - 1))
+            items = _mcpa_list(wstart, end)
+            windows += 1
+            fails_before = failed
+            for it in items:
+                aid = it.get("id")
+                if not aid:
+                    continue
+                known = aid in existing
+                if known and not backfill and (it.get("date") or "") < refresh_from:
+                    continue
+                if details:
+                    time.sleep(PAGE_DELAY)                 # WAF politeness between detail pulls
+                try:
+                    det = _mcpa_call("get_activity_details", {"activity_id": aid})
+                except RunalyzeError as e:                 # one bad activity never sinks the import
+                    failed += 1
+                    print(f"[sync] MCP detail {aid} failed: {str(e)[:120]}", flush=True)
+                    continue
+                details += 1
+                det = det.get("activity", det) if isinstance(det, dict) else det
+                if not isinstance(det, dict) or not det.get("id"):
+                    continue
+                a = mcp_activity_to_rest(det, races.get(aid))
+                blob = json.dumps(a, separators=(",", ":"))
+                if not known:
+                    upsert_activity(db, a)
+                    added += 1
+                elif blob != existing[aid]:
+                    upsert_activity(db, a)
+                    refreshed += 1
+                existing[aid] = blob
+            if deep and clean and failed == fails_before:
+                set_meta(db, "mcpa_walked_to", wstart.isoformat())   # resume point: all above is in
+            elif deep:
+                clean = False                              # keep the resume point above the failure
+            db.commit()
+            if items:
+                print(f"[sync] MCP {wstart.isoformat()}…{end.isoformat()}: {len(items)} listed, "
+                      f"{added} new so far", flush=True)
+            end = wstart - timedelta(days=1)
+    patched = 0                                            # a race tag added after the run was synced
     for aid, rr in races.items():
         raw = existing.get(aid)
         if not raw:
@@ -1496,7 +1532,7 @@ def sync_activities_mcp(db, backfill=False, today=None):
             a["race_result"] = rr
             upsert_activity(db, a)
             patched += 1
-    if full and not failed:
+    if (deep_ran and clean) or full_done is None:
         set_meta(db, "mcpa_full_done", "1")
     db.commit()
     return {"added": added, "refreshed": refreshed + patched, "pages_fetched": windows,
