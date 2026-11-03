@@ -1452,3 +1452,5 @@ details.section > summary:focus-visible{outline:2px solid var(--focus);outline-o
   .plantiles{grid-template-columns:1fr}
   .roadflags,.roadbars,.roadband,.roadmarks{column-gap:2px}
 }
+/* fork §SWAP — a session moved to a nearby day */
+.smoved{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:4px;white-space:nowrap}

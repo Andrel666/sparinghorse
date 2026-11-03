@@ -7620,9 +7620,33 @@ def block_log(db):
         # scheduled, so neither sched nor done move) — only the planned-session loop above feeds those.
         planned = {s["date"] for s in wsess}   # §100 — restored days are PLANNED, not bonus
         we = (_date(w["start"]) + timedelta(days=6)).isoformat()
+        # Fork §SWAP — a session POSTPONED a day or two is the same session, moved: a MISSED session
+        # pairs with an unplanned run 1–SWAP_DAYS days AFTER it, in the same week, nearest first. The
+        # run then completes the session (done, actual, adherence) and leaves the unplanned list; the
+        # session keeps its planned date and carries `moved_to`. A run BEFORE a session stays bonus
+        # volume (§ out-of-schedule): ahead of the session it can't be told from an extra run.
+        moved = set()
+        free = sorted(d for d in acts if w["start"] <= d <= we and d not in planned
+                      and d <= today and acts[d]["km"] > 0)
+        pairs = sorted((((_date(d) - _date(x["date"])).days), i, d)
+                       for i, x in enumerate(sessions) if x.get("missed")
+                       for d in free if 0 < (_date(d) - _date(x["date"])).days <= SWAP_DAYS)
+        taken = set()
+        for _dist, i, d2 in pairs:              # globally nearest first, so no session steals another's run
+            if i in taken or d2 in moved:
+                continue
+            x = sessions[i]
+            taken.add(i); moved.add(d2)
+            a2 = acts[d2]
+            pace = a2["sec"] / (a2["km"] * 60) if a2["km"] else 0
+            x.update(done=True, missed=False, moved_to=d2, runs=_breakdown(a2), activity_id=a2["id"],
+                     actual={"km": round(a2["km"], 1),
+                             "pace": (f"{int(pace)}:{int((pace*60) % 60):02d}" if pace else None)},
+                     reflection=x.get("reflection") or notes.get(d2))
+            done += 1
         for d in sorted(acts):
             a = acts[d]
-            if w["start"] <= d <= we and d not in planned and a["km"] > 0:
+            if w["start"] <= d <= we and d not in planned and d not in moved and a["km"] > 0:
                 pace = a["sec"] / (a["km"] * 60) if a["km"] else 0
                 sessions.append({
                     "date": d, "km": None, "kind": "unplanned", "unplanned": True,
@@ -7639,6 +7663,9 @@ def block_log(db):
            "runs": sum(1 for a in acts.values() if a["km"] > 0)}
     return {"weeks": out_weeks, "start": start, "end": end, "today": today,
             "adherence": {"done": done, "scheduled": sched}, "ran": ran}
+
+
+SWAP_DAYS = 2          # fork §SWAP — a run up to this many days after a missed session is that session, moved
 
 
 BONUS_ACWR_MAX = 1.0   # ACWR below this = clear headroom under the 1.25 weekly cap → an easy add is "free"

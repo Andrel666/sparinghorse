@@ -1815,7 +1815,9 @@ function logLine(s,today,planLabel){
     : s.done ? '<span class="smk done">✓</span>'
     : s.missed ? '<span class="smk missed">✕</span>'
     : (s.date===today ? '<span class="smk today">•</span>' : '<span class="smk">○</span>');
-  const act = s.actual ? `<span class="sact">${U.d(s.actual.km)}${U.k}${s.actual.pace?` @ ${U.p(s.actual.pace)}`:''}</span>` : "";
+  // fork §SWAP — a session run on a nearby day: say where it went, the run completes it
+  const mv = s.moved_to ? ` <span class="smoved" title="Run on ${esc(s.moved_to)}, ${s.moved_to>s.date?"a day or two later":"a day or two early"} — counted as this session">↷ ${esc(new Date(s.moved_to+"T00:00:00Z").toLocaleDateString(undefined,{weekday:"short",timeZone:"UTC"}))}</span>` : "";
+  const act = s.actual ? `<span class="sact">${U.d(s.actual.km)}${U.k}${s.actual.pace?` @ ${U.p(s.actual.pace)}`:''}${mv}</span>` : "";
   const refl = s.reflection ? `<div class="srefl">📓 ${esc(s.reflection)}</div>` : "";
   const clk = !SH_READONLY && (s.done||s.unplanned) && s.activity_id;   // a completed/extra run → view its run + map
   const plan = s.unplanned ? '<span class="splan exu">unplanned</span>' : planLabel;
@@ -3214,7 +3216,9 @@ async function loadEffort(){
       ? `easy-pace ceiling ≈ <b>${esc(U.p(d.easy_pace_ceiling||"—"))}</b>/${U.unit} ${basis}`
       : `easy-HR ceiling ≈ <b>${d.easy_hr_ceiling}</b> bpm ${basis}`;
     capLine=`Last ${d.window_days} days · <b>${c.on}/${c.judged}</b> easy runs stayed aerobic · ${ceil}.${c.too_hard?` <b style="color:var(--danger)">${c.too_hard}</b> ran at threshold effort.`:""}`;
-    note=`Judged by heart rate, not pace — terrain &amp; heat already live in your HR. Pace shown is grade-adjusted (GAP). Each run is matched to its nearest prescribed session within a couple of days, so an anticipated or postponed session is judged against its real prescription, not the day it landed on; a run with no session in range falls back to the easy default. One mismatch is an observation, not a verdict.`;
+    note=(d.anchor==="lt1_pace"
+      ? `Judged by pace for now: no trusted threshold heart rate yet (set Manual LTHR in Settings, or run a 30-min field test), so each easy run is held to the LT1 pace ceiling. Pace shown is grade-adjusted (GAP).`
+      : `Judged by heart rate, not pace — terrain &amp; heat already live in your HR. Pace shown is grade-adjusted (GAP).`)+` Each run is matched to its nearest prescribed session within a couple of days, so an anticipated or postponed session is judged against its real prescription, not the day it landed on; a run with no session in range falls back to the easy default. One mismatch is an observation, not a verdict.`;
   }
   let cohLine="";   // pace↔HR coherence — private diagnostic; surfaces the two-model divergence, never the plan
   if(!d.public){
