@@ -9,6 +9,7 @@
 !SparingHorse.py
 !sh_engine.py
 !sh_calibrate.py
+!sh_coach.py
 !sh_selftest.py
 !sh_music.py
 !test/golden/
