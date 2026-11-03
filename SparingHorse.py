@@ -7948,7 +7948,7 @@ def _private_only_path(p):
     sanitizes on the public box (HR/TE/feeling dropped, judged on pace — `effort_discipline(public=…)`),
     so the score is public while the HR-led critique stays private."""
     return (p in ("/api/health", "/api/settings", "/api/secrets",
-                  "/api/secrets/validate", "/api/runs", "/api/plan/calendar",   # §RB/§PCAL — calendars carry HR
+                  "/api/secrets/validate", "/api/runs", "/api/plan/calendar", "/api/race/plan",   # §RB/§PCAL/§RDAY — carry HR
                   "/api/system")                          # 0.56.1 — the household's timestamps
             or p.startswith("/api/suunto")                # §SG — OAuth + watch push are owner-only
             or p.startswith("/api/coros")                 # §CG — same for the COROS plan push
@@ -11099,6 +11099,116 @@ def plan_calendar(db, month):
             "first": log["start"][:7], "last": log["end"][:7], "start": log["start"], "end": log["end"],
             "race": {"date": obj.get("date"), "label": obj.get("label")} if obj.get("date") else None,
             "days": days, "phase": phase}
+
+
+# ── Fork §RDAY — the race-day plan: how to run the target ───────────────────────────────────────
+# The engine prices the race (feasibility); this turns a target time into the run itself: a slightly
+# conservative start (the first RDAY_SETTLE_FRAC of the distance RDAY_SETTLE_S slower — a crowded
+# start and a cold body), a negative-leaning finish (the last RDAY_FINISH_FRAC RDAY_FINISH_S faster),
+# and the middle solved so the three add up to the target EXACTLY. HR guardrails come from the
+# athlete's LTHR at distance-typical fractions (a half is run just under threshold), so the first
+# third is capped — the classic way a target dies is the first 5 km. Everything here is computed
+# server-side; the page only lays out the table.
+RDAY_SETTLE_FRAC, RDAY_SETTLE_S = 0.14, 8      # half: first ~3 km, 8 s/km slower
+RDAY_FINISH_FRAC, RDAY_FINISH_S = 0.15, 5      # half: last ~3 km, 5 s/km faster
+RDAY_HR = {   # (settle cap, middle band lo, hi) as fractions of LTHR
+    "5k": (1.00, 1.02, 1.06), "10k": (0.97, 0.98, 1.03),
+    "half": (0.95, 0.95, 1.00), "marathon": (0.87, 0.87, 0.92)}
+
+
+def _fmt_pace_s(sec):
+    sec = int(round(sec))
+    return f"{sec // 60}:{sec % 60:02d}"
+
+
+def race_plan(db, target_text=None):
+    """§RDAY — the pacing plan for the plan's A race: segments, km splits, checkpoints, HR guardrails,
+    how the target sits against the prediction and the athlete's best, and race-morning notes."""
+    import sh_engine as _E
+    row = db.execute("SELECT plan FROM plans ORDER BY id DESC LIMIT 1").fetchone()
+    if not row:
+        return {"ok": False, "error": "No plan yet — generate one first."}
+    plan = json.loads(row["plan"])
+    obj = plan.get("objective") or {}
+    typ = (obj.get("type") or "").lower()
+    if typ not in RACE_KM:
+        return {"ok": False, "error": "The plan's objective is not a standard race distance."}
+    dist = RACE_KM[typ]
+    if not obj.get("start_time") and obj.get("date"):   # the start time lives on the objective row
+        o = db.execute("SELECT start_time FROM objectives WHERE date=? AND status='upcoming' "
+                       "ORDER BY id DESC LIMIT 1", (obj["date"],)).fetchone()
+        if o and o["start_time"]:
+            obj = {**obj, "start_time": o["start_time"]}
+    ft = (plan.get("feasibility") or {}).get("finish_time") or {}
+    goal_s = _parse_goal_seconds(obj.get("target"), typ) if obj.get("target") else None
+    target_s = None
+    if target_text:
+        target_s = _parse_goal_seconds(target_text, typ)
+        if not target_s:
+            return {"ok": False, "error": "target must be a time like 1:59 or 1:59:30"}
+    source = "override" if target_s else "goal" if goal_s else "prediction"
+    target_s = float(target_s or goal_s or ft.get("seconds") or 0)
+    if not target_s:
+        return {"ok": False, "error": "No target time and no prediction yet."}
+    p = target_s / dist
+    settle_km = round(dist * RDAY_SETTLE_FRAC, 1) if typ != "5k" else 1.0
+    finish_km = round(dist * RDAY_FINISH_FRAC, 1) if typ != "5k" else 1.0
+    mid_km = dist - settle_km - finish_km
+    p_settle, p_finish = p + RDAY_SETTLE_S, p - RDAY_FINISH_S
+    p_mid = (target_s - settle_km * p_settle - finish_km * p_finish) / mid_km
+    lthr = (derive_lthr(db) or {}).get("lthr")
+    cap, lo, hi = RDAY_HR[typ]
+    hr = (lambda a, b=None: ({"lo": round(lthr * a), "hi": round(lthr * b)} if b else {"hi": round(lthr * a)})
+          if lthr else None)
+    segs = [
+        {"from_km": 0.0, "to_km": settle_km, "pace": _fmt_pace_s(p_settle), "pace_s": round(p_settle),
+         "hr": hr(cap), "label": "Settle in", "cue": "Start slower than goal pace — let the crowd and your legs settle; "
+                                                    "this is where a target is lost, not won."},
+        {"from_km": settle_km, "to_km": round(settle_km + mid_km, 1), "pace": _fmt_pace_s(p_mid),
+         "pace_s": round(p_mid), "hr": hr(lo, hi), "label": "Goal pace",
+         "cue": "Lock in. Run by pace, check HR: if it climbs past the band before halfway, ease 5 s/km."},
+        {"from_km": round(settle_km + mid_km, 1), "to_km": round(dist, 2), "pace": _fmt_pace_s(p_finish),
+         "pace_s": round(p_finish), "hr": None, "label": "Finish",
+         "cue": "Whatever is left. HR no longer matters; hold form and run the tangents."}]
+    def clock_at(x):        # elapsed seconds at distance x along the three segments
+        return (p_settle * min(x, settle_km) + p_mid * min(max(x - settle_km, 0.0), mid_km)
+                + p_finish * max(x - settle_km - mid_km, 0.0))
+    marks = sorted(set([float(k) for k in range(1, int(dist) + 1)] + [dist]))
+    splits = [{"km": round(m, 2), "clock": _E._fmt_hms(round(clock_at(m))),
+               "checkpoint": m in (5.0, 10.0, 15.0, 20.0, 30.0, 40.0) or m == dist} for m in marks]
+    band = ft.get("band") or {}
+    corpus = [r for r in _E._ft_race_corpus(db) if r["type"] == typ]
+    best = min(corpus, key=lambda r: r["seconds"]) if corpus else None
+    verdict = None
+    if band.get("lo_seconds") and band.get("hi_seconds"):
+        verdict = ("faster than the predicted range" if target_s < band["lo_seconds"] else
+                   "slower than the predicted range" if target_s > band["hi_seconds"] else
+                   "inside the predicted range")
+    notes = [f"Warm up 10–12 min easy plus 3–4 strides, finishing 10–15 min before the start"
+             + (f" ({obj.get('start_time')})" if obj.get("start_time") else "") + ".",
+             "Above about 18 °C at the start, add roughly 5 s/km for every 5 °C — heat costs pace, "
+             "and holding the planned pace anyway costs more later.",
+             ("Fuel: a gel every 30–40 min from about 40 min in, with water at every station; "
+              "nothing new on race day." if target_s > 150 * 60 else
+              "Fuel: a gel about 40 min in and another about 75 min in, with water; nothing new on race day."
+              if target_s > 75 * 60 else "Fuel: none needed beyond water at the stations.")]
+    return {"ok": True, "race": {"label": obj.get("label"), "date": obj.get("date"), "type": typ,
+                                 "km": dist, "start_time": obj.get("start_time")},
+            "target": {"seconds": round(target_s), "hms": _E._fmt_hms(round(target_s)),
+                       "pace": _fmt_pace_s(p), "source": source, "goal": obj.get("target")},
+            "prediction": {"hms": ft.get("hms"), "lo": band.get("lo_hms"), "hi": band.get("hi_hms"),
+                           "verdict": verdict} if ft else None,
+            "best": {"hms": _E._fmt_hms(round(best["seconds"])), "date": best["date"]} if best else None,
+            "lthr": lthr, "segments": segs, "splits": splits, "notes": notes}
+
+
+@app.get("/api/race/plan")
+def api_race_plan():
+    """§RDAY — private: it carries the HR guardrails."""
+    if READONLY:
+        return jsonify(ok=False, error="not available on the public view"), 403
+    r = race_plan(get_db(), request.args.get("target") or None)
+    return jsonify(r), (200 if r.get("ok") or "target must" not in (r.get("error") or "") else 400)
 
 
 @app.get("/api/plan/calendar")

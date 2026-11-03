@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Race-day plan.** The race-day session opens (week list, plan calendar) into a pacing plan for the A race,
+  computed server-side (`/api/race/plan`, private): the target — the objective's goal, else the prediction, or
+  a typed override — split into settle-in (first ~14 %, +8 s/km), goal pace and finish (last ~15 %, −5 s/km)
+  that add up to it exactly; clock times at every km and at 5/10/15/20 km; HR guardrails from LTHR at the
+  distance's fractions (a half: ≤ 95 % for the settle, 95–100 % through the middle); how the target sits
+  against the prediction range and the athlete's best at the distance; warm-up, heat and fuelling notes.
+  `det/race-day-plan`, mutation-tested.
 - **Plan calendar.** Under the plan, a month grid (the run browser's, opening on the chosen week start)
   shows every planned session on its day — kind and distance, ✓ done / ✕ missed / ↷ moved / + extra — with
   each day striped in its phase's colour and race day outlined; a day opens its target and instruction card.

@@ -1362,7 +1362,37 @@ document.addEventListener("click", e=>{
   if(!c) return;
   e.stopPropagation();
   t.classList.toggle("open", c.classList.toggle("open"));
+  if(c.dataset.rday && !c.dataset.loaded) loadRaceCard(c);   // fork §RDAY — fetched on first open
 });
+// ── Fork §RDAY — the race-day plan card (data from /api/race/plan; computed server-side) ──────────
+function raceCardShell(open){ return SH_READONLY?"":`<div class="wcard rdaycard${open?" open":""}" data-rday="1"><div class="wcue">Loading the race-day plan…</div></div>`; }
+async function loadRaceCard(c, target){
+  c.dataset.loaded="1";
+  let r; try{ r=await getJSON("/api/race/plan"+(target?`?target=${encodeURIComponent(target)}`:"")); }
+  catch(e){ c.innerHTML=`<div class="wcue">Race plan unavailable.</div>`; return; }
+  c.innerHTML=raceCardHtml(r);
+  const f=c.querySelector(".rday-try");
+  if(f) f.addEventListener("submit", ev=>{ ev.preventDefault(); const v=f.querySelector("input").value.trim(); if(v) loadRaceCard(c, v); });
+}
+function raceCardHtml(r){
+  if(!r||!r.ok) return `<div class="wcue">${esc((r&&r.error)||"Race plan unavailable.")}</div>`;
+  const tg=r.target, pr=r.prediction, src={goal:"your goal",prediction:"the engine's prediction",override:"the target you entered"}[tg.source];
+  const head=`Target <b>${esc(tg.hms)}</b> · ${esc(U.p(tg.pace))}/${U.unit} average (${src})`+
+    (pr&&pr.hms?` · prediction ${esc(pr.hms)} (${esc(pr.lo||"?")}–${esc(pr.hi||"?")})`:"")+
+    (r.best?` · your best ${esc(r.best.hms)} (${esc(r.best.date.slice(0,4))})`:"");
+  const verdict=pr&&pr.verdict?`<div class="rday-v">This target is ${esc(pr.verdict)}.</div>`:"";
+  const hrTxt=h=>!h?"—":h.lo?`${h.lo}–${h.hi} bpm`:`≤ ${h.hi} bpm`;
+  const rows=r.segments.map(sg=>`<tr><td><b>${esc(sg.label)}</b></td><td>${U.d(sg.from_km).toFixed(1)}–${U.d(sg.to_km).toFixed(1)}${U.k}</td>`+
+    `<td>${esc(U.p(sg.pace))}/${U.unit}</td><td>${hrTxt(sg.hr)}</td><td class="rday-cue">${esc(sg.cue)}</td></tr>`).join("");
+  const cps=r.splits.filter(x=>x.checkpoint).map(x=>`<span><b>${x.km%1?U.d(x.km).toFixed(1):U.d(x.km).toFixed(0)}${U.k}</b> ${esc(x.clock)}</span>`).join("");
+  const all=r.splits.map(x=>`<span>${x.km%1?U.d(x.km).toFixed(1):U.d(x.km).toFixed(0)} · ${esc(x.clock)}</span>`).join("");
+  return `<div class="wcue">${head}</div>${verdict}
+    <div class="wctbl-wrap"><table class="wctbl"><thead><tr><th>Segment</th><th>Dist</th><th>Pace</th><th>HR</th><th>How</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="rday-cp">${cps}</div>
+    <details class="rday-all"><summary>Every split (clock time at each ${U.unit})</summary><div class="rday-splits">${all}</div></details>
+    <ul class="rday-notes">${r.notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul>
+    <form class="rday-try"><label>Try another target <input type="text" inputmode="numeric" placeholder="e.g. 2:05" size="8"></label> <button type="submit" class="ghost">Show</button></form>`;
+}
 let AI={narration:true,parsing:true,judgment:false};   // 0.56.0 §S5 — the switches, from /healthz
 let OBJECTIVES=[], LASTDIFF=null, LLM_OK=false, LOG=null, RDY=null,
     ZONESD=null;   // §W1 — current training_zones payload (rides /api/readiness + /api/zones); null on public
@@ -1944,7 +1974,7 @@ function sessSummary(s){
   // §RACE — the race is a session now, and it must READ as one. Without this the row printed a bare
   // distance, indistinguishable from a long run, on the day the whole block points at; the flag is
   // published for exactly this (§PV `sessions[].race`) and nothing was reading it.
-  if(s.race) return `${U.d(s.km)}${U.k} <span class="racemk" title="${esc(s.note||"Race day")} — the race itself, at ${esc(U.t(s.pace_zone||"race pace"))}. A fixed prescription: the distance and the pace are the race's, so the governor sizes the training around it rather than trimming it.">· race day</span>`;
+  if(s.race) return `${U.d(s.km)}${U.k} <span class="racemk" title="${esc(s.note||"Race day")} — the race itself. ${SH_READONLY?"":"Open it for the race-day plan: pace segments, splits, heart-rate guardrails and race-morning notes. "}A fixed prescription: the governor sizes the training around it rather than trimming it.">· race day</span>`;
   return `${U.d(s.km)}${U.k}`;
 }
 // One plan week (used for every phase but the re-base, which carries the journal/actuals overlay).
@@ -2171,7 +2201,7 @@ function weekHtml(w,p,today){
   const lines=w.sessions.map(s=>{
     // §W1 — a quality session expands to its instruction card on click (skip done sessions:
     // their line is already the click-to-map affordance, and the prescription moment is past)
-    const q=s.reps&&s.reps.length, card=s.done?"":(q?workoutCard(s):stridesCard(s));
+    const q=s.reps&&s.reps.length, card=s.done?"":(q?workoutCard(s):s.race?raceCardShell():stridesCard(s));
     const label=`<span class="wsi${q?' qs':''}${card?' wsx':''}"${card?' tabindex="0" role="button" title="Show the workout instructions"':''}>${sessSummary(s)}${card?' <span class="wsxc" aria-hidden="true">▸</span>':''}</span>${sessTarget(s)}${compChip(s)}${card}`;
     return {d:s.date, html:(('done' in s) ? logLine(s,today,label)
       : `<div class="sline"><span class="sdate">${sessDate(s.date)}</span>${label}</div>`)};
@@ -2918,7 +2948,8 @@ async function loadPlanCal(month){
   host.querySelectorAll(".pcal-day.has").forEach(el=>{
     const open=()=>{ PCAL.sel=el.dataset.date;
       host.querySelectorAll(".pcal-day.sel").forEach(e=>e.classList.remove("sel")); el.classList.add("sel");
-      $("#pcaldetail").innerHTML=pcalDetail(PCAL.sel); };
+      $("#pcaldetail").innerHTML=pcalDetail(PCAL.sel);
+      const rc=$("#pcaldetail .rdaycard"); if(rc) loadRaceCard(rc); };
     el.addEventListener("click",open);
     el.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); open(); } });
   });
@@ -2930,7 +2961,7 @@ function pcalDetail(date){
       if(x.kind==="moved_in") return `<div class="pcal-dline muted">↷ ${esc(pcalDow(x.from))}'s session, run today</div>`;
       const act=x.actual?` → ran ${U.d(x.actual.km)}${U.k}${x.actual.pace?` @ ${U.p(x.actual.pace)}`:""}${x.actual.hr?` · ${x.actual.hr} bpm`:""}`:"";
       const st={done:"done",moved:`done on ${pcalDow(x.moved_to)}`,missed:"missed",unplanned:"extra run",planned:""}[x.status]||"";
-      const card=x.status==="planned"?(x.reps&&x.reps.length?workoutCard(x,true):stridesCard(x,true)):"";
+      const card=x.status==="planned"?(x.reps&&x.reps.length?workoutCard(x,true):x.race?raceCardShell(true):stridesCard(x,true)):"";
       return `<div class="pcal-dline"><b>${esc(pcalLabel(x))}</b>${x.unplanned?"":sessTarget(x)}${act?`<span class="sact">${esc(act)}</span>`:""}`+
              `${st?` <span class="muted">· ${esc(st)}</span>`:""}</div>${card}`;
     }).join("")+`</div>`;
