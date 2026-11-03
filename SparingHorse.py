@@ -86,6 +86,7 @@ from sh_engine import (
     TAPER_BOTTOM, TAPER_LONG_FRAC, TAPER_SHARP_FRAC, TAPER_TOP, TAU_ATL, TAU_CTL,
     TRIMP_PER_MIN, WEEK_TRIMP_SEARCH_MAX, set_day_preferences, trimp_per_min,
     MAX_RUNS_RANGE, set_max_runs, max_runs, _cap_runs,
+    LONG_RUN_MAX_BY_RACE, _long_run_max,
     V5K_VVO2MAX_FRAC, _actual_week_caps, _adj_directive, _adj_fingerprint, _adj_summary,
     _apply_adjustment, _athlete_age, _av_blocked_dates, _av_run_days, _build_long_mp,
     _parse_day,
@@ -8789,6 +8790,7 @@ _PV_WITHHELD = {
     "plan.<phase>.weeks[].quality[].carve",          # §ROT — the threshold run's lay instruction; `kind` already names the session
     "plan.<phase>.weeks[].sessions[].rot",           # §ROT — the marker on the carved run (the per-session step and §H2's un-carve read it)
     "readiness.session.rot",                         # §ROT — the same marker on today's session in /api/readiness
+    "plan.<phase>.weeks[].race_type",        # fork §LRDIST — the engine's own key for the long-run ceiling; the console reads the race from its phase
     "plan.<phase>.weeks[].av_dates",         # §AV — away days are an empty-house broadcast
     "plan.<phase>.weeks[].av_shed",
     "plan.<phase>.weeks[].sessions[].reflection",   # free text, the readiness-note posture

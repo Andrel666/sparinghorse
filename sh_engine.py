@@ -1616,6 +1616,23 @@ LONG_RUN_STEP_WINDOW = 4    # trailing weeks whose longest run sets the progress
 # ever lowers that ceiling, on the same assertive-only path (caution has no long-run cap at all).
 LONG_RUN_MAX_KM = 35.0
 LONG_RUN_MAX_MIN = 210
+# Fork §LRDIST — the long run's ceiling follows the RACE it builds toward. The 35 km / 3 h 30 above is a
+# marathon number (Fokkema 2020, Knopp 2024: no further marathon gain past ~35 km), and the base, build
+# and peak shapers do not read the race distance, so a half or 10k road grew its long run +10 %/wk
+# toward 35 km exactly like a marathon (measured: a 3-run half road reached 35 km long runs, a 5-run one
+# 93 km weeks). Half and shorter plans in the coaching literature peak their long run near or a little
+# past race distance (half: ~18–24 km; 10k: ~15–19 km; 5k: ~13–16 km — Daniels, Pfitzinger, Hansons).
+# ⚠ JUDGEMENT inside that range, the same basis the 3 h 30 limb already states — no study separates them.
+# The time limb binds first for a slower runner (time on feet, Hunter 2019's step argument). A week whose
+# race type is unknown, custom or a marathon keeps the marathon ceiling — and reads the two globals above
+# at call time, so every existing caller and det is byte-identical.
+LONG_RUN_MAX_BY_RACE = {"half": (22.0, 150), "10k": (18.0, 120), "5k": (16.0, 105)}
+
+
+def _long_run_max(wk=None):
+    """(km, minutes) ceiling on any single run of `wk`, by the race its phase builds toward."""
+    t = ((wk or {}).get("race_type") or "").lower() if isinstance(wk, dict) else ""
+    return LONG_RUN_MAX_BY_RACE.get(t, (LONG_RUN_MAX_KM, LONG_RUN_MAX_MIN))
 
 # §PRO21 — the long run has to BE the long run. Every long-run constant above this line is a CEILING
 # (LONG_RUN_MAX_FRAC/BASE_LONG_FRAC = the Daniels/Hansons share cap; LONG_RUN_STEP_CAP = the Aarhus
@@ -2639,17 +2656,28 @@ def _displaced_strides(wk, sessions):
     return 0 if any(x.get("strides") for x in sessions) else int(wk.get("strides") or 0)
 
 
-def _at_long_max(sess, cap_km):
+def _at_long_max(sess, cap_km, max_min=None):
     """§LRMAX — the published long run sits AT the limit (within the rounding of its whole minutes):
     the limit held it, whether the share clip cut it down or §SHARE's raise to the ladder stopped
     there. Without this a run raised to the limit and no further read as not held."""
-    return (sess.get("km") or 0.0) >= cap_km - 0.15 or (sess.get("minutes") or 0) >= LONG_RUN_MAX_MIN - 1
+    return ((sess.get("km") or 0.0) >= cap_km - 0.15
+            or (sess.get("minutes") or 0) >= (LONG_RUN_MAX_MIN if max_min is None else max_min) - 1)
 
 
 # The long run's note when a ceiling clipped it: §PRO9's step, or §LRMAX's absolute limit.
 _LONG_CAP_NOTE = {False: " — held to the +10% long-run progression cap (trailing-4wk)",
                   True: f" — held to the long-run limit ({LONG_RUN_MAX_KM:g} km or "
                         f"{LONG_RUN_MAX_MIN // 60} h {LONG_RUN_MAX_MIN % 60:02d} min, the shorter)"}
+
+
+def _long_cap_note(max_bound, wk=None):
+    """The long run's held note, naming the ceiling THIS week's race sets (fork §LRDIST)."""
+    if not max_bound:
+        return _LONG_CAP_NOTE[False]
+    km, mn = _long_run_max(wk)
+    if (km, mn) == (LONG_RUN_MAX_KM, LONG_RUN_MAX_MIN):
+        return _LONG_CAP_NOTE[True]
+    return f" — held to the {wk.get('race_type')} long-run limit ({km:g} km or {mn // 60} h {mn % 60:02d} min, the shorter)"
 
 
 def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, days_override=None,
@@ -2828,9 +2856,11 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
     # the guards below hold to the cap, never passes the minutes either.
     long_max_bound = False
     _step_cap_in = long_km_cap        # the caller's cap: a §REST2 re-lay folds the limit in again itself
+    _lr_km, _lr_min = _long_run_max(wk)          # fork §LRDIST — the ceiling of THIS week's race
+    _lr_caution_held = False
     if long_km_cap:
         _mp_min = max(1, round(mp_work / _per)) if long_q else 0
-        _max_km = math.floor(10 * min(LONG_RUN_MAX_KM, mp_km + max(0.0, LONG_RUN_MAX_MIN - _mp_min)
+        _max_km = math.floor(10 * min(_lr_km, mp_km + max(0.0, _lr_min - _mp_min)
                                       * 60.0 / easy_pace_sec)) / 10
         if _max_km < long_km_cap:
             long_km_cap, long_max_bound = _max_km, True
@@ -2954,7 +2984,7 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
         if long_max_bound:
             # §LRMAX — the folded cap is in km at the LONG run's paces (its MP finish is faster), so an
             # easy run at that distance would run longer than the limit; hold the shorts to its minutes.
-            cap_short_trimp = min(cap_short_trimp, LONG_RUN_MAX_MIN * EASY_TRIMP_PER_MIN)
+            cap_short_trimp = min(cap_short_trimp, _lr_min * EASY_TRIMP_PER_MIN)
         # §PRO21 — the §PRO9 clamp above bounds the shorts at the LONG RUN'S OWN CEILING, so on a week
         # whose budget reaches that ceiling every day lands on the same number and the long run stops
         # being one (see LONG_RUN_EASY_FRAC). Bound each short at a fraction of the long run ACTUALLY
@@ -3224,6 +3254,14 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
             tr = round(easy_budget * (long_w if n_short else 1.0), 1)
             if long_only_cap_tr is not None:             # §PRO9 — hold the ceiling on a collapsed week
                 tr = min(tr, round(long_only_cap_tr, 1))
+            # Fork §LRDIST — caution has no `long_km_cap`, so §LRMAX's fold above never runs there; a
+            # shorter race's ceiling still holds (the easy base, by km and by minutes). Marathon/unknown
+            # races never enter this ⇒ caution byte-identical for them.
+            if not long_km_cap and (_lr_km, _lr_min) != (LONG_RUN_MAX_KM, LONG_RUN_MAX_MIN):
+                _mpm = max(1, round(mp_work / _per)) if long_q else 0    # the MP finish rides on top
+                _lr_tr = max(0.0, min((_lr_km - mp_km) * easy_pace_sec / 60.0, _lr_min - _mpm)) * EASY_TRIMP_PER_MIN
+                if tr > _lr_tr:
+                    tr, _lr_caution_held = round(_lr_tr, 1), True
         else:
             tr = round(easy_budget * (1 - long_w) * short_w.get(i, 1.0 / n_short), 1) if n_short else 0.0
             if _wf_cap is not None:                      # §PRO9 — a short easy may never exceed the cap
@@ -3235,14 +3273,15 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
             # publish 0.1 km or a minute past the limit that sized it; step the base down a minute at a
             # time until the published run holds the limit, as §PRO21 does for the easy long run below.
             # Only when the limit is the cap in force: §PRO9's step keeps its own lay unchanged.
-            while (long_max_bound and tr > EASY_TRIMP_PER_MIN
-                   and (sess["km"] > long_km_cap + 1e-9 or sess["minutes"] > LONG_RUN_MAX_MIN)):
+            while ((long_max_bound or _lr_caution_held) and tr > EASY_TRIMP_PER_MIN
+                   and (sess["km"] > (long_km_cap if long_max_bound else _lr_km) + 1e-9
+                        or sess["minutes"] > _lr_min)):
                 tr = round(tr - EASY_TRIMP_PER_MIN, 1)
                 sess = _build_long_mp(date, tr, mp_work, long_q, zones, easy_pace_sec)
-            _held = long_step_capped or (long_max_bound and _at_long_max(sess, long_km_cap))
+            _held = long_step_capped or _lr_caution_held or (long_max_bound and _at_long_max(sess, long_km_cap, _lr_min))
             if _held:                                   # §PRO9 / §LRMAX — tell the truth about the cap
-                sess["note"] += _LONG_CAP_NOTE[long_max_bound]
-                sess["long_max_capped" if long_max_bound else "long_step_capped"] = True
+                sess["note"] += _long_cap_note(long_max_bound or _lr_caution_held, wk)
+                sess["long_max_capped" if (long_max_bound or _lr_caution_held) else "long_step_capped"] = True
             sessions.append(sess)
             day_trimps[date] = day_trimps.get(date, 0.0) + sess["trimp"]
             continue
@@ -3278,10 +3317,11 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
         carries_strides = bool(wk["strides"]) and not is_long and i == strides_slot
         if carries_strides:
             note += f" + {wk['strides']}×4–6 strides"
-        _held = is_long and (long_step_capped or (long_max_bound and _at_long_max({"km": km, "minutes": mins},
-                                                                                   long_km_cap)))
+        _held = is_long and (long_step_capped or _lr_caution_held
+                             or (long_max_bound and _at_long_max({"km": km, "minutes": mins},
+                                                                 long_km_cap, _lr_min)))
         if _held:                                       # §PRO9 / §LRMAX
-            note += _LONG_CAP_NOTE[long_max_bound]
+            note += _long_cap_note(long_max_bound or _lr_caution_held, wk)
         sess = {"date": date, "kind": "long" if is_long else "easy",
                 "km": km, "minutes": mins, "trimp": tr,
                 "pace_zone": f"{fmt_pace(easy_pace_sec)}/km easy", "note": note}
@@ -3290,7 +3330,7 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
         if is_long and zones:                           # §T2 — the building-phase long run builds economy
             sess["component"] = COMPONENT_BY_KIND["long"]   # (mileage is the economy lever; re-base untagged)
         if _held:
-            sess["long_max_capped" if long_max_bound else "long_step_capped"] = True
+            sess["long_max_capped" if (long_max_bound or _lr_caution_held) else "long_step_capped"] = True
         sessions.append(sess)
         day_trimps[date] = day_trimps.get(date, 0.0) + tr
     # §ROT — the threshold run, last. Not in the governor's search (`carve=False`): the week is sized
@@ -3557,7 +3597,13 @@ def _lay_breaches(ctl, atl, wk, start, sess, dt, cap, charge, roll_from=None, ra
     # crushed, and det/regime-plan caught exactly that: the assertive build peak fell to 28.2 km,
     # BELOW the caution baseline it is supposed to exceed. The floor costs nothing on my real plan
     # (every base week's bound sits far above its intent) and keeps the constraint a trimmer.
-    _couple_km = max(long_km_cap / BASE_LONG_FRAC, (wk.get("km") or 0.0)) if long_km_cap else None
+    # Fork §LRDIST — on a shorter race the long run stops at its ceiling, so the week is anchored to
+    # the long run it can actually lay, not to a step cap that keeps climbing past it. Marathon or
+    # unknown race ⇒ `long_km_cap` unchanged ⇒ byte-identical.
+    _anchor = long_km_cap
+    if long_km_cap and (wk or {}).get("race_type") in LONG_RUN_MAX_BY_RACE:
+        _anchor = min(long_km_cap, _long_run_max(wk)[0])
+    _couple_km = max(_anchor / BASE_LONG_FRAC, (wk.get("km") or 0.0)) if long_km_cap else None
     shape_bad = (bool(long_km_cap) and BASE_LONG_FRAC > 0
                  and sum((x.get("km") or 0.0) for x in _sess) > _couple_km + 1e-9)
     # Fork §MAXRUNS — a capped week packs its load into fewer, bigger days. Where the biomechanical
@@ -3932,7 +3978,7 @@ def _current_week_actuals(db, today):
     return act_runs, act_km
 
 
-def _long_max_read(sessions, fresh=None):
+def _long_max_read(sessions, fresh=None, wk=None):
     """§LRMAX — the week's longest training run as the absolute ceiling reads it: its km and minutes,
     and whether that ceiling clipped it. The flag is read only off `fresh` sessions (those THIS
     generation laid, the §PAST rule), the run itself off all of them. None on a week with no run."""
@@ -3940,8 +3986,12 @@ def _long_max_read(sessions, fresh=None):
     if not runs:
         return None
     top = max(runs, key=lambda x: x.get("km") or 0.0)
-    return {"km": top.get("km"), "min": top.get("minutes") or 0,
-            "binds": any(x.get("long_max_capped") for x in (runs if fresh is None else fresh))}
+    out = {"km": top.get("km"), "min": top.get("minutes") or 0,
+           "binds": any(x.get("long_max_capped") for x in (runs if fresh is None else fresh))}
+    _km, _mn = _long_run_max(wk)
+    if (_km, _mn) != (LONG_RUN_MAX_KM, LONG_RUN_MAX_MIN):    # fork §LRDIST — only a shorter race adds keys
+        out["max_km"], out["max_min"] = _km, _mn
+    return out
 
 
 def _week_long_km(sessions):
@@ -4807,10 +4857,11 @@ def _week_limits(*, assertive, eff_cap, acwr_laid, clipped, long_cap, long_laid,
         if long_max:
             # §LRMAX — read in minutes (the time limb), with the km limb beside it; `long_max` is
             # `_long_max_read`'s dict, present whenever the week holds a training run.
-            out["long_max"] = {"ceiling": LONG_RUN_MAX_MIN, "laid": long_max["min"],
-                               "headroom": LONG_RUN_MAX_MIN - long_max["min"], "binds": bool(long_max["binds"]),
+            _mx_min = long_max.get("max_min", LONG_RUN_MAX_MIN)       # fork §LRDIST — the week's race
+            out["long_max"] = {"ceiling": _mx_min, "laid": long_max["min"],
+                               "headroom": _mx_min - long_max["min"], "binds": bool(long_max["binds"]),
                                "basis": LIMITS_BASIS["long_max"], "unit": "min",
-                               "km": long_max["km"], "max_km": LONG_RUN_MAX_KM}
+                               "km": long_max["km"], "max_km": long_max.get("max_km", LONG_RUN_MAX_KM)}
         if streak is not None:
             out["tissue"] = {"streak": int(streak), "limit": MESO_MAX_HARD, "headroom": MESO_MAX_HARD - int(streak),
                              "binds": bool(streak_bound), "basis": LIMITS_BASIS["tissue"], "unit": "weeks"}
@@ -5811,7 +5862,7 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
                 # against the +5 ceiling exactly as the full-week path does (`ctl_gain=(ctl - _ctl_start)`).
                 streak=(streak_in if (forced_deload or deload_pulled) else None), streak_bound=bool(forced_deload or deload_pulled), ramp_cap=ramp, ctl_gain=((ctl - ws_ctl) if ramp is not None else None), ctl_gain_laid=_mon_gain,
                 ctl_gain_pre_race=((_gov_ctl - ws_ctl) if ramp is not None else None),
-                long_max=(_long_max_read(sessions, fresh=[x for x in sessions if x["date"] not in from_history])
+                long_max=(_long_max_read(sessions, fresh=[x for x in sessions if x["date"] not in from_history], wk=wk)
                           if long_km_cap else None))
             # §CARD3 — the as-laid prescription count, stamped BEFORE §CARD2 rewrites `runs` to
             # done+ahead below: the honest record of what was PRESCRIBED, kept distinct from what
@@ -6238,7 +6289,7 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
             streak_bound=bool(forced_deload or deload_pulled),
             streak_exempt=("peak" if is_peak else None),     # §MESO4 — say why a streak past its limit stands
             ramp_cap=ramp, ctl_gain=(ctl - _ctl_start),
-            long_max=_long_max_read(sessions) if long_km_cap else None)
+            long_max=_long_max_read(sessions, wk=wk) if long_km_cap else None)
         if av_dates:                                 # §AV — laid around away days (PRIVATE-only field;
             week["av_dates"] = av_dates              # the public plan view strips it)
             if av_shed:
@@ -8064,6 +8115,13 @@ def generate_plan(db, force_regime=None, today=None, permission=None):
                   else recovery_shape(n_wk, pre_taper_km, ph.get("after_type")) if kind == "recovery"
                   else SHAPERS[kind](n_wk, cur_km, davis=(regime == "assertive"),
                                      **({"q_after": _q_after} if kind in ("build", "bridge") else {})))
+            # Fork §LRDIST — every week knows the race its segment builds toward (the next taper's
+            # type: phases only carry `type` on the taper, which names the race it freshens for), so
+            # the long-run ceiling can follow the distance. A marathon or unknown race keeps the
+            # marathon ceiling ⇒ byte-identical.
+            _rt = next(((p.get("type") or "").lower() for p in phases[_pi:] if p.get("type")), None)
+            for _w in sh:
+                _w["race_type"] = _rt or None
             _replay_pulled_deloads(sh, cur_start, prior_all, today)   # §PULL — lived pulls first
             # §C (0.59.0) — "this deload isn't owed". The shape has laid its positional down weeks;
             # the governor judges the ONE that contains today (its block has fully elapsed, so

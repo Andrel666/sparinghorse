@@ -458,7 +458,13 @@ percentage, because one runner's history cannot calibrate one. The long-run limi
 in the assertive plan: 35 km or 3 h 30 min at the run's own planned pace, whichever comes first. Its sources
 are Fokkema et al. 2020 and Knopp et al. 2024 (no further gain from a longest run past about 35 km) and Hunter
 et al. 2019 (slower running puts more steps into each kilometre); the 3 h 30 min is a judgement inside the
-coaching range, since no study separates time on feet from distance. The kilometres the limit holds back stay
+coaching range, since no study separates time on feet from distance. *(Fork:)* the limit follows the race the block builds toward: a **half** holds every run to 22 km or
+2 h 30 min, a **10k** to 18 km or 2 h, a **5k** to 16 km or 1 h 45 min, the shorter of the two, in both
+the assertive and the conservative plan; a marathon (or a race without a type) keeps 35 km / 3 h 30.
+On a shorter race the week's volume is also anchored to that capped long run (at most 4× it), so the
+build does not keep climbing as if a marathon long run were coming. In a chain of races each block
+takes its own race's limit. These are judgement calls inside the published half/10k/5k plan range,
+the same basis as the 3 h 30 above. The kilometres the limit holds back stay
 on the week's easy runs, so the week's load does not change, and the week card shows a "long run at its limit"
 badge. It does not size the week, so it never appears as the limit that holds it. In a race week the long-run step reads the
 longest *training* bout; the race distance is the goal, not a step. The conservative regime lists only the

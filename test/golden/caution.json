@@ -50,6 +50,7 @@
         "proj_acwr_soft": 0.978,
         "proj_ctl": 26.2,
         "quality": [],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -146,6 +147,7 @@
         "proj_acwr_soft": 1.023,
         "proj_ctl": 28.2,
         "quality": [],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -253,6 +255,7 @@
             "zone": "threshold"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 5,
         "sessions": [
@@ -385,6 +388,7 @@
         "proj_acwr_soft": 0.866,
         "proj_ctl": 25.0,
         "quality": [],
+        "race_type": "marathon",
         "role": "down",
         "runs": 5,
         "sessions": [
@@ -511,6 +515,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 2,
         "sessions": [
@@ -668,6 +673,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "run_moved": [
           {
@@ -851,6 +857,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 4,
         "sessions": [
@@ -1128,6 +1135,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "build",
         "runs": 4,
         "sessions": [
@@ -1879,6 +1887,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "taper",
         "runs": 5,
         "sessions": [
@@ -2035,6 +2044,7 @@
             "zone": "marathon"
           }
         ],
+        "race_type": "marathon",
         "role": "taper",
         "runs": 5,
         "sessions": [
@@ -2162,6 +2172,7 @@
         "proj_acwr_soft": 0.662,
         "proj_ctl": 28.9,
         "quality": [],
+        "race_type": "marathon",
         "role": "race",
         "runs": 2,
         "sessions": [

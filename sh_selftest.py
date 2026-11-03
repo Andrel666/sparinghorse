@@ -15597,6 +15597,84 @@ def _stc_max_runs():
                got={"weeks_checked": seen, "failures": fails or "none"})
 
 
+def _stc_race_distance_long():
+    """Fork §LRDIST — the long run's ceiling follows the race. On a half, 10k and 5k road (real
+    history, assertive) and on a caution half road: (a) no training run passes that race's
+    LONG_RUN_MAX_BY_RACE km or minutes; (b) the ceiling actually binds — the road's longest training
+    run reaches within 1.5 km of it (otherwise this tooth reads nothing); (c) every planned week knows
+    its race (`race_type`); (d) a marathon road still lays long runs past the half ceiling (the
+    marathon keeps LONG_RUN_MAX_KM / _MIN — byte-identical, det/golden-plans); (e) in a half → marathon
+    chain each segment takes its own race's ceiling."""
+    fails, got = [], {}
+
+    def runs(plan):
+        for ph in plan.get("phases", []):
+            for w in (plan.get(ph["key"]) or {}).get("weeks", []):
+                if w.get("frozen") or w.get("elapsed"):
+                    continue
+                for x in w.get("sessions") or []:
+                    if (x.get("kind") or "") != "rest" and (x.get("km") or 0) > 0 and not x.get("race"):
+                        yield ph["key"], w, x
+
+    for rt in ("half", "10k", "5k"):
+        km_cap, min_cap = S.LONG_RUN_MAX_BY_RACE[rt]
+        fx, today = _race_fixture_db(rt)
+        plan = S.generate_plan(fx, today=today)
+        fx.close()
+        top = 0.0
+        for key, w, x in runs(plan):
+            top = max(top, x["km"])
+            if x["km"] > km_cap + S.LIMITS_LAID_TOL or (x.get("minutes") or 0) > min_cap + 1:
+                fails.append(f"(a) {rt}/{w.get('start')}: {x['kind']} {x['km']} km / {x.get('minutes')} min "
+                             f"past {km_cap} km / {min_cap} min")
+            if key != "rebase" and w.get("race_type") != rt:
+                fails.append(f"(c) {rt}/{w.get('start')}: race_type {w.get('race_type')!r}")
+        got[rt] = top
+        if rt == "half" and top < km_cap - 1.5:
+            fails.append(f"(b) half road's longest run {top} never reaches its {km_cap} km ceiling — vacuous")
+    fx, today = _race_fixture_db("marathon")
+    mplan = S.generate_plan(fx, today=today)
+    fx.close()
+    got["marathon"] = max((x["km"] for _, _, x in runs(mplan)), default=0.0)
+    if got["marathon"] <= S.LONG_RUN_MAX_BY_RACE["half"][0] + 1:
+        fails.append(f"(d) the marathon road's longest run {got['marathon']} sits at the half ceiling")
+    # caution half: the ceiling holds without the assertive fold (no `long_km_cap` in caution)
+    from datetime import date as _date
+    easy = 425
+    zones = {"easy_top": easy, "easy": 460, "marathon": 360, "threshold": 330, "interval": 300}
+    shp = S.build_shape(8, 90.0)
+    for w in shp:
+        w["race_type"] = "half"
+    cw, _ = S.generate_block(shp, _date(2026, 8, 3), 90.0, 85.0, easy, zones=zones, regime="caution")
+    top_c = max((x["km"] for w in cw for x in w["sessions"] if (x.get("km") or 0) > 0 and not x.get("race")), default=0)
+    got["caution_half"] = top_c
+    if top_c > S.LONG_RUN_MAX_BY_RACE["half"][0] + S.LIMITS_LAID_TOL:
+        fails.append(f"(a) caution half: longest run {top_c} past the half ceiling")
+    for w in shp:
+        w["race_type"] = None
+    cm, _ = S.generate_block(shp, _date(2026, 8, 3), 90.0, 85.0, easy, zones=zones, regime="caution")
+    got["caution_unset"] = max((x["km"] for w in cm for x in w["sessions"] if (x.get("km") or 0) > 0), default=0)
+    if got["caution_unset"] <= S.LONG_RUN_MAX_BY_RACE["half"][0] + S.LIMITS_LAID_TOL:
+        fails.append(f"(b) caution fixture vacuous — the uncapped long {got['caution_unset']} never passes 22 km")
+    # the committed chain golden: half segment ≤ 22, marathon segment past it
+    import json as _j, os as _os
+    gp = _os.path.join(_os.path.dirname(_os.path.abspath(S.__file__)), "test", "golden", "multi-a-chain.json")
+    if _os.path.exists(gp):
+        g = _j.load(open(gp))
+        seg = {}
+        for key, w, x in runs(g):
+            seg.setdefault(w.get("race_type"), []).append(x["km"])
+        got["chain"] = {k: max(v) for k, v in seg.items()}
+        if max(seg.get("half") or [0]) > S.LONG_RUN_MAX_BY_RACE["half"][0] + S.LIMITS_LAID_TOL:
+            fails.append(f"(e) chain half segment longest {max(seg['half'])} past the half ceiling")
+        if max(seg.get("marathon") or [0]) <= S.LONG_RUN_MAX_BY_RACE["half"][0] + 1:
+            fails.append("(e) chain marathon segment never passes the half ceiling")
+    return _st("det", "race-distance-long",
+               "fork §LRDIST — a half/10k/5k road holds its long run to that race's ceiling (km and "
+               "minutes, both regimes); the marathon keeps 35 km / 3 h 30; a chain gives each segment its own",
+               passed=not fails, expect="no violations", got={"longest": got, "failures": fails or "none"})
+
+
 def _stc_durability_builds():
     """SH-94 — durability_builds: the build-vs-build read behind the durability card's chart/table.
     Hand-computed fixture: three past marathon races (two sharing 2024 → 'Sep 2024'/'Dec 2024' labels,
@@ -24085,7 +24163,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

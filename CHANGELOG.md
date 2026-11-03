@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The long run knows the race distance.** The base, build and peak shapers did not read the race,
+  so a half or 10k road grew its long run +10 %/wk toward the marathon's 35 km (measured: 35 km long
+  runs and 93 km weeks on a half fixture; 30.6 km in the half segment of the multi-A chain golden).
+  Every planned week now carries its segment's race type, and a half holds each run to 22 km / 2 h 30,
+  a 10k to 18 km / 2 h, a 5k to 16 km / 1 h 45 — in the assertive fold, the conservative lay, the
+  short-run cap, the limits row and the held note — and a shorter race anchors the §PRO23 week
+  coupling to that capped long run. Marathon and untyped roads are unchanged: the golden plans differ
+  only by the new `race_type` field, except `taper` (the half's limit row) and `multi-a-chain` (the half
+  segment's long runs, 30.6 → 22.0 km, and the marathon segment's small knock-on). Covered by
+  `det/race-distance-long`. `race_type` is withheld from the public view.
 - **Max runs per week** (Settings → athlete, `SH_MAX_RUNS`, 3–6). The plan never lays more runs than
   the cap, and runs already done this week count towards it. A capped week drops the volume it cannot
   hold (flagged) instead of inflating its easy runs, and a cap of 3 or 4 adds low-frequency rules: one
