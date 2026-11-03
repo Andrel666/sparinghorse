@@ -7948,7 +7948,7 @@ def _private_only_path(p):
     sanitizes on the public box (HR/TE/feeling dropped, judged on pace — `effort_discipline(public=…)`),
     so the score is public while the HR-led critique stays private."""
     return (p in ("/api/health", "/api/settings", "/api/secrets",
-                  "/api/secrets/validate", "/api/runs",   # §RB — calendar carries HR-zone grades
+                  "/api/secrets/validate", "/api/runs", "/api/plan/calendar",   # §RB/§PCAL — calendars carry HR
                   "/api/system")                          # 0.56.1 — the household's timestamps
             or p.startswith("/api/suunto")                # §SG — OAuth + watch push are owner-only
             or p.startswith("/api/coros")                 # §CG — same for the COROS plan push
@@ -11064,6 +11064,52 @@ def _runs_month(db, month):
             "stats12": _agg_stats(a_12mo), "statsAll": _agg_stats(a_all), "since": since,
             "other": sorted(other - set(days)),
             "first": (b["lo"] or "")[:7] or None, "last": (b["hi"] or "")[:7] or None}
+
+
+def plan_calendar(db, month):
+    """Fork §PCAL — the plan as a month: every planned session on its day, already merged with what
+    was run (block_log owns that merge — done / missed / moved / unplanned and the actual), tagged
+    with its phase. The page only lays it on a grid. Months outside the plan are empty, with
+    `first`/`last` bounding the navigation."""
+    import sh_engine as _E
+    log = block_log(db)
+    if not log:
+        return {"ok": False, "error": "No plan yet — generate one first."}
+    plan_row = db.execute("SELECT plan FROM plans ORDER BY id DESC LIMIT 1").fetchone()
+    obj = (json.loads(plan_row["plan"]).get("objective") or {}) if plan_row else {}
+    days, phase = {}, {}
+    from datetime import timedelta as _td
+    for w in log["weeks"]:
+        for i in range(7):                          # every day of the week carries its phase (rest too)
+            dd = (_date(w["start"]) + _td(days=i)).isoformat()
+            if dd[:7] == month:
+                phase[dd] = w.get("pk")
+        for x in w["sessions"]:
+            if (x.get("date") or "")[:7] != month:
+                continue
+            st = ("unplanned" if x.get("unplanned") else "moved" if x.get("moved_to") else
+                  "done" if x.get("done") else "missed" if x.get("missed") else "planned")
+            days.setdefault(x["date"], []).append({**x, "pk": w.get("pk"), "status": st})
+        for x in w["sessions"]:                     # the day a moved session was actually run
+            md = x.get("moved_to")
+            if md and md[:7] == month:
+                days.setdefault(md, []).append({"date": md, "kind": "moved_in", "status": "moved_in",
+                                                "from": x["date"], "pk": w.get("pk")})
+    return {"ok": True, "month": month, "week_start": _E.WEEK_START, "today": log["today"],
+            "first": log["start"][:7], "last": log["end"][:7], "start": log["start"], "end": log["end"],
+            "race": {"date": obj.get("date"), "label": obj.get("label")} if obj.get("date") else None,
+            "days": days, "phase": phase}
+
+
+@app.get("/api/plan/calendar")
+def api_plan_calendar():
+    """§PCAL — private: it carries the logged runs' heart rate."""
+    if READONLY:
+        return jsonify(ok=False, error="not available on the public view"), 403
+    month = request.args.get("month") or datetime.now().strftime("%Y-%m")
+    if not re.fullmatch(r"\d{4}-\d{2}", month):
+        return jsonify(ok=False, error="month must be YYYY-MM"), 400
+    return jsonify(plan_calendar(get_db(), month))
 
 
 @app.get("/api/runs")
