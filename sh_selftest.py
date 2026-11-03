@@ -4320,7 +4320,9 @@ def _stc_prescribed_restore():
     for i, (d, ts, dist) in enumerate([
             ("2026-06-09", "2026-06-09T18:00:00+02:00", 5.0),   # planned + run → plain done
             ("2026-06-10", "2026-06-10T22:00:00+02:00", 6.1),   # 20:00Z — BEFORE the 20:30Z re-lay
-            ("2026-06-12", "2026-06-12T18:00:00+02:00", 4.0)]): # never prescribed → real bonus run
+            ("2026-06-08", "2026-06-08T18:00:00+02:00", 4.0)]): # never prescribed → real bonus run
+            # (fork §SWAP: Monday, not Friday — a run the day after the missed Thursday is that
+            #  session postponed, which block_log now counts; Monday follows no missed session)
         m.execute("INSERT INTO activities VALUES(?,?,?,?,?,?)",
                   (i + 1, d, ts, S.RUNNING_SPORT, dist, 1800))
 
@@ -4337,7 +4339,7 @@ def _stc_prescribed_restore():
         fails.append(f"a prescribed-then-dropped day was not restored: {wed}")
     if (wed.get("actual") or {}).get("km") != 6.1:
         fails.append(f"restored day lost its actual: {wed.get('actual')}")
-    fri = by.get("2026-06-12") or {}
+    fri = by.get("2026-06-08") or {}
     if not fri.get("unplanned") or fri.get("km") is not None:
         fails.append(f"a genuine bonus run was absorbed as prescribed: {fri}")
     # Tue+Wed done, Sun/Thu missed, Wed restored into the denominator; the Friday bonus touches neither.
@@ -15998,6 +16000,74 @@ def _stc_week_start():
                passed=not fails, got={"failures": fails[:8] or "none"})
 
 
+def _stc_session_swap():
+    """Fork §SWAP — a session postponed a day or two is that session, moved. On a crafted one-week plan:
+    (a) a run the day after a missed session (no session that day) completes it — done, its actual,
+    `moved_to`, adherence counts it — and no longer shows as unplanned; (b) a run 3+ days later stays
+    unplanned and the session stays missed; (c) a session run on its own day is untouched and an extra
+    run beside it stays bonus; (d) one run after two missed sessions: the nearer one takes it; (e) a
+    run BEFORE a missed session stays bonus (it can't be told from an extra run)."""
+    import json, sqlite3 as _sq
+    from datetime import datetime as _dt, timedelta as _td
+    today = _dt.now().date()
+    fails = []
+
+    def mk(sessions, runs):
+        m = _sq.connect(":memory:"); m.row_factory = _sq.Row; m.executescript(S.SCHEMA)
+        start = today - _td(days=6)
+        ahead = {"date": (today + _td(days=1)).isoformat(), "kind": "easy", "km": 5.0, "minutes": 30}
+        wk = {"wk": 1, "start": start.isoformat(), "km": 20, "sessions": sessions + [ahead]}
+        plan = {"rebase": {"weeks": [wk]}, "phases": [], "pace_zones": {}}
+        m.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)",
+                  ((start - _td(days=1)).isoformat() + "T00:00:00", start.isoformat(), "{}", json.dumps(plan)))
+        for i, (d, km) in enumerate(runs):
+            S.upsert_activity(m, {"id": 100 + i, "date_time": d + "T07:00:00", "sport": {"name": S.RUNNING_SPORT},
+                                  "distance": km, "duration": km * 390, "trimp": km * 10})
+        m.commit()
+        return m
+
+    D = lambda n: (today - _td(days=n)).isoformat()
+    sess = lambda n, km=5.0, kind="easy": {"date": D(n), "kind": kind, "km": km, "minutes": 30}
+
+    def week(m):
+        return {x["date"]: x for x in S.block_log(m)["weeks"][0]["sessions"]}, S.block_log(m)["adherence"]
+
+    # (a) planned day 5 ago, ran 4 days ago
+    m = mk([sess(5), sess(2)], [(D(4), 6.2)]); w, adh = week(m)
+    a = w.get(D(5)) or {}
+    if not (a.get("done") and a.get("moved_to") == D(4) and (a.get("actual") or {}).get("km") == 6.2):
+        fails.append(f"(a) the next-day run did not complete the session: {a}")
+    if (w.get(D(4)) or {}).get("unplanned"):
+        fails.append("(a) the moved run still shows as unplanned")
+    if adh.get("done") != 1:
+        fails.append(f"(a) adherence did not count the moved session: {adh}")
+    m.close()
+    # (b) three days away is not a swap
+    m = mk([sess(5)], [(D(1), 6.0)]); w, _ = week(m)
+    if not (w.get(D(5)) or {}).get("missed") or not (w.get(D(1)) or {}).get("unplanned"):
+        fails.append(f"(b) a run 4 days later was paired: {w.get(D(5))} / {w.get(D(1))}")
+    m.close()
+    # (c) on-day session untouched; an extra run next to it stays bonus
+    m = mk([sess(5)], [(D(5), 5.0), (D(4), 3.0)]); w, _ = week(m)
+    if (w.get(D(5)) or {}).get("moved_to") or not (w.get(D(4)) or {}).get("unplanned"):
+        fails.append(f"(c) an on-day session or its neighbour was re-paired: {w.get(D(5))} / {w.get(D(4))}")
+    m.close()
+    # (d) one run between two missed sessions — the nearer one takes it
+    m = mk([sess(6), sess(5)], [(D(4), 5.0)]); w, _ = week(m)
+    if (w.get(D(5)) or {}).get("moved_to") != D(4) or not (w.get(D(6)) or {}).get("missed"):
+        fails.append(f"(d) the nearer session did not take the run: {w.get(D(5))} / {w.get(D(6))}")
+    m.close()
+    # (e) a run the day BEFORE a missed session stays bonus
+    m = mk([sess(3)], [(D(4), 5.0)]); w, _ = week(m)
+    if not (w.get(D(3)) or {}).get("missed") or not (w.get(D(4)) or {}).get("unplanned"):
+        fails.append(f"(e) a run before the session was paired: {w.get(D(3))} / {w.get(D(4))}")
+    m.close()
+    return _st("det", "session-swap",
+               "a missed session completed by a run 1–2 days after its date reads as done and moved (not "
+               "missed + unplanned); later or earlier runs stay unplanned; on-day sessions are untouched",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -24843,7 +24913,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

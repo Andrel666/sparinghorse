@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A postponed session counts as done.** A run 1–2 days AFTER a missed session (on a day with no session
+  of its own, same week) now completes that session in the training log: done, its actual, adherence, and a
+  "↷ Mon" mark — instead of "✕ missed" plus "+ unplanned". Pairing is globally nearest-first. A run BEFORE a
+  session stays bonus volume (it can't be told from an extra run). `det/session-swap`;
+  `det/prescribed-restore`'s bonus run moved from the day after a missed session to a day that follows none.
+- **The effort card says what it judges by.** With no trusted LTHR it judges easy runs by pace; the note no
+  longer claims "judged by heart rate" then, and says how to get the HR read back (Manual LTHR, field test).
 - **LTHR is no longer read off easy runs.** The derived LTHR pooled every 20–70 min run at ≥ 85 % of HRmax,
   so a runner whose EASY runs sit that high (a restart, heat, a high-HR physiology) got an LTHR set by those
   same runs, and the effort monitor then called them threshold days (circular: one real history read 159
