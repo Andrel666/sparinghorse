@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The week shows what to aim for and what you ran.** A planned easy or long run carries its target — the
+  easy HR ceiling (≤ N bpm, the same boundary the effort check grades against) when the threshold is
+  trusted, else the easy pace bar ("slower than 6:21") — and a logged run shows its average heart rate next
+  to its pace. The HR is private (`log.weeks[].sessions[].actual.hr` is withheld from the public view);
+  `moved_to` joins the public session allowlist.
 - **A postponed session counts as done.** A run 1–2 days AFTER a missed session (on a day with no session
   of its own, same week) now completes that session in the training log: done, its actual, adherence, and a
   "↷ Mon" mark — instead of "✕ missed" plus "+ unplanned". Pairing is globally nearest-first. A run BEFORE a

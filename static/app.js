@@ -1817,7 +1817,7 @@ function logLine(s,today,planLabel){
     : (s.date===today ? '<span class="smk today">•</span>' : '<span class="smk">○</span>');
   // fork §SWAP — a session run on a nearby day: say where it went, the run completes it
   const mv = s.moved_to ? ` <span class="smoved" title="Run on ${esc(s.moved_to)}, ${s.moved_to>s.date?"a day or two later":"a day or two early"} — counted as this session">↷ ${esc(new Date(s.moved_to+"T00:00:00Z").toLocaleDateString(undefined,{weekday:"short",timeZone:"UTC"}))}</span>` : "";
-  const act = s.actual ? `<span class="sact">${U.d(s.actual.km)}${U.k}${s.actual.pace?` @ ${U.p(s.actual.pace)}`:''}${mv}</span>` : "";
+  const act = s.actual ? `<span class="sact">${U.d(s.actual.km)}${U.k}${s.actual.pace?` @ ${U.p(s.actual.pace)}`:''}${s.actual.hr?` <span class="shr" title="average heart rate">· ${s.actual.hr} bpm</span>`:''}${mv}</span>` : "";
   const refl = s.reflection ? `<div class="srefl">📓 ${esc(s.reflection)}</div>` : "";
   const clk = !SH_READONLY && (s.done||s.unplanned) && s.activity_id;   // a completed/extra run → view its run + map
   const plan = s.unplanned ? '<span class="splan exu">unplanned</span>' : planLabel;
@@ -1890,6 +1890,17 @@ function workoutCard(s, open){
     <div class="wctbl-wrap"><table class="wctbl"><thead><tr><th>Segment</th><th>Time</th><th>Dist</th><th>Pace</th><th>HR</th></tr></thead>
     <tbody>${rows.join("")}</tbody></table></div>
     <div class="wctot">Total ${U.d(s.km)} ${U.unit} · ~${s.minutes}′ · load ${s.trimp!=null?Math.round(s.trimp):"—"} TRIMP${ZONESD?"":" · paces from plan"+(SH_READONLY?"":"; HR bands load with zones")}</div></div>`;
+}
+// fork — the target on a planned easy/long run: its HR ceiling when the threshold is trusted
+// (the same Z1/Z2 boundary the effort monitor grades against), else the easy pace bar.
+function sessTarget(s){
+  if(s.done||s.missed||s.unplanned||s.race||(s.reps&&s.reps.length)) return "";
+  if(s.kind!=="easy"&&s.kind!=="long") return "";
+  const z=zrow("easy"), ha=ZONESD&&ZONESD.hr_anchor;
+  if(z&&z.hr&&z.hr.hi&&ha&&ha.anchor==="lthr")
+    return ` <span class="stgt" title="Keep the average heart rate at or under this — the easy ceiling the effort check uses">≤ ${z.hr.hi} bpm</span>`;
+  const p=z&&z.pace_slower_than&&z.pace_slower_than.fmt;
+  return p?` <span class="stgt" title="Easy: slower than this pace (no trusted threshold heart rate yet — set Manual LTHR in Settings)">slower than ${esc(U.p(p))}</span>`:"";
 }
 // fork — strides open like an interval session: an easy run with a strides block at its end.
 // The engine publishes the count (`s.strides`, or the legacy note text); the shape is the one the
@@ -2161,7 +2172,7 @@ function weekHtml(w,p,today){
     // §W1 — a quality session expands to its instruction card on click (skip done sessions:
     // their line is already the click-to-map affordance, and the prescription moment is past)
     const q=s.reps&&s.reps.length, card=s.done?"":(q?workoutCard(s):stridesCard(s));
-    const label=`<span class="wsi${q?' qs':''}${card?' wsx':''}"${card?' tabindex="0" role="button" title="Show the workout instructions"':''}>${sessSummary(s)}${card?' <span class="wsxc" aria-hidden="true">▸</span>':''}</span>${compChip(s)}${card}`;
+    const label=`<span class="wsi${q?' qs':''}${card?' wsx':''}"${card?' tabindex="0" role="button" title="Show the workout instructions"':''}>${sessSummary(s)}${card?' <span class="wsxc" aria-hidden="true">▸</span>':''}</span>${sessTarget(s)}${compChip(s)}${card}`;
     return {d:s.date, html:(('done' in s) ? logLine(s,today,label)
       : `<div class="sline"><span class="sdate">${sessDate(s.date)}</span>${label}</div>`)};
   });

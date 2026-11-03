@@ -7549,14 +7549,19 @@ def block_log(db):
     # halves, not a silent merge (§ doubles v1). The day's load is session-count-agnostic; this is
     # display only — daily_trimp_series/the governor are unchanged.
     acts = {}
-    for r in db.execute(
-        "SELECT id, date, date_time, distance, duration FROM activities "
-        "WHERE date>=? AND date<=? AND " + RUN_FAMILY_SQL + " ORDER BY date_time", (start, end)
-    ).fetchall():
+    _q = ("SELECT id, date, date_time, distance, duration{hr} FROM activities "
+          "WHERE date>=? AND date<=? AND " + RUN_FAMILY_SQL + " ORDER BY date_time")
+    try:
+        _rows = db.execute(_q.format(hr=", hr_avg"), (start, end)).fetchall()
+    except sqlite3.OperationalError:              # a minimal table without HR: the log still reads
+        _rows = db.execute(_q.format(hr=", NULL AS hr_avg"), (start, end)).fetchall()
+    for r in _rows:
         if r["id"] in drop or not r["distance"]:
             continue
         a = acts.setdefault(r["date"], {"km": 0.0, "sec": 0.0, "id": None, "_maxkm": 0.0,
-                                        "runs": [], "start_ts": None})
+                                        "runs": [], "start_ts": None, "_hrw": 0.0, "_hrs": 0.0})
+        if r["hr_avg"] and r["duration"]:           # fork — the day's average HR, time-weighted
+            a["_hrw"] += r["hr_avg"] * r["duration"]; a["_hrs"] += r["duration"]
         # §100 — the day's FIRST start, so "what was I told to do when I set off?" is asked of the
         # earliest departure. Rows arrive ordered by date_time, so the first to land wins.
         if a["start_ts"] is None:
@@ -7566,6 +7571,9 @@ def block_log(db):
         a["runs"].append({"id": r["id"], "km": r["distance"], "sec": r["duration"] or 0.0})
         if r["distance"] > a["_maxkm"]:   # representative run for the day = its longest (for the map view)
             a["_maxkm"] = r["distance"]; a["id"] = r["id"]
+
+    def _day_hr(a):
+        return round(a["_hrw"] / a["_hrs"]) if a and a.get("_hrs") else None
 
     def _pace_str(sec, km):
         p = sec / (km * 60) if km else 0
@@ -7610,7 +7618,8 @@ def block_log(db):
                 done += 1 if past else 0
                 pace = act["sec"] / (act["km"] * 60) if act["km"] else 0
                 actual = {"km": round(act["km"], 1),
-                          "pace": (f"{int(pace)}:{int((pace*60) % 60):02d}" if pace else None)}
+                          "pace": (f"{int(pace)}:{int((pace*60) % 60):02d}" if pace else None),
+                          "hr": _day_hr(act)}
             sessions.append({**s, "done": bool(actual), "missed": past and not actual and d < today,
                              "actual": actual, "reflection": notes.get(d), "runs": _breakdown(act),
                              "activity_id": (act["id"] if (act and act["km"] > 0) else None)})
@@ -7641,7 +7650,8 @@ def block_log(db):
             pace = a2["sec"] / (a2["km"] * 60) if a2["km"] else 0
             x.update(done=True, missed=False, moved_to=d2, runs=_breakdown(a2), activity_id=a2["id"],
                      actual={"km": round(a2["km"], 1),
-                             "pace": (f"{int(pace)}:{int((pace*60) % 60):02d}" if pace else None)},
+                             "pace": (f"{int(pace)}:{int((pace*60) % 60):02d}" if pace else None),
+                             "hr": _day_hr(a2)},
                      reflection=x.get("reflection") or notes.get(d2))
             done += 1
         for d in sorted(acts):
@@ -7652,7 +7662,8 @@ def block_log(db):
                     "date": d, "km": None, "kind": "unplanned", "unplanned": True,
                     "done": True, "missed": False,
                     "actual": {"km": round(a["km"], 1),
-                               "pace": (f"{int(pace)}:{int((pace*60) % 60):02d}" if pace else None)},
+                               "pace": (f"{int(pace)}:{int((pace*60) % 60):02d}" if pace else None),
+                               "hr": _day_hr(a)},
                     "reflection": notes.get(d), "runs": _breakdown(a), "activity_id": a["id"]})
         sessions.sort(key=lambda s: s["date"])              # unplanned runs slot into calendar order
         out_weeks.append({**w, "sessions": sessions})
@@ -8874,7 +8885,7 @@ _PV_REPS = {"detail": True, "effort": True, "km": True, "minutes": True, "pace_z
 _PV_QUALITY = {"attach": True, "component": True, "frac": True, "kind": True, "label": True,
                "rec_min": True, "rep_min": True, "structure": True, "zone": True}
 # NOT `reflection`: the free-text "how it felt" is the readiness-note posture — private (§H7).
-_PV_SESSION = {"activity_id": True, "actual": {"km": True, "pace": True}, "component": True,
+_PV_SESSION = {"activity_id": True, "actual": {"km": True, "pace": True}, "component": True, "moved_to": True,
                "date": True, "done": True, "kind": True, "km": True, "long_step_capped": True,
                "long_max_capped": True,   # §LRMAX — the long-run limit held this run (prescription)
                "long_held": True,   # §LRH — the long run kept its rung on a straddling week
@@ -9184,6 +9195,7 @@ _PV_WITHHELD = {
     "plan.<phase>.weeks[].av_shed",
     "plan.<phase>.weeks[].sessions[].reflection",   # free text, the readiness-note posture
     "log.weeks[].sessions[].reflection",
+    "log.weeks[].sessions[].actual.hr",      # fork — the day's average HR: H7-class, private only
     "log.weeks[].av_dates", "log.weeks[].av_shed",
     "shape.last_sync",                       # the household routine — /healthz gives booleans (TECH-8)
     "shape.latest.raw",                      # the whole upstream snapshot payload
