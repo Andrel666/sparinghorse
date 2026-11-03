@@ -6726,14 +6726,17 @@ def feasibility(objective, ctl0, vo2max, weeks_away, projected_ctl=None,
     # does; det/neutral callers omit it and get today's value — behavior unchanged). `vo2_curve`
     # extends the speed axis to the +4/+8-week points the same way projected CTL extends the load.
     v_race = projected_vo2max or vo2max
-    fin_now = _project_finish_time(v_race, proj, typ, floor, race_long_km, correction)
+    # §FTS (fork) — `correction` may be a function of fitness (the caller's per-runner trend); a plain
+    # number is the established flat path, untouched.
+    corr_at = correction if callable(correction) else (lambda _ctl, _c=correction: _c)
+    fin_now = _project_finish_time(v_race, proj, typ, floor, race_long_km, corr_at(proj))
     finish_time = None
     if fin_now:
         curve = [{"plus_weeks": n, "ctl": round(proj * (1.034 ** n)),
                   "evo2": (round((vo2_curve or {}).get(n, v_race), 1) if projected_vo2max else None),
                   "hms": _fmt_hms(_project_finish_time((vo2_curve or {}).get(n, v_race),
                                                        round(proj * (1.034 ** n)), typ, floor,
-                                                       race_long_km, correction))}
+                                                       race_long_km, corr_at(round(proj * (1.034 ** n)))))}
                  for n in (0, 4, 8)]
         # §FT3 — the band IS the prediction; the P50 stays as the trend/detail signal. Speed-
         # projection risk needs the model's local time-sensitivity to a point of eVO₂ (numeric,
@@ -6756,12 +6759,12 @@ def feasibility(objective, ctl0, vo2max, weeks_away, projected_ctl=None,
         anchor_stale = v_age is not None and v_age > FT_ANCHOR_TRAIL_DAYS
         v_now = bi.get("v0") or (None if projected_vo2max else vo2max)
         t_today = None if anchor_stale else _project_finish_time(
-            v_now, round(ctl0), typ, floor, bi.get("long_km_now"), correction)
+            v_now, round(ctl0), typ, floor, bi.get("long_km_now"), corr_at(round(ctl0)))
         today_read = ({"seconds": t_today, "hms": _fmt_hms(t_today),
                        "at_ctl": round(ctl0), "at_evo2": round(v_now, 1),
                        "long_km": (round(bi["long_km_now"], 1) if bi.get("long_km_now") else None),
                        "gain_seconds": t_today - fin_now} if t_today else None)
-        t_up = _project_finish_time(v_race + 1, proj, typ, floor, race_long_km, correction)
+        t_up = _project_finish_time(v_race + 1, proj, typ, floor, race_long_km, corr_at(proj))
         sens = math.log(fin_now / t_up) if t_up else 0.0
         band = _ft_band(fin_now, weeks_away, bi.get("sigma_race"), bi.get("n_races") or 0,
                         sens, bi.get("disp_a", FT10_DISP_A0))
@@ -6769,7 +6772,7 @@ def feasibility(objective, ctl0, vo2max, weeks_away, projected_ctl=None,
                        "at_ctl": proj, "curve": curve, "band": band, "today": today_read,
                        "at_evo2": (round(v_race, 1) if projected_vo2max else None),
                        "long_km": (round(race_long_km, 1) if race_long_km else None),
-                       "correction": round(correction, 3),
+                       "correction": round(corr_at(proj), 3),
                        "anchor_stale": ({"age_days": v_age, "as_of": bi.get("v0_as_of")}
                                         if anchor_stale else None),
                        "note": ("a range, not a promise: it assumes the laid build completes, and race "
@@ -6892,6 +6895,8 @@ def _tagged_race(raw, distance_km):
         return None
     if str(rr.get("status") or "").strip().lower().replace(" ", "_") in _RACE_NOT_FINISHED:
         return None
+    if rr.get("is_funrace") is True:     # fork: Runalyze's "fun race" — run with someone, not raced
+        return None
     try:
         km = float(rr["official_distance"]) / 1000.0 if rr.get("official_distance") else float(distance_km or 0)
     except (TypeError, ValueError):
@@ -6969,13 +6974,14 @@ def _ft_correction(db):
     same reason: pooling a 10k and a marathon raw would book the ~2.4% gap between their tilts as
     race-day noise the runner never produced. Both are exactly neutral on a single-distance corpus
     (a constant shift moves no spread), so the athlete's all-marathon numbers are byte-identical."""
-    lrs, tilts = [], []
+    lrs, tilts, ctls = [], [], []
     for race in _ft_race_corpus(db):
         vo2, ctl, long_km = _ft_state_at(db, race["date"])
         pred = _project_finish_time(vo2, ctl, race["type"], FT_MIN_CTL.get(race["type"], 0), long_km)
         if pred:
             lrs.append(math.log(race["seconds"] / pred))
             tilts.append(math.log(_ft_scale_tilt(race["type"])))
+            ctls.append(float(ctl or 0.0))
     n = len(lrs)
     sigma_race = None
     if n >= 2:
@@ -6983,7 +6989,58 @@ def _ft_correction(db):
         m = sum(free) / n
         sigma_race = math.sqrt(sum((r - m) ** 2 for r in free) / n)
     tilt_corpus = math.exp(sum(tilts) / n) if n else None
-    return _ft_shrunk_correction(lrs), sigma_race, n, tilt_corpus
+    return _ft_shrunk_correction(lrs), sigma_race, n, tilt_corpus, _ft_fitness_slope(ctls, lrs, tilts)
+
+
+# ── §FTS (fork) — the correction as a function of race-day fitness ────────────────────────────────
+# `_ft_correction`'s c is one number for every fitness level. A runner whose races sit further behind
+# the model the fitter they were (the population's speed-per-CTL is steeper than theirs — e.g. a high-
+# HR runner whose TRIMP, and so CTL, runs ahead of their speed) gets an over-optimistic prediction
+# exactly where it matters: a build projected above anything they have raced at. One such corpus, 14
+# clean races at CTL 12–41: residual +7% at CTL 20, +18% at CTL 40 (r = 0.68).
+# The slope is fit on the de-tilted residuals (a distance mix must not read as a fitness trend),
+# shrunk toward 0 like the level is shrunk toward 1 (FTS_SHRINK_K pseudo-races of slope 0), and only
+# when the corpus can carry one (≥ FTS_MIN_N races spanning ≥ FTS_MIN_SPAN CTL). It is applied
+# around the corpus mean CTL and CLAMPED to the raced range: beyond the fittest race the correction
+# stays at its edge value — the slope is evidence inside the corpus, not a licence to extrapolate.
+# With no slope (small or narrow corpus) the correction is the flat c exactly (byte-identical).
+FTS_MIN_N = 6
+FTS_MIN_SPAN = 10.0      # CTL points between the least and most fit race
+FTS_SHRINK_K = 4         # pseudo-races at slope 0
+FTS_OUTLIER_Z = 3.0      # robust SDs past which a race does not inform the slope
+
+
+def _ft_fitness_slope(ctls, lrs, tilts):
+    """→ {"b", "ctl_mean", "ctl_lo", "ctl_hi", "n"} or None. b = shrunk OLS slope of the de-tilted
+    log-residual per CTL point."""
+    free = [r - t for r, t in zip(lrs, tilts)]
+    # A race run far off the runner's usual offset (a fun run jogged with friends, a blow-up) would
+    # set the slope on its own: drop residuals beyond FTS_OUTLIER_Z robust SDs (MAD) — for the
+    # slope only; the level `c` keeps every race, as before.
+    if len(free) >= FTS_MIN_N:
+        med = sorted(free)[len(free) // 2]
+        mad = sorted(abs(y - med) for y in free)[len(free) // 2] * 1.4826
+        if mad > 0:
+            keep = [i for i, y in enumerate(free) if abs(y - med) <= FTS_OUTLIER_Z * mad]
+            ctls, free = [ctls[i] for i in keep], [free[i] for i in keep]
+    n = len(ctls)
+    if n < FTS_MIN_N or max(ctls) - min(ctls) < FTS_MIN_SPAN:
+        return None
+    mx, my = sum(ctls) / n, sum(free) / n
+    sxx = sum((x - mx) ** 2 for x in ctls)
+    if sxx <= 0:
+        return None
+    b = sum((x - mx) * (y - my) for x, y in zip(ctls, free)) / sxx
+    b *= n / (n + FTS_SHRINK_K)
+    return {"b": b, "ctl_mean": mx, "ctl_lo": min(ctls), "ctl_hi": max(ctls), "n": n}
+
+
+def _ft_correction_at(c, slope, ctl):
+    """The flat correction `c` read at race-day fitness `ctl` (clamped to the raced range)."""
+    if not c or not slope or ctl is None:
+        return c
+    x = min(max(float(ctl), slope["ctl_lo"]), slope["ctl_hi"])
+    return c * math.exp(slope["b"] * (x - slope["ctl_mean"]))
 
 
 # ── §FT2 — Model B speed side: project eVO₂ along the build, truth-anchored every regen ─────────
@@ -8355,7 +8412,7 @@ def generate_plan(db, force_regime=None, today=None, permission=None):
         # day; the +4/+8-week curve points keep training at the build's peak weekly load. Falls back
         # to the frozen effective value only when the corpus is empty (fresh/synthetic db).
         _, _, long_now = _ft_state_at(db, today.isoformat())   # §FT6 — the ladder already behind me
-        ft_corr_base, ft_sigma, ft_n, ft_tilt = _ft_correction(db)
+        ft_corr_base, ft_sigma, ft_n, ft_tilt, ft_slope = _ft_correction(db)
         v0, v_ceil, v_resp, v_asof = _ft_speed_state(db)
         # §FT9 — how old the anchor is, in the same window the ladder axis already uses
         v0_age = (today - _date(v_asof)).days if v_asof else None
@@ -8372,6 +8429,9 @@ def generate_plan(db, force_regime=None, today=None, permission=None):
             # §33e — carry the correction onto THIS race's distance. Neutral (byte-identical) when the
             # corpus is the same distance as the objective, which is the established path.
             ft_corr = _ft_transfer_correction(ft_corr_base, ft_tilt, (race.get("type") or "").lower())
+            if ft_slope:     # §FTS — read the correction at each point's own fitness
+                _flat = ft_corr
+                ft_corr = lambda ctl, _c=_flat: _ft_correction_at(_c, ft_slope, ctl)
             vo2_star, vo2_curve = None, None
             if v0:
                 wk_trimps = _ft_plan_weekly_trimps(plan, today, race.get("date"))

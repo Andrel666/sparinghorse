@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The race correction follows race-day fitness** (§FTS). The per-runner correction was one number at
+  every fitness level, so a runner whose races fall further behind the model the fitter they were got an
+  over-optimistic prediction for a build projected above anything they had raced at. The correction is
+  now read at each point's own CTL: a slope fit on the de-tilted race residuals (a distance mix can't read
+  as a trend), with outliers past 3 robust SDs left out of the slope, shrunk toward 0 (`FTS_SHRINK_K`),
+  only on a corpus of ≥ 6 races spanning ≥ 10 CTL, and clamped to the raced range (no extrapolation past
+  the fittest race). Small or narrow corpora keep the flat correction exactly; goldens unchanged. Races
+  marked as a **fun race** in Runalyze (`race_result.is_funrace`) leave the corpus. Covered by
+  `det/race-correction-fitness` (mutation-tested). On one real 18-race corpus the half prediction moved
+  1:55:41 → 1:58–2:00 against a healthy-race best of 2:09.
 - **Activities through the Runalyze MCP when the REST list is refused** (`SH_ACTIVITY_SOURCE`, default
   `auto`). A token that reads statistics and metrics but gets 403 on `GET /activity` now syncs: activities
   are listed by date window through the MCP (`get_activities`, a window that fills the 200 limit is split),
