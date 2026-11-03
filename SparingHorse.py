@@ -1460,6 +1460,7 @@ def sync_activities_mcp(db, backfill=False, today=None):
         ranges = [(MCPA_FLOOR, today, True)]               # (start, end, deep) — deep tracks the walk
         set_meta(db, "mcpa_walked_to", "")
         set_meta(db, "mcpa_full_done", "")
+        db.commit()                                        # never hold the write lock across the network
     else:
         recent = max(MCPA_FLOOR, _cal_date.fromisoformat(newest[:10]) - timedelta(days=MCPA_REFRESH_DAYS))
         ranges = [(recent, today, False)]
@@ -1510,6 +1511,10 @@ def sync_activities_mcp(db, backfill=False, today=None):
                     upsert_activity(db, a)
                     refreshed += 1
                 existing[aid] = blob
+                # Commit per activity, not per window: a window of detail pulls takes minutes, and an
+                # open write transaction that long makes every page write (structure/profile caches)
+                # fail with "database is locked".
+                db.commit()
             if deep and clean and failed == fails_before:
                 set_meta(db, "mcpa_walked_to", wstart.isoformat())   # resume point: all above is in
             elif deep:
