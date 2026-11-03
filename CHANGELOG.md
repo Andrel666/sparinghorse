@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The long run's workout follows the race.** The build and peak shapers put a marathon-pace finish
+  on every long run whatever the race. A half now finishes at half-marathon pace (a `half` pace at
+  0.85 vVO₂max, TRIMP 2.37/min and impact 2.05/km, interpolated between marathon and threshold — used
+  only by that finish, the zone grid is unchanged); a 10k or 5k lays an easy long run and moves the
+  slice to mid-week cruise intervals, sized to the polarized floor and carved from an easy day in the
+  assertive plan like the §ROT threshold run (a budget-funded second hard day spiked past 1.30 and
+  the week shed all its workouts). Intents, the week card, watch exports and the HR target read the
+  race. Also fixes a max-runs bug this exposed: at 3 runs/week the easy runs were sized off the long
+  run before its race ceiling held it, so a 10k week laid a 19.6 km easy beside a 16.9 km long run.
+  Marathon goldens unchanged; `taper` and `multi-a-chain` change in their half segments. Covered by
+  `det/race-specific` (mutation-tested against both fixes).
 - **The long run knows the race distance.** The base, build and peak shapers did not read the race,
   so a half or 10k road grew its long run +10 %/wk toward the marathon's 35 km (measured: 35 km long
   runs and 93 km weeks on a half fixture; 30.6 km in the half segment of the multi-A chain golden).

@@ -763,7 +763,11 @@ PROG_RAMP = 0.06           # ≥6%/wk over the last realised non-down load — t
 # own rung is a REAL change — it would shorten long runs ~4% and it touches every km↔TRIMP conversion,
 # all of which are denominated in the single easy rate — and it is not in this release.
 # det/trimp-price holds both halves: the rung's value, and the fact that the plain path uses `easy`.
-TRIMP_PER_MIN = {"easy": 1.65, "long": 1.72, "marathon": 2.10, "threshold": 2.55, "interval": 3.10}
+TRIMP_PER_MIN = {"easy": 1.65, "long": 1.72, "marathon": 2.10, "threshold": 2.55, "interval": 3.10,
+                 # Fork §RSPEC — half-marathon pace, used only by a half road's long-run finish. Read
+                 # off the marathon→threshold line at HM pace's place on it (0.59 of the way, in pace).
+                 # ⚠ Interpolated, not measured.
+                 "half": 2.37}
 EASY_TRIMP_PER_MIN = TRIMP_PER_MIN["easy"]   # the km↔TRIMP exchange rate (21 readers); ONE source of truth
 EASY_PACE_FRAC = 0.72      # fraction of vVO2max for easy running (top of the easy zone; sits just under LT1)
 
@@ -1628,6 +1632,74 @@ LONG_RUN_MAX_MIN = 210
 # at call time, so every existing caller and det is byte-identical.
 LONG_RUN_MAX_BY_RACE = {"half": (22.0, 150), "10k": (18.0, 120), "5k": (16.0, 105)}
 
+# Fork §RSPEC — the long run's fast segment follows the race too. The Build/Peak shapers were written
+# for the marathon and put a marathon-pace finish on every long run; on a half road that rehearses a
+# pace the race never runs, and on a 10k/5k road the long run's job is aerobic, not race pace.
+#   half → the finish runs at HALF-MARATHON pace (HALF_PACE_FRAC of vVO₂max: Daniels puts HM between
+#          M (0.81) and T (0.88); 0.85 is judgment for a 1:30–2:00 runner, not a fit).
+#   10k / 5k → the long run is plain easy; its slice moves to a mid-week threshold session (cruise
+#          intervals) unless the week already lays a threshold run, so the count of quality days
+#          never rises.
+# Marathon or unknown race ⇒ untouched ⇒ byte-identical.
+HALF_PACE_FRAC = 0.85
+RSPEC_CRUISE = {"kind": "tempo", "zone": "threshold", "structure": "intervals", "rep_min": 8,
+                "rec_min": 2, "label": "cruise intervals", "component": "ssmax"}
+RSPEC_CRUISE_MIN_FRAC = 0.03   # a smaller slice is a token stimulus — the long run just stays easy
+
+
+def _rspec_cruise(q):
+    """Fork §RSPEC — is `q` the cruise session `_race_specific_quality` swapped in for an MP finish?"""
+    return q.get("kind") == "tempo" and q.get("label") == RSPEC_CRUISE["label"]
+
+
+def _race_specific_quality(quality, wk):
+    """Fork §RSPEC — re-aim a shape week's marathon-pace long-run spec at the week's race."""
+    rt = (((wk or {}).get("race_type") if isinstance(wk, dict) else None) or "").lower()
+    if rt not in LONG_RUN_MAX_BY_RACE or not quality:
+        return quality
+    out, has_thr = [], any(q.get("zone") == "threshold" and q.get("attach") != "long" and not _rspec_cruise(q)
+                           for q in quality)
+    for q in quality:
+        if _rspec_cruise(q) and has_thr:
+            continue                                   # a §ROT re-seat added its own threshold run
+        if q.get("attach") != "long" or q.get("zone") != "marathon":
+            out.append(q)
+        elif rt == "half":
+            lab = q.get("label") or "long run"
+            lab = lab.replace("marathon-pace", "half-marathon-pace")
+            out.append(dict(q, zone="half", label=lab))
+        elif not has_thr:
+            # The MP slice was MP-exempt from the polarized floor (HARD_ZONES = thr + int); a threshold
+            # session is not, so it takes only what the floor leaves beside the week's other hard work —
+            # the 0.20 slice `DAVIS_THU_FRAC` is carved from. Past the floor the week's quality is shed
+            # whole, which is how a naive swap lost every workout of a 10k build week.
+            _hard = sum(x.get("frac") or 0.0 for x in quality
+                        if x.get("zone") in HARD_ZONES and x.get("attach") != "long")
+            _room = round(min(q["frac"], (1.0 - POLARIZED_EASY_MIN) - _hard), 3)
+            if _room >= RSPEC_CRUISE_MIN_FRAC:
+                # Assertive (§ROT specs carry `rot`): CARVED like `_thu_spec` — laid last, out of the
+                # freshest easy run at that run's TRIMP — because a budget-funded second hard day put
+                # a day spike past ACWR_HARD and the week shed every workout (probe, 10k build).
+                _rot = next((x["rot"] for x in quality if x.get("rot") is not None), None)
+                out.append(dict(RSPEC_CRUISE, frac=_room,
+                                **({"carve": True, "rot": _rot} if _rot is not None else {})))
+    return out
+
+
+def _race_specific_intent(intent, wk):
+    """Fork §RSPEC — the week's intent sentence, worded for the race it builds toward."""
+    rt = (((wk or {}).get("race_type") if isinstance(wk, dict) else None) or "").lower()
+    if rt not in LONG_RUN_MAX_BY_RACE or not intent:
+        return intent
+    if rt == "half":
+        return (intent.replace("marathon-pace long run", "half-marathon-pace long run")
+                .replace("growing MP work", "growing half-marathon-pace work")
+                .replace("marathon-specific", "half-marathon-specific"))
+    return (intent.replace("VO₂ intervals + marathon-pace long run", "VO₂ intervals + cruise intervals")
+            .replace("growing MP work + ", "threshold work + ")
+            .replace("marathon-specific: long-fast resilience + ", f"{rt}-specific: threshold + ")
+            .replace("race-pace long run + sharpening", "cruise intervals + sharpening"))
+
 
 def _long_run_max(wk=None):
     """(km, minutes) ceiling on any single run of `wk`, by the race its phase builds toward."""
@@ -1723,7 +1795,9 @@ EASY_LADDER_FLOOR = 0.15    # ...but never below this fraction of it (the fitted
 # load — and because injury is PROBABILISTIC not deterministic (§6.1) it RESHAPES the week (drops the fast
 # slice to easy, reusing the §H2 mechanism) rather than hard-gating. Re-calibrate when the corpus grows a
 # real fast-session/injury history. A biomechanical jump-cap that flanks the ACWR gate.
-EQ_KM_FACTOR = {"easy": 1.0, "long": 1.0, "marathon": 1.4, "threshold": 2.5, "interval": 3.5}
+EQ_KM_FACTOR = {"easy": 1.0, "long": 1.0, "marathon": 1.4, "threshold": 2.5, "interval": 3.5,
+                "half": 2.05}   # fork §RSPEC — the same pace interpolation as TRIMP_PER_MIN["half"];
+                                # `_eq_factor`'s anchors list is unchanged (a run's pace still reads M→T)
 BIO_EQ_STEP = 1.30          # max weekly eq_km jump vs the trailing-window max (the soft biomechanical ceiling)
 BIO_EQ_WINDOW = 4           # trailing weeks whose MAX eq_km sets the biomechanical (chronic) baseline
 # §PRO17 — the SAME biomechanical step, applied at SESSION grain: no prescribed session's eq_km may
@@ -1885,10 +1959,10 @@ def _reseat_specific(shape, start=0):
     for i, r in zip(idx, sorted((shape[i]["quality"][0]["rot"] for i in idx), reverse=True)):
         w = shape[i]
         if w["quality"][0]["rot"] != r:
-            rest = [q for q in w["quality"][1:] if not q.get("carve")]
-            w["quality"] = ([_specific_mid(r, peak=w.get("phase") == "peak")]
-                            + ([_thu_spec(r)] if r % 2 else []) + rest)
-            w["intent"] = _specific_intent(w.get("phase"), r % 2 == 1)
+            rest = [q for q in w["quality"][1:] if not q.get("carve") or _rspec_cruise(q)]
+            w["quality"] = _race_specific_quality([_specific_mid(r, peak=w.get("phase") == "peak")]
+                                                  + ([_thu_spec(r)] if r % 2 else []) + rest, w)
+            w["intent"] = _race_specific_intent(_specific_intent(w.get("phase"), r % 2 == 1), w)
 
 
 DAVIS_BUILD_MP_START, DAVIS_BUILD_MP_END = 0.07, 0.10   # MP finish grows across Build's non-down weeks
@@ -2407,8 +2481,10 @@ def _build_long_mp(date, easy_trimp, work_trimp, spec, zones, easy_pace_sec):
     base_min = max(1, round(easy_trimp / EASY_TRIMP_PER_MIN))
     mp_min = max(1, round(work_trimp / per_min_zone))
     reps = [_qblock("easy_base", "easy", base_min, easy_pace_sec, "easy aerobic base"),
-            _qblock("work", zone, mp_min, zpace, f"{mp_min}min @ marathon pace finish")]
-    note = f"{spec.get('label', 'long run')} — {base_min}min easy base + {mp_min}min @ MP finish"
+            _qblock("work", zone, mp_min, zpace,
+                    f"{mp_min}min @ {'half-marathon' if zone == 'half' else 'marathon'} pace finish")]
+    note = (f"{spec.get('label', 'long run')} — {base_min}min easy base + {mp_min}min @ "
+            f"{'HM' if zone == 'half' else 'MP'} finish")
     sess = _session_from_reps(date, "long_mp", zone, zpace, reps, note)
     sess["component"] = spec.get("component") or COMPONENT_BY_KIND["long_mp"]   # §T2 component tag
     return sess
@@ -2721,6 +2797,9 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
     # measured against a different list. No preference ⇒ `_long_slot` returns n - 1 exactly as before.
     long_idx = _long_slot(days)
     quality = (wk.get("quality") or []) if zones else []
+    quality = _race_specific_quality(quality, wk)          # fork §RSPEC — marathon ⇒ unchanged
+    if zones and "half" not in zones and zones.get("marathon") and any(q.get("zone") == "half" for q in quality):
+        zones = dict(zones, half=round(zones["marathon"] * MARATHON_PACE_FRAC / HALF_PACE_FRAC))
     mid_q = [q for q in quality if q.get("attach") != "long"]
     long_q = next((q for q in quality if q.get("attach") == "long"), None)
     # mid-week quality on the earliest mid slots (Tue, Thu, …) — off slot 0 (first run back) and the
@@ -3211,6 +3290,16 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
     _wf_cap = cap_short_trimp
     if _tight_cap() and n_short > 0:
         _long_tr = easy_budget * long_w + mp_km * easy_pace_sec / 60.0 * EASY_TRIMP_PER_MIN
+        # Measure the shorts against the long run AS IT WILL BE LAID: once a ceiling (§PRO9's step,
+        # §LRMAX, or a shorter race's limit) holds it, its share-of-budget size is fiction and the shorts
+        # sized off it outgrew it (10k, 3 runs: a 19.6 km easy beside a 16.9 km 2-h long run).
+        _held_km = min(x for x in (long_km_cap, _lr_km if (_lr_km, _lr_min) != (LONG_RUN_MAX_KM, LONG_RUN_MAX_MIN)
+                                   else None) if x) if (long_km_cap or (_lr_km, _lr_min) != (LONG_RUN_MAX_KM, LONG_RUN_MAX_MIN)) else None
+        if _held_km:
+            _held_min = _held_km * easy_pace_sec / 60.0
+            if (_lr_km, _lr_min) != (LONG_RUN_MAX_KM, LONG_RUN_MAX_MIN):
+                _held_min = min(_held_min, _lr_min)
+            _long_tr = min(_long_tr, _held_min * EASY_TRIMP_PER_MIN)
         _shape_cap_tr = LONG_RUN_EASY_FRAC * _long_tr
         if _shape_cap_tr > 0:
             _wf_cap = _shape_cap_tr if _wf_cap is None else min(_wf_cap, _shape_cap_tr)
@@ -8122,6 +8211,9 @@ def generate_plan(db, force_regime=None, today=None, permission=None):
             _rt = next(((p.get("type") or "").lower() for p in phases[_pi:] if p.get("type")), None)
             for _w in sh:
                 _w["race_type"] = _rt or None
+                _w["intent"] = _race_specific_intent(_w.get("intent"), _w)   # fork §RSPEC
+                if _w.get("quality"):
+                    _w["quality"] = _race_specific_quality(_w["quality"], _w)
             _replay_pulled_deloads(sh, cur_start, prior_all, today)   # §PULL — lived pulls first
             # §C (0.59.0) — "this deload isn't owed". The shape has laid its positional down weeks;
             # the governor judges the ONE that contains today (its block has fully elapsed, so

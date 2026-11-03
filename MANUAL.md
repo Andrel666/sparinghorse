@@ -464,7 +464,12 @@ the assertive and the conservative plan; a marathon (or a race without a type) k
 On a shorter race the week's volume is also anchored to that capped long run (at most 4× it), so the
 build does not keep climbing as if a marathon long run were coming. In a chain of races each block
 takes its own race's limit. These are judgement calls inside the published half/10k/5k plan range,
-the same basis as the 3 h 30 above. The kilometres the limit holds back stay
+the same basis as the 3 h 30 above. *(Fork:)* the long run's fast segment follows the race too: on a
+**half** the build and peak long runs finish at **half-marathon pace** (85 % of vVO₂max, between
+marathon pace and threshold — a judgement, not a fit); on a **10k or 5k** the long run stays easy and
+its share of the week becomes a mid-week **cruise-interval** threshold session, sized to fit the 80/20
+easy floor beside the intervals and skipped when the week already has a threshold run. A marathon
+keeps its marathon-pace finish. The kilometres the limit holds back stay
 on the week's easy runs, so the week's load does not change, and the week card shows a "long run at its limit"
 badge. It does not size the week, so it never appears as the limit that holds it. In a race week the long-run step reads the
 longest *training* bout; the race distance is the goal, not a step. The conservative regime lists only the
