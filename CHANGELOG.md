@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Strides open like a workout.** A run with strides used to show them only as a hover tooltip; it now
+  expands, in the week list and on Today, into the same instruction card as an interval session: the easy
+  run, the strides block (count × 4–6, ~20″ each, at about interval pace, relaxed) and walk-back recovery.
 - **Week start** (Settings → Athlete → *Week starts on*: `mon`, `sun` or `sat`; `SH_WEEK_START`). Like
   Runalyze's "Beginning of the week". Every week anchor goes through one helper (`week_start_of`): plan
   weeks, the re-base anchor (re-gridded back-only, as before), race week, weekly load and ramp series,

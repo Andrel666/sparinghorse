@@ -876,7 +876,7 @@ function plannedSession(s, easyPace){
       ${metric("Target load", s.trimp!=null?Math.round(s.trimp):"—", "TRIMP")}
     </div>
     ${actLine}
-    ${noteLine}${q?workoutCard(s,true):""}</div>`;
+    ${noteLine}${q?workoutCard(s,true):stridesCard(s,true)}</div>`;
 }// §3 status card — "lead with the verdict": gradient panel (state-coloured), glass pill, big verdict.
 // UX-4 — how old is the data behind this verdict? The readiness card was happy to render a confident
 // green off a sync that failed two nights ago, and the only hint was a timestamp in the page footer
@@ -1889,6 +1889,24 @@ function workoutCard(s, open){
     <tbody>${rows.join("")}</tbody></table></div>
     <div class="wctot">Total ${U.d(s.km)} ${U.unit} · ~${s.minutes}′ · load ${s.trimp!=null?Math.round(s.trimp):"—"} TRIMP${ZONESD?"":" · paces from plan"+(SH_READONLY?"":"; HR bands load with zones")}</div></div>`;
 }
+// fork — strides open like an interval session: an easy run with a strides block at its end.
+// The engine publishes the count (`s.strides`, or the legacy note text); the shape is the one the
+// tooltip always described — ~20″ relaxed-fast accelerations, full walk-back recovery.
+function stridesOf(s){ return s.strides || +(((s.note||"").match(/(\d+)×4–6 strides/)||[])[1]||0); }
+function stridesCard(s, open){
+  const st=stridesOf(s); if(!st) return "";
+  const rows=[
+    `<tr><td>Easy run</td><td>${s.minutes!=null?s.minutes+"′":"—"}</td><td>~${U.d(s.km).toFixed(1)}${U.k}</td>`+
+      `<td>${esc(segPace("easy",s))}</td><td>${esc(segHR("easy"))||"—"}</td></tr>`,
+    `<tr><td>${st} × 4–6 strides · ~20″ each</td><td>~${st*3}′</td><td>—</td>`+
+      `<td>${esc(segPace("interval"))} or a touch quicker, relaxed</td><td>— (too short for HR)</td></tr>`,
+    `<tr><td>Recovery between strides</td><td>walk back</td><td>—</td><td>full rest</td><td>—</td></tr>`];
+  const cue=`${s.minutes!=null?s.minutes+"′ ":""}easy  →  ${st} × 4–6 strides of ~20″, walk back between each`;
+  return `<div class="wcard${open?" open":""}"><div class="wcue">${esc(cue)}</div>
+    <div class="wctbl-wrap"><table class="wctbl"><thead><tr><th>Segment</th><th>Time</th><th>Dist</th><th>Pace</th><th>HR</th></tr></thead>
+    <tbody>${rows.join("")}</tbody></table></div>
+    <div class="wctot">Total ${U.d(s.km)} ${U.unit} · ~${s.minutes}′ · strides are a neuromuscular touch-up: fast but relaxed, never a sprint; they add no training load</div></div>`;
+}
 // §6f Step F — compact label for a planned session. Structured quality sessions (intervals / MP
 // long run / tempo, carried as `reps`) read their structure; plain runs show distance.
 function sessSummary(s){
@@ -1908,7 +1926,7 @@ function sessSummary(s){
   // they're executed, instead of the old orphaned "strides×2" note floating under the week.
   // Plans stored before the s.strides flag carry the fact only in the engine-authored note text,
   // so fall back to that until the nightly re-plan refreshes the JSON.
-  const st = s.strides || +(((s.note||"").match(/(\d+)×4–6 strides/)||[])[1]||0);
+  const st = stridesOf(s);
   if(st) return `${U.d(s.km)}${U.k} <span class="strid" title="Finish this run with ${st} × 4–6 strides: ~20-second relaxed-fast accelerations with full walk-back recovery. A neuromuscular touch-up, not a workout — it adds no training load.">+ ${st}× strides</span>`;
   // §RACE — the race is a session now, and it must READ as one. Without this the row printed a bare
   // distance, indistinguishable from a long run, on the day the whole block points at; the flag is
@@ -2140,7 +2158,7 @@ function weekHtml(w,p,today){
   const lines=w.sessions.map(s=>{
     // §W1 — a quality session expands to its instruction card on click (skip done sessions:
     // their line is already the click-to-map affordance, and the prescription moment is past)
-    const q=s.reps&&s.reps.length, card=(q&&!s.done)?workoutCard(s):"";
+    const q=s.reps&&s.reps.length, card=s.done?"":(q?workoutCard(s):stridesCard(s));
     const label=`<span class="wsi${q?' qs':''}${card?' wsx':''}"${card?' tabindex="0" role="button" title="Show the workout instructions"':''}>${sessSummary(s)}${card?' <span class="wsxc" aria-hidden="true">▸</span>':''}</span>${compChip(s)}${card}`;
     return {d:s.date, html:(('done' in s) ? logLine(s,today,label)
       : `<div class="sline"><span class="sdate">${sessDate(s.date)}</span>${label}</div>`)};
