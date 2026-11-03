@@ -8,12 +8,14 @@ import { Drawer, MonthGrid, Tabs } from "../components/layout";
 import { Road } from "../components/Road";
 import { Week } from "../components/Week";
 import { SessionBlock } from "../components/Session";
+import { LimitSource, basisLabel, hasSource } from "../components/LimitSource";
 import { Query } from "./Query";
 
 type View = "week" | "month" | "race" | "history";
 const VIEWS: [View, string][] = [["week", "Week"], ["month", "Month"], ["race", "Race day"], ["history", "History"]];
 
-function WeekView({ p, onWeek, onDay }: { p: PlanPage; onWeek: (s: string) => void; onDay: (date: string) => void }) {
+function WeekView({ p, onWeek, onDay, onLimit }: { p: PlanPage; onWeek: (s: string) => void; onDay: (date: string) => void;
+                                                   onLimit: (key: string) => void }) {
   const w = p.week;
   return (
     <div className="grid">
@@ -35,12 +37,18 @@ function WeekView({ p, onWeek, onDay }: { p: PlanPage; onWeek: (s: string) => vo
       <Card span={4} label="Why this week looks like this">
         {w.held && <span>{w.held.text}.</span>}
         <div className="list">{w.limits.map(l => (
-          <div key={l.key} className={["limit", l.holds ? "holds" : "", l.over ? "over" : ""].join(" ")}>
+          <button key={l.key} type="button" disabled={!hasSource(l.key)} onClick={() => onLimit(l.key)}
+                  className={["limit", l.holds ? "holds" : "", l.over ? "over" : ""].join(" ")}
+                  style={{ background: "none", border: 0, padding: 0, textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer" }}
+                  aria-label={`${l.name}: ${l.laid} of ${l.ceiling} ${l.unit}. Show the source`}>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <span>{l.name}{l.holds && <Pill tone="warn">holds the week</Pill>}</span>
               <span className="muted num">{l.laid} of {l.ceiling} {l.unit}</span></div>
             <div className="meter"><span style={{ width: `${(l.fill ?? 0) * 100}%` }} /></div>
-          </div>))}</div>
+            <span className="muted" style={{ fontSize: "var(--fs-label)" }}>
+              {l.over ? `over by ${Math.abs(l.headroom ?? l.laid - l.ceiling).toFixed(2)}` : l.headroom != null ? `${l.headroom.toFixed(2)} to spare` : ""}
+              {basisLabel(l.basis) ? ` · ${basisLabel(l.basis)}` : ""}{hasSource(l.key) ? " · why ›" : ""}</span>
+          </button>))}</div>
       </Card>
       <Card span={12} label="Paces">
         <div className="row" style={{ gap: "var(--sp-4)" }}>{p.paces.map(z => (
@@ -123,6 +131,7 @@ export function Plan() {
   const [view, setView] = useState<View>("week");
   const [sel, setSel] = useState<{ week?: string; day?: string }>({});
   const [day, setDay] = useState<string | null>(null);
+  const [limit, setLimit] = useState<string | null>(null);
   const openDay = (date: string) => { setSel({ day: date }); setDay(date); };   // the server picks the week holding that day
   return <Query q={usePlan(sel)}>{p => (
     <div className="page">
@@ -133,10 +142,13 @@ export function Plan() {
       <Card label={p.race ? `The road to ${p.race.label} · ${dateShort(p.race.date)}` : "The road"}>
         <Road road={p.road} phases={p.phases} onPick={s => { setSel({ week: s }); setView("week"); }} />
       </Card>
-      {view === "week" && <WeekView p={p} onWeek={w => setSel({ week: w })} onDay={openDay} />}
+      {view === "week" && <WeekView p={p} onWeek={w => setSel({ week: w })} onDay={openDay} onLimit={setLimit} />}
       {view === "month" && <MonthView onDay={openDay} />}
       {view === "race" && <RaceView />}
       {view === "history" && <HistoryView />}
+      <Drawer title={limit ? p.week.limits.find(l => l.key === limit)?.name ?? "" : ""} open={!!limit} onClose={() => setLimit(null)}>
+        {limit && <LimitSource k={limit} />}
+      </Drawer>
       <Drawer title={day ? dateLong(day) : ""} open={!!day} onClose={() => setDay(null)}>
         {(() => { const xs = day ? p.week.sessions.filter(x => x.date === day) : [];
                   return xs.length ? xs.map(s => <SessionBlock key={s.kind} s={s} />) : <span className="muted">Rest day.</span>; })()}

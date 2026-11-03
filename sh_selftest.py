@@ -16317,6 +16317,15 @@ def _stc_ui_fitness():
                 want = "building" if L["ramp"] > U.RAMP_STEADY else "easing" if L["ramp"] < -U.RAMP_STEADY else "steady"
                 if L.get("ramp_word") != want:
                     fails.append(f"(c) ramp word {L.get('ramp_word')} for {L['ramp']}")
+            dd = d.get("durability_detail", {})
+            du = S.durability_signal(db) or {}
+            if len(dd.get("points", [])) != len([p for p in du.get("series") or [] if p.get("decoupling_pct") is not None]):
+                fails.append("(b) durability points are not durability_signal's series")
+            log = S.block_log(db)
+            if log and not d["chart"].get("plan"):
+                fails.append("(b) no plan projection although a plan exists")
+            if len(d.get("weekly", [])) != len(S.db_weekly_running() or []):
+                fails.append("(b) weekly history is not the full series")
             f = t.get("form", {})
             if f.get("value") is not None:
                 want = next(w for th, w in U.FORM_WORDS if f["value"] > th)

@@ -220,3 +220,5 @@ textarea.input { min-height: 84px; resize: vertical; }
 .msg.err { color: var(--bad); }
 pre.report { white-space: pre-wrap; font-family: var(--mono); font-size: var(--fs-label); margin: 0; max-height: 360px; overflow: auto;
   background: var(--surface-2); padding: var(--sp-3); border-radius: var(--radius-sm); }
+.readout { position: absolute; top: 4px; right: 8px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 3px 8px; font-size: var(--fs-label); font-variant-numeric: tabular-nums; pointer-events: none; }

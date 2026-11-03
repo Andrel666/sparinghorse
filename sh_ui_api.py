@@ -234,6 +234,27 @@ def ramp_word(ramp):
     return None if ramp is None else ("building" if ramp > RAMP_STEADY else "easing" if ramp < -RAMP_STEADY else "steady")
 
 
+def linear_fit(xs, ys):
+    """Least-squares line through (x, y) → (slope, intercept), or None under two points."""
+    n = len(xs)
+    if n < 2:
+        return None
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if not sxx:
+        return None
+    b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    return b, my - b * mx
+
+
+LT1_AGREEMENT = {
+    "pace_ahead_of_hr": "Your easy pace is ahead of your current aerobic fitness: easy-paced runs land above the "
+                        "easy heart-rate ceiling. Trust heart rate on easy days.",
+    "agree": "Easy pace and easy heart rate agree.",
+    "hr_ahead_of_pace": "Heart rate stays low at easy pace: you could run easy a touch faster.",
+}
+
+
 def _series(points, key, date_key="date"):
     return [{"date": p[date_key][:10], "v": round(p[key], 2)} for p in points if p.get(key) is not None]
 
@@ -280,23 +301,70 @@ def fitness_page(S, db):
         "in": f"This week's load is {acwr:.2f}× your base — inside the steady band ({lo}–{hi})."}[acwr_state]
     ramp = round(ctl[-1]["v"] - ctl[-8]["v"], 1) if len(ctl) >= 8 else None
     rword = ramp_word(ramp)
-    weekly = [{"week": w["week"], "km": w["km"]} for w in (S.db_weekly_running() or [])][-26:]
+    weekly = [{"week": w["week"], "km": w["km"]} for w in (S.db_weekly_running() or [])]
+    # the plan's projected fitness, week by week to race day (from the current week on)
+    tiso = datetime.now().date().isoformat()
+    log = S.block_log(db)
+    proj = []
+    if log:
+        for w in log["weeks"]:
+            wend = (S._date(w["start"]) + timedelta(days=6)).isoformat()
+            if wend >= tiso and w.get("proj_ctl") is not None:
+                proj.append({"date": wend, "v": round(w["proj_ctl"], 1)})
+    modeled, snap2 = S.current_model(db)
+    check = None
+    if modeled and snap2:
+        check = {"model": {"fitness": round(modeled["ctl"], 1), "fatigue": round(modeled["atl"], 1)},
+                 "runalyze": {"fitness": snap2["fitness"], "fatigue": snap2["fatigue"]},
+                 "close": abs(modeled["ctl"] - (snap2["fitness"] or 0)) <= 3 and abs(modeled["atl"] - (snap2["fatigue"] or 0)) <= 8}
     zones = S.training_zones(db)
     ed = S.effort_discipline(db) or {}
     c = ed.get("easy_counts") or {}
+    lt1 = ed.get("lt1") or {}
+    coh = S.pace_hr_coherence(db) or {}
     easy = {"score": ed.get("easy_score"), "window_days": ed.get("window_days"), "judged": c.get("judged"),
+            "lt1": (f"Easy-pace ceiling (LT1) about {lt1['lt1_pace_fmt']}/km, from VO₂max {lt1.get('vo2max')}."
+                    if lt1.get("lt1_pace_fmt") else None),
+            "agreement": LT1_AGREEMENT.get(lt1.get("agreement") or "") or (coh or {}).get("note"),
             "on": c.get("on"), "hot": c.get("hot"), "too_hard": c.get("too_hard"),
             "by": "heart rate" if ed.get("anchor") == "lthr" else "pace",
             "ceiling": (f"≤ {ed['easy_hr_ceiling']} bpm" if ed.get("anchor") == "lthr" and ed.get("easy_hr_ceiling")
                         else f"slower than {ed.get('easy_pace_ceiling')}/km" if ed.get("easy_pace_ceiling") else None),
             "runs": [{"date": r["date"], "kind": KIND_TITLE.get(r.get("kind"), r.get("kind")), "km": r.get("km"),
-                      "pace": _pace(r.get("gap_pace")), "hr": r.get("hr_avg"), "verdict": r.get("verdict"),
+                      "pace": _pace(r.get("gap_pace")), "hr": r.get("hr_avg"), "hr_pct": r.get("hr_pct"),
+                      "te": r.get("te"), "feel": r.get("feeling"), "decoupling": r.get("decoupling"),
+                      "verdict": r.get("verdict"),
                       "verdict_text": VERDICT_TEXT.get(r.get("verdict") or "", r.get("verdict"))}
-                     for r in (ed.get("runs") or [])[:8]]}
+                     for r in (ed.get("runs") or [])]}
     du = S.durability_signal(db) or {}
     ef = S.efficiency_signal(db, window_days=S.EFFICIENCY_WINDOW_D) or {}
     tr = S.track_record(db) or {}
+    bd = du.get("builds") or {}
+    builds = [b for b in (bd.get("past") or []) + ([bd["current"]] if bd.get("current") else []) if b.get("runs")]
+    efs = [p for p in (ef.get("series") or []) if p.get("ef") is not None]
+    t0 = S_date(efs[0]["date"]) if efs else None
+    fit = linear_fit([(S_date(p["date"]) - t0).days for p in efs], [p["ef"] for p in efs]) if efs else None
+    lead = tr.get("leads") or {}
     side = {
+        "durability_detail": {
+            "points": [{"date": p["date"], "km": p["km"], "pct": p.get("decoupling_pct"), "hr": p.get("hr")}
+                       for p in du.get("series") or [] if p.get("decoupling_pct") is not None],
+            "builds": [{"label": b.get("label"), "pb": bool(b.get("pb")), "current": bool(b.get("is_current")),
+                        "race_pct": b.get("race_pct"), "longest_km": b.get("longest_km"),
+                        "runs": [{"km": r["km"], "pct": r.get("pct"), "race": bool(r.get("race"))} for r in b["runs"]]}
+                       for b in builds],
+            "lines": [5, 10]},
+        "efficiency_detail": {
+            "points": [{"date": p["date"], "v": p["ef"], "temp": p.get("temp_c"), "km": p.get("km"), "pace": p.get("pace"),
+                        "hr": p.get("hr")} for p in efs],
+            "fit": ([{"date": efs[0]["date"], "v": round(fit[1], 3)},
+                     {"date": efs[-1]["date"], "v": round(fit[1] + fit[0] * (S_date(efs[-1]["date"]) - t0).days, 3)}]
+                    if fit else None),
+            "temp_note": (f"Warmer runs read lower here (r = {ef['temp']['r_with_ef']:.2f} over {ef['temp']['n']} runs, "
+                          f"{ef['temp']['lo']}–{ef['temp']['hi']} °C): read the two together."
+                          if (ef.get("temp") or {}).get("r_with_ef") is not None else None)},
+        "track_detail": [{"lead_days": int(k), "n": v.get("n") or 0, "median_err_pct": v.get("median_err_pct"),
+                          "direction": v.get("direction")} for k, v in sorted(lead.items(), key=lambda kv: int(kv[0]))],
         "durability": {"ok": bool(du.get("ok") and du.get("n_long")), "n": du.get("n_long"),
                        "text": (f"{du['n_long']} long runs of {du['min_km']:.0f} km or more; recent fade "
                                 f"{du['recent_median_pct']}% at about {du['recent_median_km']} km."
@@ -316,7 +384,7 @@ def fitness_page(S, db):
     return {"ok": True, "tiles": tiles,
             "load": {"acwr": acwr, "band": list(ACWR_BAND), "state": acwr_state, "text": acwr_text,
                      "ramp": ramp, "ramp_word": rword},
-            "chart": {"ctl": ctl, "atl": atl}, "weekly": weekly,
+            "chart": {"ctl": ctl, "atl": atl, "plan": proj, "check": check}, "weekly": weekly,
             "zones": [{"label": r["label"], "pace": ((r.get("pace_slower_than") or {}).get("fmt") and f"slower than {r['pace_slower_than']['fmt']}")
                        or (r.get("pace_target") or {}).get("fmt"),
                        "hr": r.get("hr")} for r in zones.get("rows", [])],
@@ -343,7 +411,8 @@ def _limits_list(limits):
     for k, v in (limits or {}).items():
         if isinstance(v, dict) and "laid" in v and "ceiling" in v and k in LIMITS:
             out.append({"key": k, "name": LIMITS[k]["name"], "laid": v["laid"], "ceiling": v["ceiling"],
-                        "unit": v.get("unit", ""), "holds": limits.get("binding") == k,
+                        "unit": v.get("unit", ""), "holds": limits.get("binding") == k, "basis": v.get("basis"),
+                        "headroom": v.get("headroom"),
                         "over": v["laid"] > v["ceiling"] + 1e-9,
                         "fill": round(min(1.0, v["laid"] / v["ceiling"]), 3) if v["ceiling"] else None})
     return sorted(out, key=lambda x: (not x["holds"], x["name"]))

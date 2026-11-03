@@ -3,14 +3,17 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "The new Sparing Horse UI: a thin React front end over the app's /api (fork §UI).",
+  "description": "The new Sparing Horse UI: a thin React front end over the app's /api (fork \u00a7UI).",
   "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sources": "node scripts/extract-sources.mjs",
+    "predev": "node scripts/extract-sources.mjs",
+    "prebuild": "node scripts/extract-sources.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "5.59.20",

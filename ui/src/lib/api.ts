@@ -49,13 +49,21 @@ export interface FitnessPage {
   ok: true; tiles: Tile[];
   load: { acwr: number | null; band: [number, number]; state: "high" | "low" | "in" | null; text: string | null;
           ramp: number | null; ramp_word: string | null };
-  chart: { ctl: { date: string; v: number }[]; atl: { date: string; v: number }[] };
+  chart: { ctl: { date: string; v: number }[]; atl: { date: string; v: number }[]; plan: { date: string; v: number }[];
+           check: { model: { fitness: number; fatigue: number }; runalyze: { fitness: number; fatigue: number }; close: boolean } | null };
   weekly: { week: string; km: number }[];
   zones: { label: string; pace: string | null; hr: { lo: number | null; hi: number | null } | null }[];
   easy: { score: number | null; window_days: number; judged: number | null; on: number | null; hot: number | null;
-          too_hard: number | null; by: string; ceiling: string | null;
-          runs: { date: string; kind: string; km: number; pace: string | null; hr: number | null; verdict: string | null;
+          too_hard: number | null; by: string; ceiling: string | null; lt1: string | null; agreement: string | null;
+          runs: { date: string; kind: string; km: number; pace: string | null; hr: number | null; hr_pct: number | null;
+                  te: number | null; feel: string | null; decoupling: number | null; verdict: string | null;
                   verdict_text: string | null }[] };
+  durability_detail: { points: { date: string; km: number; pct: number; hr: number | null }[];
+    builds: { label: string; pb: boolean; current: boolean; race_pct: number | null; longest_km: number | null;
+              runs: { km: number; pct: number | null; race: boolean }[] }[]; lines: number[] };
+  efficiency_detail: { points: { date: string; v: number; temp: number | null; km: number; pace: string | null; hr: number | null }[];
+    fit: { date: string; v: number }[] | null; temp_note: string | null };
+  track_detail: { lead_days: number; n: number; median_err_pct: number | null; direction: string | null }[];
   durability: { ok: boolean; n: number | null; text: string; note: string | null };
   efficiency: { ok: boolean; verdict: string | null; text: string };
   track: { scored: number; text: string };
@@ -65,7 +73,7 @@ export interface SessionDetail { date: string; kind: string; title: string; km: 
   note: string | null; race: boolean; strides: number; target: Target | null; steps: Step[]; actual: Actual | null;
   moved_to: string | null; status: string }
 export interface Limit { key: string; name: string; laid: number; ceiling: number; unit: string; holds: boolean;
-  over: boolean; fill: number | null }
+  over: boolean; fill: number | null; basis: "L" | "A" | "S" | null; headroom: number | null }
 export interface PlanPage {
   ok: true; today: string;
   race: { label: string; date: string; type: string; target: string | null; prediction: string | null;
