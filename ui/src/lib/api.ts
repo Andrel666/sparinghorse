@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string, public login?: string) { super(message); }
+  constructor(public status: number, message: string, public login?: string, public body?: Record<string, unknown>) { super(message); }
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -11,7 +11,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) } });
   const body = await r.json().catch(() => null);
   if (!r.ok || (body && body.ok === false)) {
-    throw new ApiError(r.status, (body && body.error) || `HTTP ${r.status}`, body && (body.login || body.setup));
+    throw new ApiError(r.status, (body && body.error) || (body && body.errors && Object.values(body.errors).join("; ")) || `HTTP ${r.status}`,
+      body && (body.login || body.setup), body || undefined);
   }
   return body as T;
 }
@@ -28,19 +29,21 @@ export interface Day {
 export interface Held { key: string; name: string; text: string }
 export interface TodayPage {
   ok: true; today: string; sync_minutes: number | null;
-  race: { label: string; date: string; type: string; days: number; target: string | null } | null;
+  race: { label: string; date: string; type: string; days: number; target: string | null; start_time: string | null;
+          start_tz: string; priority: string | null; verdict: string | null } | null;
   readiness: { verdict: Verdict; halt: boolean; action: string; headline: string | null; detail: string;
-               reasons: string[]; hrv: string | null;
+               reasons: string[]; hrv: string | null; hrv_line: string; ai_line: string | null;
                checkin: Checkin | null };
   session: { kind: string; title: string; km: number | null; minutes: number | null; note: string | null; done: boolean;
              actual: Actual | null; race: boolean; target: Target | null; steps: Step[]; phase: string | null;
-             week: number | null };
+             week: number | null; trimp: number | null; optional: boolean; start: string | null; component: string | null;
+             pace_zone: string | null; why: string | null };
   next: { date: string; dow: string; kind: string; title: string; km: number | null; minutes: number | null;
           strides: number; race: boolean; target: Target | null; days: number } | null;
-  week: { start: string; phase: string | null; km: number; runs: number; days: Day[];
+  week: { start: string; phase: string | null; km: number; runs: number; days: Day[]; deload: string | null;
           held: Held | null } | null;
   latest_run: { id: number; date: string; km: number; pace: string | null; hr: number | null;
-                verdict: string | null; verdict_text: string | null } | null;
+                verdict: string | null; verdict_text: string | null; cross_training?: string } | null;
 }
 
 export interface Tile { key: string; label: string; value: number | null; unit: string; delta: number | null;
@@ -50,11 +53,13 @@ export interface FitnessPage {
   load: { acwr: number | null; band: [number, number]; state: "high" | "low" | "in" | null; text: string | null;
           ramp: number | null; ramp_word: string | null };
   chart: { ctl: { date: string; v: number }[]; atl: { date: string; v: number }[]; plan: { date: string; v: number }[];
+           tsb: { date: string; v: number }[]; acwr: { date: string; v: number }[]; duplicates: number;
            check: { model: { fitness: number; fatigue: number }; runalyze: { fitness: number; fatigue: number }; close: boolean } | null };
   weekly: { week: string; km: number }[];
   zones: { label: string; pace: string | null; hr: { lo: number | null; hi: number | null } | null }[];
   easy: { score: number | null; window_days: number; judged: number | null; on: number | null; hot: number | null;
           too_hard: number | null; by: string; ceiling: string | null; lt1: string | null; agreement: string | null;
+          lthr_note: string | null; detrained: string | null; field_test: string | null;
           runs: { date: string; kind: string; km: number; pace: string | null; hr: number | null; hr_pct: number | null;
                   te: number | null; feel: string | null; decoupling: number | null; verdict: string | null;
                   verdict_text: string | null }[] };
@@ -64,6 +69,11 @@ export interface FitnessPage {
   efficiency_detail: { points: { date: string; v: number; temp: number | null; km: number; pace: string | null; hr: number | null }[];
     fit: { date: string; v: number }[] | null; temp_note: string | null };
   track_detail: { lead_days: number; n: number; median_err_pct: number | null; direction: string | null }[];
+  track_full: { lines: string[]; empty: string | null; races: { label: string; date: string; at: string; band: string | null; err_pct: number | null }[] };
+  zones_note: string;
+  durability_more: { bands: string[]; min_km: number; default_compare: string | null; headline: string | null; footnote: string;
+    builds: { key: string; label: string; current: boolean; pb: boolean; horizon: string; fit: { slope: number; intercept: number } | null; n: number;
+              cells: ({ median: number; n: number } | null)[]; race_pct: number | null; runs: { km: number; pct: number | null; race: boolean }[] }[] };
   durability: { ok: boolean; n: number | null; text: string; note: string | null };
   efficiency: { ok: boolean; verdict: string | null; text: string };
   track: { scored: number; text: string };
@@ -71,27 +81,43 @@ export interface FitnessPage {
 
 export interface SessionDetail { date: string; kind: string; title: string; km: number | null; minutes: number | null;
   note: string | null; race: boolean; strides: number; target: Target | null; steps: Step[]; actual: Actual | null;
-  moved_to: string | null; status: string }
+  moved_to: string | null; status: string; mark: "extra" | "done" | "missed" | "today" | "ahead"; activity_id: number | null;
+  reflection: string | null; component: string | null; moved_dow: string | null; runs: { km: number; pace: string | null; activity_id: number | null }[] }
+export interface Flag { text: string; hint: string | null; tone: "ok" | "warn" | null }
 export interface Limit { key: string; name: string; laid: number; ceiling: number; unit: string; holds: boolean;
   over: boolean; fill: number | null; basis: "L" | "A" | "S" | null; headroom: number | null }
 export interface PlanPage {
-  ok: true; today: string;
+  ok: true; today: string; empty?: boolean;
+  header: { generated_at: string | null; stale: string | null; seed: string | null; pace_note: string | null; mode: string | null;
+            posture: { mode: string | null; label: string; reason: string | null; ride: string } };
+  adjustment: import("../pages/plan/Adjust").Adjustment | null;
+  races: import("../pages/plan/Races").RaceRow[]; tune_ups: { label: string; date: string }[];
   race: { label: string; date: string; type: string; target: string | null; prediction: string | null;
           lo: string | null; hi: string | null; verdict: string | null } | null;
-  road: { start: string; phase: string | null; km: number; ran: number; current: boolean; selected: boolean; race: boolean }[];
+  road: { start: string; phase: string | null; km: number; ran: number; current: boolean; selected: boolean; race: boolean; frozen: boolean;
+          flags: { label: string; date: string; day: number }[] }[];
   phases: { key: string | null; name: string | null; start: string; weeks: number }[];
   week: { start: string; end: string; phase: string | null; phase_name: string | null; n: number | null; km: number;
           intent: string | null; current: boolean; days: Day[]; held: Held | null;
-          limits: Limit[]; sessions: SessionDetail[]; prev: string | null; next: string | null };
+          limits: Limit[]; sessions: SessionDetail[]; prev: string | null; next: string | null; flags: Flag[];
+          deload: { week: string; why: string | null; state: "retired" | "offer" | "kept"; text: string } | null;
+          proj_ctl: number | null; proj_acwr: number | null; km_done: number | null; km_ahead: number | null; eq_km: number | null;
+          frozen: boolean; runs: number | null; status: string };
   paces: { key: string; label: string; pace: string }[];
 }
 export interface RunPage { ok: true; id: number; date: string; title: string; sport: string;
-  stats: { k: string; v: string | null }[]; readback: { kind: string | null; summary: string | null } | null;
-  verdict: string | null; verdict_text: string | null }
+  stats: { k: string; v: string | null }[];
+  readback: { kind: string | null; summary: string | null; rough: boolean; composite: number | null; strides: string | null } | null;
+  verdict: string | null; verdict_text: string | null; time: string | null; ignored: boolean;
+  split: { index: number; parts: number; km: number; min: number } | null }
+export interface Profile { has_pace: boolean; has_hr: boolean; has_cadence: boolean; has_elevation: boolean; has_gct: boolean; has_vo: boolean;
+  dist: number[]; pace: (number | null)[]; hr: (number | null)[]; cadence: (number | null)[]; elevation: (number | null)[];
+  gct: (number | null)[]; vo: (number | null)[]; hr_avg: number | null;
+  hrzones: { anchor: string; cutoffs: number[]; ref: number } | null }
 export interface Marker { key: string; label: string; unit: string; value: number; date: string; ref: [number | null, number | null] | null;
-  good: string | null; state: "ok" | "watch" | null; stale: boolean; delta: number | null; group: string;
-  series: { date: string; v: number }[] }
-export interface BodyPage { ok: true; markers: Marker[]; injuries: { start: string; end: string | null; label: string | null }[] }
+  good: string | null; state: "ok" | "watch" | null; stale: boolean; delta: number | null; group: string; stale_days: number | null;
+  n: number; first: string; series: { date: string; v: number }[]; recent: { date: string; v: number }[] }
+export interface BodyPage { ok: true; markers: Marker[]; stopped: string | null; add: { key: string; label: string }[]; injuries: { start: string; end: string | null; label: string | null }[] }
 export interface Field { key: string; label: string; help: string; kind: string; choices: { v: string; t: string }[];
   value: string; source: string }
 export interface SettingsPage { ok: true; groups: { name: string; fields: Field[] }[] }
@@ -103,7 +129,8 @@ export interface PlanCalendar { ok: true; month: string; week_start: number; tod
   start: string; end: string; race: { date: string; label: string } | null; days: Record<string, CalDay[]>;
   phase: Record<string, string> }
 export interface RunsMonth { ok: true; month: string; week_start: number; first: string; last: string;
-  days: Record<string, { id: number; km: number; pace: string | null; t: string; z: number | null }[]>;
+  days: Record<string, { id: number; km: number; pace: string | null; t: string; z: number | null; sj?: unknown }[]>;
+  other: string[] | null; since: string | null;
   stats: Record<string, unknown>; stats12: Record<string, unknown>; statsAll: Record<string, unknown> }
 export interface RacePlanT { ok: true; race: { label: string; date: string; type: string; km: number; start_time: string | null };
   target: { seconds: number; hms: string; pace: string; source: string; goal: string | null };
@@ -115,6 +142,11 @@ export interface CoachMsg { id: number; ts: string; role: "user" | "coach"; text
 
 // ── one hook per page ──
 const page = <T,>(name: string) => () => useQuery({ queryKey: ["ui", name], queryFn: () => api<T>(`/api/ui/${name}`) });
+export interface ShellT { ok: true; version: string; units: "km" | "mi"; last_sync: string | null; sync_hours: number | null;
+  stale: boolean; stale_hours: number; llm: boolean; ai: Record<string, boolean>;
+  first_run: { key: string; title: string; text: string; done: boolean }[] | null;
+  duplicates: { id: number; date: string; distance: number }[]; ignored: { id: number; date: string; distance: number; reason: string }[] }
+export const useShell = page<ShellT>("shell");
 export const useToday = page<TodayPage>("today");
 export const useFitness = page<FitnessPage>("fitness");
 export const useBody = page<BodyPage>("body");
@@ -127,6 +159,7 @@ export const useRun = (id?: number) => q<RunPage>(["ui", "run", id], `/api/ui/ru
 export const usePlanCalendar = (month?: string) => q<PlanCalendar>(["ui", "plancal", month], `/api/plan/calendar${month ? `?month=${month}` : ""}`);
 export const useRunsMonth = (month?: string) => q<RunsMonth>(["ui", "runs", month], `/api/runs${month ? `?month=${month}` : ""}`);
 export const useRacePlan = (target?: string) => q<RacePlanT>(["ui", "race", target], `/api/race/plan${target ? `?target=${encodeURIComponent(target)}` : ""}`);
+export const useProfile = (id?: number) => q<Profile>(["ui", "profile", id], `/api/activity/${id}/profile`, !!id);
 export const useRunMap = (id?: number) => q<{ has_gps: boolean; path: [number, number][] }>(["ui", "map", id], `/api/activity/${id}/map`, !!id);
 export const useCoach = () => q<{ ok: boolean; enabled: boolean; available: boolean; messages: CoachMsg[] }>(["ui", "coach"], "/api/coach/messages");
 export const postJSON = <T,>(path: string, body?: unknown) => api<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });

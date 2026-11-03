@@ -6,6 +6,8 @@ import "./styles/tokens.css";
 import "./styles/base.css";
 import { PAGES } from "./lib/pages";
 import { Shell } from "./components/Shell";
+import { Frame } from "./components/Frame";
+import { FeedbackProvider } from "./components/feedback";
 import { Today } from "./pages/Today";
 import { lazy, Suspense } from "react";
 import { State } from "./components/ui";
@@ -23,6 +25,7 @@ const BUILT: Record<string, React.ComponentType> = {
   "/body": lazyPage(() => import("./pages/Body"), "Body"),
   "/coach": lazyPage(() => import("./pages/Coach"), "Coach"),
   "/settings": lazyPage(() => import("./pages/Settings"), "Settings"),
+  "/music": lazyPage(() => import("./pages/Music"), "Music"),
 };
 
 const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 60_000, refetchOnWindowFocus: true, retry: 1 } } });
@@ -31,15 +34,18 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={qc}>
       <BrowserRouter>
-        <Shell>
+        <FeedbackProvider><Shell><Frame>
           <Suspense fallback={<State>Loading…</State>}><Routes>
             {PAGES.map(p => {
               const C = BUILT[p.path];
               return <Route key={p.path} path={p.path} element={<C />} />;
             })}
           </Routes></Suspense>
-        </Shell>
+        </Frame></Shell></FeedbackProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>
 );
+
+// the offline shell, in the built app only (dev serves modules the worker must not pin)
+if (import.meta.env.PROD && "serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));

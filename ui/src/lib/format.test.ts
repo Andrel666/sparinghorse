@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, bpm, km, pace, verdictTone } from "./format";
+import { ago, bpm, dayNum, km, numDay, pace, verdictTone } from "./format";
 
 describe("format", () => {
   it("formats distances, paces and heart rate, with a dash for missing values", () => {
@@ -17,4 +17,9 @@ describe("format", () => {
     expect(verdictTone("red")).toBe("bad"); expect(verdictTone("too_hard")).toBe("bad");
     expect(verdictTone(null)).toBeUndefined();
   });
+});
+
+it("calendar dates survive the day-number round trip in any time zone", () => {
+  for (const d of ["2026-11-01", "2027-02-26", "2026-03-29"]) expect(numDay(dayNum(d))).toBe(d);
+  expect(dayNum("2026-11-02") - dayNum("2026-11-01")).toBe(1);
 });

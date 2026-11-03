@@ -17,10 +17,11 @@ function literal(name) {
     if (quote) { if (c === "\\") j++; else if (c === quote) quote = null; continue; }
     if (c === '"' || c === "'" || c === "`") quote = c;
     else if (c === "{") depth++;
-    else if (c === "}" && --depth === 0) return new Function(`return (${js.slice(i, j + 1)});`)();
+    else if (c === "}" && --depth === 0) // Classic formats a few numbers inline through its unit helper; the JSON is metric (the UI converts).
+    return new Function("U", `return (${js.slice(i, j + 1)});`)({ d: (v) => v, mi: false, unit: "km", k: " km" });
   }
   throw new Error(`${name}: unbalanced braces`);
 }
-const out = { basis: literal("BASIS"), sources: literal("PLAN_SOURCES") };
+const out = { basis: literal("BASIS"), sources: literal("PLAN_SOURCES"), components: literal("COMPT") };
 writeFileSync(OUT, JSON.stringify(out, null, 1) + "\n");
 console.log(`plan_sources.json: ${Object.keys(out.sources).length} limits, ${Object.keys(out.basis).length} bases`);

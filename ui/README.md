@@ -48,9 +48,12 @@ forwarding. `npm test` runs the unit tests, `npm run typecheck` the type check.
 | Fitness | shape tiles, fitness & fatigue, load, weekly distance, zones, easy-run check, durability, efficiency, track record | `/api/ui/fitness` |
 | Body | resting HR, sleep, weight, lab values with their state; injury history | `/api/ui/body` |
 | Coach | the coach chat (switch it on in Settings) | `/api/coach/*` |
+| Music | cadence playlists, the ramp, read-back; Spotify and listening history | `/api/music/*` |
 | Settings | typed settings, calibration (keys and connections stay in Classic) | `/api/ui/settings`, `/api/settings`, `/api/calibration*` |
 
 Every page but Today loads when first opened; the map library only ships with Runs.
+
+`PARITY.md` lists every Classic feature and where it lives here.
 
 ## Docker
 

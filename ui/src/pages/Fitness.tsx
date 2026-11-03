@@ -2,14 +2,15 @@
 // the full weekly history, zones, the easy-run check, durability, efficiency, track record.
 // Every number, sentence and verdict arrives from /api/ui/fitness.
 import { useFitness, type FitnessPage } from "../lib/api";
-import { bpm, dateShort, km, pace, verdictTone } from "../lib/format";
+import { bpm, dateShort, dayNum, km, numDay, pace, verdictTone } from "../lib/format";
 import { Card, ListItem, PageHead, Pill, Table } from "../components/ui";
+import { Banner } from "../components/feedback";
+import { useState } from "react";
 import { Bars, Gauge, Lines, Scatter, Spark, type Dot } from "../components/charts";
 import { Query } from "./Query";
 
 const signed = (v: number | null) => (v == null ? "" : `${v > 0 ? "+" : ""}${v.toFixed(1)} in 4 weeks`);
-const day = (iso: string) => new Date(iso + "T00:00:00").getTime() / 86400000;
-const BUILD_COLOR = (b: { pb: boolean; current: boolean }) => (b.current ? "var(--accent)" : b.pb ? "var(--ok)" : "var(--ph-rebase)");
+const day = dayNum;
 
 type Run = FitnessPage["easy"]["runs"][number];
 const EASY_COLS = [
@@ -26,14 +27,7 @@ const EASY_COLS = [
 
 export function Fitness() {
   return <Query q={useFitness()}>{d => {
-    const dd = d.durability_detail, ed = d.efficiency_detail;
-    // every long run is a dot; a build's race is a ring in that build's colour
-    const raceKey = new Set(dd.builds.flatMap(b => b.runs.filter(r => r.race).map(r => `${r.km}|${r.pct}`)));
-    const durDots: Dot[] = [
-      ...dd.points.filter(p => !raceKey.has(`${p.km}|${p.pct}`)).map(p => ({ x: p.km, y: p.pct, color: "var(--muted)",
-        label: `${p.date}: ${p.km} km, fade ${p.pct}%${p.hr ? ` at ${p.hr} bpm` : ""}` })),
-      ...dd.builds.flatMap(b => b.runs.filter(r => r.pct != null).map(r => ({ x: r.km, y: r.pct as number, color: BUILD_COLOR(b),
-        ring: r.race, label: `${b.label}${r.race ? " race" : ""}: ${r.km} km, fade ${r.pct}%` })))];
+    const ed = d.efficiency_detail;
     const t0 = ed.points[0] ? day(ed.points[0].date) : 0;
     const efDots: Dot[] = ed.points.map(p => ({ x: day(p.date) - t0, y: p.v, color: "var(--accent)",
       label: `${p.date}: ${p.v} · ${p.km} km at ${p.pace}/km, ${p.hr} bpm${p.temp != null ? `, ${p.temp} °C` : ""}` }));
@@ -51,10 +45,14 @@ export function Fitness() {
           <Card label="Fitness & fatigue · 6 months and the plan to race day" span={8}>
             <Lines series={[{ pts: d.chart.ctl, color: "var(--accent)", label: "Fitness" },
                             { pts: d.chart.atl, color: "var(--ph-build)", label: "Fatigue" },
-                            { pts: d.chart.plan, color: "var(--accent)", label: "Planned fitness", dashed: true }]} />
+                            { pts: d.chart.plan, color: "var(--accent)", label: "Planned fitness", dashed: true },
+                            { pts: d.chart.tsb, color: "", label: "Form", hidden: true },
+                            { pts: d.chart.acwr, color: "", label: "Load ratio", hidden: true }]} />
             {d.chart.check && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
               Model {d.chart.check.model.fitness} / {d.chart.check.model.fatigue} vs Runalyze {d.chart.check.runalyze.fitness} / {d.chart.check.runalyze.fatigue}
               {d.chart.check.close ? " — they agree." : " — they differ; a sync or a duplicate may be missing."}</span>}
+            {d.chart.duplicates > 0 && !d.chart.check?.close && <Banner tone="warn">Heads-up: {d.chart.duplicates} duplicate
+              activities inflate Runalyze's numbers. Delete them on Runalyze, or delete the leftover copy here (banner at the top).</Banner>}
           </Card>
           <Card label="Load" span={4} tone={d.load.state === "high" ? "warn" : undefined}>
             {d.load.acwr != null && <>
@@ -74,6 +72,7 @@ export function Fitness() {
                 <span className="num">{z.pace ? `${z.pace}/km` : "—"}</span>
                 <span className="muted num"> · {z.hr ? (z.hr.lo && z.hr.hi ? `${z.hr.lo}–${z.hr.hi}` : z.hr.hi ? `≤ ${z.hr.hi}` : `≥ ${z.hr.lo}`) + " bpm" : "—"}</span>
               </ListItem>))}</div>
+            <span className="muted" style={{ fontSize: "var(--fs-label)" }}>{d.zones_note}</span>
           </Card>
           <Card label={`Easy runs · last ${d.easy.window_days} days`} span={12}
                 tone={verdictTone(d.easy.too_hard ? "too_hard" : d.easy.hot ? "hot" : d.easy.judged ? "on" : null)}>
@@ -82,35 +81,68 @@ export function Fitness() {
               <span className="muted">easy enough, judged by {d.easy.by} {d.easy.ceiling ? `(${d.easy.ceiling})` : ""}</span>
             </div>
             {d.easy.agreement && <span style={{ fontSize: "var(--fs-small)" }}>{d.easy.agreement}</span>}
-            {d.easy.lt1 && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{d.easy.lt1}</span>}
+            {d.easy.lt1 && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{d.easy.lt1} {d.easy.lthr_note ?? ""}</span>}
+            {d.easy.detrained && <span style={{ fontSize: "var(--fs-small)" }}>{d.easy.detrained}</span>}
+            {d.easy.field_test && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{d.easy.field_test}</span>}
             <Table cols={EASY_COLS} rows={d.easy.runs} keyOf={r => r.date + r.km} />
           </Card>
-          <Card label="Durability · fade on long runs" span={6}>
-            <span>{d.durability.text}</span>
-            <Scatter dots={durDots} xLabel="distance (km)" yLabel="fade %" refs={dd.lines} />
-            <span className="muted" style={{ fontSize: "var(--fs-label)" }}>Grey: long runs · rings: race day, in its build's colour · lower is better</span>
-            <div className="row">{dd.builds.map(b => (
-              <Pill key={b.label}><span className="dot" style={{ background: BUILD_COLOR(b) }} />{b.label}{b.pb ? " · best" : ""}
-                {b.race_pct != null ? ` · race ${b.race_pct}%` : ""}</Pill>))}</div>
-            {d.durability.note && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{d.durability.note}</span>}
-          </Card>
+          <Durability d={d} />
           <Card label="Aerobic efficiency · speed per heartbeat" span={6} tone={d.efficiency.verdict === "improving" ? "ok" : undefined}>
             <span>{d.efficiency.text}</span>
-            <Scatter dots={efDots} xLabel="date" yLabel="efficiency" xFmt={v => new Date((t0 + v) * 86400000).toISOString().slice(0, 10)}
+            <Scatter dots={efDots} xLabel="date" yLabel="efficiency" xFmt={v => numDay(t0 + v)}
                      fit={ed.fit ? ed.fit.map(p => [day(p.date) - t0, p.v] as [number, number]) : undefined} />
             {ed.points.some(p => p.temp != null) && <Bars items={ed.points.map(p => ({ label: `${p.date} · ${p.temp ?? "?"} °C`, v: p.temp ?? 0 }))} height={40} unit="°C" />}
             {ed.temp_note && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{ed.temp_note}</span>}
           </Card>
           <Card label="Prediction track record" span={12}>
-            <span className="muted">{d.track.text}</span>
-            <Table cols={[{ head: "Forecast made", cell: (r: FitnessPage["track_detail"][number]) => `${r.lead_days} days ahead` },
-                          { head: "Scored", cell: r => r.n, num: true },
-                          { head: "Typical error", cell: r => (r.median_err_pct != null ? `${r.median_err_pct}%` : "—"), num: true },
-                          { head: "Leaning", cell: r => (r.direction && r.direction !== "unknown" ? r.direction : "—") }]}
-                   rows={d.track_detail} keyOf={r => String(r.lead_days)} />
+            {d.track_full.empty && <span className="muted">{d.track_full.empty}</span>}
+            {d.track_full.lines.map(l => <span key={l}>{l}</span>)}
+            {d.track_full.races.length > 0 && <Table cols={[{ head: "Race", cell: (r: FitnessPage["track_full"]["races"][number]) => r.label },
+              { head: "Date", cell: r => dateShort(r.date) }, { head: "Scored at", cell: r => r.at },
+              { head: "Band", cell: r => r.band ? <Pill tone={r.band === "inside" ? "ok" : "bad"}>{r.band}</Pill> : "—" },
+              { head: "Error", cell: r => (r.err_pct != null ? `${r.err_pct > 0 ? "+" : ""}${r.err_pct}%` : ""), num: true }]}
+              rows={d.track_full.races} keyOf={r => r.date + r.at} />}
+            <span className="muted" style={{ fontSize: "var(--fs-small)" }}>Every row was written when the outcome settled and is never rewritten — a forecast that can be re-scored after the fact is not a forecast.</span>
           </Card>
         </div>
       </div>
     );
   }}</Query>;
+}
+
+const DUR_KEY = "sh-ui-dur-view";
+function Durability({ d }: { d: FitnessPage }) {
+  const m = d.durability_more, dd = d.durability_detail;
+  const [view, setView] = useState<"chart" | "table">(() => { try { return (localStorage.getItem(DUR_KEY) as "chart" | "table") || (window.innerWidth < 640 ? "table" : "chart"); } catch { return "chart"; } });
+  const [cmp, setCmp] = useState<string | null>(m.default_compare);
+  const set = (v: "chart" | "table") => { setView(v); try { localStorage.setItem(DUR_KEY, v); } catch { /* private window */ } };
+  const cur = m.builds.find(b => b.current), other = m.builds.find(b => b.key === cmp);
+  const color = (b: { current: boolean; key: string }) => b.current ? "var(--accent)" : b.key === cmp ? "var(--ok)" : "var(--ph-rebase)";
+  const raceKey = new Set(m.builds.flatMap(b => b.runs.filter(r => r.race).map(r => `${r.km}|${r.pct}`)));
+  const dots: Dot[] = [
+    ...dd.points.filter(p => !raceKey.has(`${p.km}|${p.pct}`)).map(p => ({ x: p.km, y: p.pct, color: "var(--muted)", label: `${p.date}: ${p.km} km, fade ${p.pct}%` })),
+    ...m.builds.filter(b => b.current || b.key === cmp).flatMap(b => b.runs.filter(r => r.pct != null).map(r => ({ x: r.km, y: r.pct as number,
+      color: color(b), ring: r.race, label: `${b.label}${r.race ? " race" : ""}: ${r.km} km, fade ${r.pct}%` })))];
+  const fitLine = (b?: typeof cur) => b?.fit ? [[m.min_km, b.fit.intercept + b.fit.slope * m.min_km], [42, b.fit.intercept + b.fit.slope * 42]] as [number, number][] : undefined;
+  const tint = (v: number) => v < 5 ? "ok" : v <= 10 ? "warn" : "bad";
+  return (
+    <Card label="Durability · fade on long runs" span={6} aside={<span className="seg" role="group" aria-label="View">
+      <button type="button" aria-pressed={view === "chart"} onClick={() => set("chart")}>Chart</button>
+      <button type="button" aria-pressed={view === "table"} onClick={() => set("table")}>Table</button></span>}>
+      <span>{m.headline || d.durability.text}</span>
+      {view === "chart" ? <>
+        <Scatter dots={dots} xLabel="distance (km)" yLabel="fade %" refs={dd.lines} fit={fitLine(cur) || fitLine(other)} />
+        <div className="row"><span className="muted" style={{ fontSize: "var(--fs-label)" }}>Compare with</span>
+          {m.builds.filter(b => !b.current).map(b => <button key={b.key} type="button" className={`btn${b.key === cmp ? " primary" : ""}`} aria-pressed={b.key === cmp}
+            onClick={() => setCmp(b.key)}>{b.label}{b.pb ? " (best)" : ""}</button>)}</div>
+        <div className="row">{[cur, other].filter(Boolean).map(b => <Pill key={b!.key}><span className="dot" style={{ background: color(b!) }} />
+          {b!.label}: {b!.horizon} · {b!.current ? `${b!.n} runs so far` : b!.pb ? "best build" : `${b!.n} runs`}</Pill>)}</div>
+        <span className="muted" style={{ fontSize: "var(--fs-label)" }}>Grey: long runs · rings: race day · lower is better</span>
+      </> : <Table cols={[{ head: "Build", cell: (b: FitnessPage["durability_more"]["builds"][number]) => `${b.label}${b.pb ? " · best" : ""}` },
+          ...m.bands.map((band, i) => ({ head: band, num: true, cell: (b: FitnessPage["durability_more"]["builds"][number]) => b.cells[i]
+            ? <span className={`tone-${tint(b.cells[i]!.median)} toned`}>{b.cells[i]!.median}% <span className="muted">({b.cells[i]!.n})</span></span> : <span className="muted">—</span> })),
+          { head: "Race", num: true, cell: b => b.race_pct != null ? <span className={`tone-${tint(b.race_pct)} toned`}>{b.race_pct}%</span> : b.current ? "race day" : "—" }]}
+          rows={m.builds} keyOf={b => b.key} />}
+      <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{m.footnote}{d.durability.note ? ` · ${d.durability.note}` : ""}</span>
+    </Card>);
 }

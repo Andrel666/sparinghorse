@@ -14,6 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **New UI: full parity with Classic.** Every Classic feature was inventoried (`ui/PARITY.md`) and carried
+  over: the frame (Sync now, auto-sync, freshness, theme, units, first-run guide, data-quality banner with
+  delete/restore, toasts, confirm dialog, help bubbles, offline shell); Today (HRV and AI lines, halt banner,
+  why-this-session, deload line, live gun-time countdown in the race's zone, cross-training note); Plan
+  (generate + re-plan diff, stale banners, races drawer with priority/date/gun time/zone/remove/put back/add/
+  past results, race chain, adjustment banner and Tell the horse, road flags and today, every week flag, deload
+  retire/keep, session marks/doubles/reflections, races tile with the finish band, posture and paces sources,
+  full drift with Conservative vs Assertive); Runs (multi-run days, other sports, load totals, profile chart,
+  ignore/delete); Fitness (form and load ratio on hover, durability chart/table/compare, zone anchors, the
+  whole track record); Body (charts with the reference band, ranges, stopped-data banner, add a reading);
+  Settings (Athlete / Connections / Console: sources, per-field errors, away days, keys, Suunto, COROS,
+  passphrase, system, backup/export, backfill); Music (playlists, ramp, build/preview, read-back verdicts,
+  Spotify/last.fm/ListenBrainz, matching, library). New `/api/ui/shell` and `/api/ui/adjust/propose`; flags,
+  deload, adjustment effect, race bands, posture, track record, zone anchors and staleness are worded once in
+  `sh_ui_api.py`. `det/ui-parity`, mutation-tested.
+- **Fixed:** the dev proxy rewrote `Host`, so the CSRF guard refused every POST from the new UI (check-in,
+  coach, every action); it now keeps the browser's Host — the guard itself is unchanged. Calendar dates in the
+  new UI no longer shift a day east of UTC.
 - **New UI: every page.** Plan (the road coloured by phase; Week with days, sessions, the limits that size it
   and paces; Month; Race day; History, each day opening in a drawer), Runs (calendar with totals; a run's
   numbers, read-back, verdict and map), Body (markers grouped with their state against the reference range;

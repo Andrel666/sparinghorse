@@ -2,7 +2,7 @@ server {
   listen 80;
   root /usr/share/nginx/html;
   # the API and the server-drawn icons go to Sparing Horse; everything else is the app
-  location ~ ^/(api/|healthz$|favicon\.svg$|icon-192\.png$|icon-512\.png$|apple-touch-icon\.png$) {
+  location ~ ^/(api/|healthz$|login$|logout$|favicon\.svg$|icon-192\.png$|icon-512\.png$|apple-touch-icon\.png$) {
     proxy_pass http://${SH_API_UPSTREAM};
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

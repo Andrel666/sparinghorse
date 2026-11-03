@@ -1,0 +1,97 @@
+// What every page shares above and below its content: sync state + Sync now + theme, the first-run
+// guide, the data-quality banner, the footer. Auto-syncs once when the app opens.
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { postJSON, useShell, type ShellT } from "../lib/api";
+import { useAction } from "../lib/actions";
+import { dateShort, km, setUnits } from "../lib/format";
+import { Banner, useFeedback } from "./feedback";
+import { Link } from "react-router-dom";
+
+type Theme = "auto" | "dark" | "light";
+const THEME_KEY = "sh-ui-theme";
+const readTheme = (): Theme => { try { const t = localStorage.getItem(THEME_KEY); return t === "dark" || t === "light" ? t : "auto"; } catch { return "auto"; } };
+function applyTheme(t: Theme) {
+  if (t === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  try { if (t === "auto") localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, t); } catch { /* private window */ }
+}
+applyTheme(readTheme());
+
+const since = (h: number | null) => h == null ? "not synced yet" : h < 1 ? `synced ${Math.max(1, Math.round(h * 60))} min ago`
+  : h < 48 ? `synced ${Math.round(h)} h ago` : `synced ${Math.round(h / 24)} days ago`;
+
+type SyncResult = { ok: boolean; skipped?: boolean; error?: string; activities?: { added?: number; pages_fetched?: number } };
+
+export function TopBar({ s }: { s: ShellT }) {
+  const [theme, setTheme] = useState<Theme>(readTheme);
+  const sync = useAction<SyncResult>("/api/sync", undefined, {
+    fail: "Sync failed", done: r => `Synced${r.activities?.added ? ` · ${r.activities.added} new activities` : " · nothing new"}` });
+  const next: Record<Theme, Theme> = { auto: "dark", dark: "light", light: "auto" };
+  return (
+    <div className="topbar">
+      <span className={`pill${s.stale ? " stale" : ""}`} title={s.last_sync ? `Last successful sync: ${new Date(s.last_sync).toLocaleString()}` : undefined}>
+        {since(s.sync_hours)}</span>
+      <button type="button" className="btn primary" disabled={sync.isPending} onClick={() => sync.mutate()}>{sync.isPending ? "Syncing…" : "Sync now"}</button>
+      <button type="button" className="btn" aria-label={`Theme: ${theme === "auto" ? "follows the system" : theme}`}
+              onClick={() => { const t = next[theme]; setTheme(t); applyTheme(t); }}>
+        Theme · {theme === "auto" ? "auto" : theme === "dark" ? "dark" : "light"}</button>
+    </div>);
+}
+
+function FirstRun({ steps }: { steps: NonNullable<ShellT["first_run"]> }) {
+  const active = steps.find(x => !x.done);
+  return (
+    <Banner action={active && (active.key === "race" ? <Link className="btn primary" to="/plan?races=1">Add a race</Link>
+                              : active.key === "token" ? <Link className="btn primary" to="/settings#connections">Open Settings</Link> : null)}>
+      <b>Welcome to Sparing Horse.</b> Three steps to your first plan.
+      <ol style={{ margin: "6px 0 0", paddingLeft: 20 }}>{steps.map(x => (
+        <li key={x.key} style={{ opacity: x.done ? .6 : 1 }}>{x.done ? "✓ " : ""}<b>{x.title}</b>{x === active ? ` — ${x.text}` : ""}</li>))}</ol>
+    </Banner>);
+}
+
+function DataQuality({ s }: { s: ShellT }) {
+  const del = useAction<{ ok: boolean }, number>(id => `/api/activity/${id}/delete`, undefined, {
+    confirm: { title: "Delete this leftover duplicate?", ok: "Delete locally",
+      lines: ["It is removed from this app's copy only — Runalyze keeps it.", "Your load numbers are recomputed without it.",
+              "A full backfill would bring it back if Runalyze still has it."], alt: "Ignore excludes it reversibly instead." },
+    done: () => "Duplicate deleted" });
+  const restore = useAction<{ ok: boolean }, number>(id => `/api/activity/${id}/unignore`, () => ({ reason: "manual" }), { done: () => "Run restored" });
+  if (!s.duplicates.length && !s.ignored.length) return null;
+  return <>
+    {s.duplicates.length > 0 && <Banner tone="warn">
+      <b>⚠ {s.duplicates.length} likely duplicate {s.duplicates.length > 1 ? "activities" : "activity"}</b> (same time, distance and sport).
+      They inflate fitness, fatigue and the load ratio on Runalyze too — delete them there and sync. The charts here already ignore them.
+      <div className="row" style={{ marginTop: 6 }}>{s.duplicates.map(d => (
+        <button key={d.id} type="button" className="btn" onClick={() => del.mutate(d.id)}>🗑 {d.date ? dateShort(d.date) : `#${d.id}`} · {km(d.distance)}</button>))}</div>
+    </Banner>}
+    {s.ignored.length > 0 && <Banner>
+      ⊘ {s.ignored.length} {s.ignored.length > 1 ? "runs are" : "run is"} excluded from your stats.
+      <div className="row" style={{ marginTop: 6 }}>{s.ignored.map(i => (
+        <button key={i.id} type="button" className="btn" onClick={() => restore.mutate(i.id)}>Restore {i.date ? dateShort(i.date) : `#${i.id}`}</button>))}</div>
+    </Banner>}
+  </>;
+}
+
+/** Wraps the routes: sets units, auto-syncs once, shows the top bar, shared banners and footer. */
+export function Frame({ children }: { children: ReactNode }) {
+  const q = useShell();
+  const qc = useQueryClient();
+  const { toast } = useFeedback();
+  const once = useRef(false);
+  useEffect(() => {
+    if (once.current) return; once.current = true;
+    postJSON<SyncResult>("/api/sync?auto=1").then(r => {
+      if (r.ok && !r.skipped) qc.invalidateQueries();
+      if (r.activities?.added) toast(`${r.activities.added} new ${r.activities.added > 1 ? "runs" : "run"} synced`, "ok");
+    }).catch(() => { /* the server throttles it; a miss is silent, like Classic */ });
+  }, [qc, toast]);
+  const s = q.data;
+  if (s) setUnits(s.units);
+  return <>
+    {s && <div className="page frame-top"><TopBar s={s} />{s.first_run && <FirstRun steps={s.first_run} />}<DataQuality s={s} /></div>}
+    {children}
+    {s && <footer className="page footer"><span>Sparing Horse v{s.version}</span>
+      <a href="https://runalyze.com" target="_blank" rel="noopener noreferrer">powered by Runalyze</a>
+      <a href="https://getsongbpm.com" target="_blank" rel="noopener noreferrer">with GetSongBPM</a></footer>}
+  </>;
+}

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 
 export interface Pt { date: string; v: number }
-const day = (iso: string) => new Date(iso + "T00:00:00").getTime() / 86400000;
+import { dayNum as day, localToday, numDay } from "../lib/format";
 
 /** y: value → pixel (top = high); x: a domain → pixel. One implementation for every chart. */
 function yScale(vals: number[], h: number, pad = 0.08, from0 = false) {
@@ -25,20 +25,22 @@ export function Spark({ pts, color = "var(--accent)" }: { pts: Pt[]; color?: str
   );
 }
 
-export interface Series { pts: Pt[]; color: string; label: string; dashed?: boolean }
+export interface Series { pts: Pt[]; color: string; label: string; dashed?: boolean; hidden?: boolean }  // hidden: readout only
 
 /** Lines on a shared date axis (history and projection can sit side by side), with a hover readout. */
-export function Lines({ series, height = 220 }: { series: Series[]; height?: number }) {
+export function Lines({ series, height = 220, fmt = (v: number) => v.toFixed(1), band }:
+  { series: Series[]; height?: number; fmt?: (v: number) => string; band?: [number | null, number | null] | null }) {
   const [hover, setHover] = useState<number | null>(null);
-  const all = series.flatMap(s => s.pts);
+  const all = series.filter(s => !s.hidden).flatMap(s => s.pts);
   if (!all.length) return null;
   const w = 600, ds = all.map(p => day(p.date)), lo = Math.min(...ds), hi = Math.max(...ds);
-  const x = xScale(lo, hi, w), y = yScale(all.map(p => p.v), height);
+  const bandVals = band ? band.filter((b): b is number => b != null) : [];
+  const x = xScale(lo, hi, w), y = yScale(all.map(p => p.v).concat(bandVals), height);
   const at = hover == null ? null : series.map(s => {
     const near = s.pts.reduce<Pt | null>((b, p) => (!b || Math.abs(day(p.date) - hover) < Math.abs(day(b.date) - hover) ? p : b), null);
     return near && Math.abs(day(near.date) - hover) <= 7 ? { s, p: near } : null;
   }).filter(Boolean) as { s: Series; p: Pt }[];
-  const todayX = x(day(new Date().toISOString().slice(0, 10)));
+  const todayX = x(day(localToday()));
   return (
     <figure style={{ margin: 0, position: "relative" }}>
       <svg viewBox={`0 0 ${w} ${height}`} width="100%" height={height} preserveAspectRatio="none" role="img"
@@ -46,19 +48,21 @@ export function Lines({ series, height = 220 }: { series: Series[]; height?: num
            onMouseMove={e => { const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
              setHover(lo + ((e.clientX - r.left) / r.width) * (hi - lo)); }}
            onMouseLeave={() => setHover(null)}>
+        {band && (band[0] != null || band[1] != null) && (() => { const top = band[1] != null ? y(band[1]) : 0, bot = band[0] != null ? y(band[0]) : height;
+          return <rect x={0} width={w} y={top} height={Math.max(0, bot - top)} fill="var(--ok)" opacity={0.1} />; })()}
         {[0.25, 0.5, 0.75].map(f => <line key={f} x1={0} x2={w} y1={height * f} y2={height * f} stroke="var(--line)" vectorEffect="non-scaling-stroke" />)}
         {todayX > 0 && todayX < w && <line x1={todayX} x2={todayX} y1={0} y2={height} stroke="var(--muted)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />}
-        {series.map(s => <path key={s.label} d={line(s.pts.map(p => [x(day(p.date)), y(p.v)]))} fill="none" stroke={s.color}
+        {series.filter(s => !s.hidden).map(s => <path key={s.label} d={line(s.pts.map(p => [x(day(p.date)), y(p.v)]))} fill="none" stroke={s.color}
                                strokeWidth={2} strokeDasharray={s.dashed ? "6 4" : undefined} vectorEffect="non-scaling-stroke" />)}
         {hover != null && <line x1={x(hover)} x2={x(hover)} y1={0} y2={height} stroke="var(--text)" opacity={0.3} vectorEffect="non-scaling-stroke" />}
       </svg>
-      {at && at.length > 0 && <div className="readout">{at[0].p.date} · {at.map(({ s, p }) => `${s.label} ${p.v.toFixed(1)}`).join(" · ")}</div>}
+      {at && at.length > 0 && <div className="readout">{at[0].p.date} · {at.map(({ s, p }) => `${s.label} ${s.label === "Load ratio" ? p.v.toFixed(2) : fmt(p.v)}`).join(" · ")}</div>}
       <figcaption className="row muted" style={{ justifyContent: "space-between", fontSize: "var(--fs-label)" }}>
-        <span>{new Date(lo * 86400000).toISOString().slice(0, 10)}</span>
-        <span className="row">{series.map(s => <span key={s.label} className="row" style={{ gap: 6 }}>
+        <span>{numDay(lo)}</span>
+        <span className="row">{series.filter(s => !s.hidden).map(s => <span key={s.label} className="row" style={{ gap: 6 }}>
           <span style={{ width: 14, height: 0, borderTop: `2px ${s.dashed ? "dashed" : "solid"} ${s.color}`, display: "inline-block" }} />
           {s.label}</span>)}</span>
-        <span>{new Date(hi * 86400000).toISOString().slice(0, 10)}</span>
+        <span>{numDay(hi)}</span>
       </figcaption>
     </figure>
   );

@@ -16425,6 +16425,84 @@ def _stc_ui_pages():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_ui_parity():
+    """Fork §UI parity — the server-side wording and data the new UI shows in place of Classic's browser
+    code: (a) the frame and propose endpoints are private; (b) week_flags words each engine flag, and
+    deload_state reads retired / offer / kept; (c) adjustment_effect words the four effect cases;
+    (d) the Plan endpoint answers `empty` without a plan and, with one, carries the plan's own finish
+    band, posture and header; (e) shell_page's duplicates are find_duplicates' rows; (f) track_lines
+    says why it is empty, and words a settled checkpoint; (g) the Body add list is every marker."""
+    import json
+    from datetime import date as _d
+    fails = []
+    U = UIAPI
+    saved_ro, saved_auth = S.READONLY, S._AUTH_ACTIVE
+    w = {"start": "2026-11-01", "frequency_met": True, "clipped": True, "long_step_capped": True, "rest_gated": True, "rest_shed_km": 3,
+         "av_dates": ["2026-11-04"], "av_shed": 1, "frozen": True, "run_moved": [{"from": "2026-11-03"}]}
+    texts = " | ".join(f["text"] for f in U.week_flags(S, w))
+    for want in ("frequency met", "clipped", "long run held", "spacing kept · −3 km", "away Wed · −1 run", "✓ done", "run moved"):
+        if want not in texts:
+            fails.append(f"(b) week_flags misses {want!r}: {texts}")
+    if U.week_flags(S, {"start": "2026-11-01"}):
+        fails.append("(b) a plain week has flags")
+    for dl, want in (({"judged": True, "retired": True, "absorbed_frac": 0.8}, "retired"), ({"judged": True, "offer": True}, "offer"),
+                     ({"judged": True}, "kept"), ({}, None)):
+        got = U.deload_state({"start": "2026-11-01", "deload": dl})
+        if (got or {}).get("state") != want:
+            fails.append(f"(b) deload_state({dl}) = {got}")
+    for a, want in (({"medical_flag": True}, "Plan halted"), ({"volume_multiplier": 0}, "Full rest"),
+                    ({"volume_multiplier": 1, "easy_only": True}, "Easy effort only"), ({"volume_multiplier": 0.7}, "eased to 70%")):
+        if want not in U.adjustment_effect(a):
+            fails.append(f"(c) adjustment_effect({a}) = {U.adjustment_effect(a)}")
+    tr = U.track_lines({"summary": {"lead_days": 28}}, [])
+    if not tr["empty"] or tr["lines"]:
+        fails.append("(f) an empty track record is not explained")
+    tr = U.track_lines({"ctl": {"n": 3, "mae": 1.2, "bias": -0.5, "close_rate": 0.67, "close_within": 2}, "summary": {}}, [])
+    if tr["empty"] or "3 weekly fitness checkpoints" not in tr["lines"][0] or "short of projection" not in tr["lines"][0]:
+        fails.append(f"(f) track_lines {tr}")
+    fx, today = _race_fixture_db("half", today=_d.today())
+    try:
+        e = U.plan_page(S, fx)
+        if not (e.get("ok") and e.get("empty")):
+            fails.append(f"(d) no plan did not answer empty: {e}")
+        plan = S.generate_plan(fx, today=today)
+        fx.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)",
+                   (today.isoformat() + "T06:00:00", today.isoformat(), "{}", json.dumps(plan)))
+        fx.commit()
+        p = U.plan_page(S, fx)
+        band = ((plan.get("feasibility") or {}).get("finish_time") or {}).get("band") or {}
+        f0 = (p.get("races") or [{}])[0].get("finish") or {}
+        if band and (f0.get("lo_s"), f0.get("hi_s")) != (band.get("lo_seconds"), band.get("hi_seconds")):
+            fails.append(f"(d) race band {f0} is not the plan's {band}")
+        if p["header"]["posture"]["mode"] != (plan.get("regime") or {}).get("mode"):
+            fails.append("(d) posture is not the plan's regime")
+        if not isinstance(p["week"].get("flags"), list) or "status" not in p["week"]:
+            fails.append("(d) the week lacks flags or status")
+        sh = U.shell_page(S, fx)
+        if len(sh["duplicates"]) != len(S.find_duplicates(fx) or []):
+            fails.append("(e) shell duplicates are not find_duplicates'")
+        b = U.body_page(S, fx)
+        if {x["key"] for x in b["add"]} != set(S.MARKERS):
+            fails.append("(g) the add list is not every marker")
+    except Exception as ex:
+        fails.append(f"raised {type(ex).__name__}: {ex}")
+    finally:
+        fx.close()
+    try:
+        S.READONLY, S._AUTH_ACTIVE = True, False
+        c = S.app.test_client()
+        if c.get("/api/ui/shell").status_code != 403:
+            fails.append("(a) the public view served /api/ui/shell")
+        if c.post("/api/ui/adjust/propose", json={"text": "x"}).status_code != 403:
+            fails.append("(a) the public view served /api/ui/adjust/propose")
+    finally:
+        S.READONLY, S._AUTH_ACTIVE = saved_ro, saved_auth
+    return _st("det", "ui-parity",
+               "the new UI's flags, deload, adjustment effect, race band, posture, frame, track record and marker list are "
+               "the engine's own, worded once on the server, and private",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -25270,7 +25348,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),
