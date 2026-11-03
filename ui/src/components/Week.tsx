@@ -18,11 +18,11 @@ export function Week({ days, phase }: { days: Day[]; phase?: string | null }) {
         <div key={d.date} role="listitem" data-phase={phase || undefined}
              className={["day", d.kind === "rest" && !d.actual ? "rest" : "", d.status].join(" ")}
              title={d.moved_to ? `Run on ${dayName(d.moved_to)}` : undefined}>
-          <span className="dow">{d.dow} {Number(d.date.slice(8))}</span>
+          <span className="dow"><span className="full">{d.dow} </span><span className="short">{d.dow[0]} </span>{Number(d.date.slice(8))}</span>
           <span className="what"><span className="full">{MARK[d.status] || ""}{what(d)}</span>
             <span className="short">{MARK[d.status] || ""}{what(d, true)}</span></span>
-          {d.actual && <span className="muted num">{d.actual.km} km{d.actual.hr ? ` · ${d.actual.hr}` : ""}</span>}
-          {d.moved_to && <span className="muted">↷ {dayName(d.moved_to)}</span>}
+          {d.actual && <span className="muted num detail">{d.actual.km} km{d.actual.hr ? ` · ${d.actual.hr} bpm` : ""}</span>}
+          {d.moved_to && <span className="muted detail">↷ {dayName(d.moved_to)}</span>}
         </div>
       ))}
     </div>

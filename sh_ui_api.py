@@ -135,6 +135,7 @@ def split_action(action):
     a = (action or "").strip()
     head, sep, rest = a.partition(" — ")
     if sep and len(head) <= 24:
+        rest = re.sub(r"^(and|but|so)\s+", "", rest)       # "— and today's a rest day" → "Today's a rest day"
         return head, rest[:1].upper() + rest[1:]
     return None, a
 
@@ -171,6 +172,18 @@ def today_page(S, db):
             week = {"start": w["start"], "phase": w.get("pk"), "km": w.get("km"),
                     "runs": sum(1 for d in days if d["kind"] != "rest" and d["status"] != "extra"),
                     "days": days, "held": limit_held(w.get("limits"))}
+    # the next session still to run (what a rest day looks forward to)
+    nxt = None
+    if log:
+        ahead = [x for w in log["weeks"] for x in w["sessions"]
+                 if x["date"] > tiso and not x.get("unplanned") and not x.get("done") and x.get("km")]
+        if ahead:
+            x = min(ahead, key=lambda y: y["date"])
+            nxt = {"date": x["date"], "dow": S._date(x["date"]).strftime("%a"), "kind": x.get("kind"),
+                   "title": KIND_TITLE.get(x.get("kind"), x.get("kind")), "km": x.get("km"),
+                   "minutes": x.get("minutes"), "strides": strides_of(x), "race": bool(x.get("race")),
+                   "target": session_target(S, db, x.get("kind"), zones),
+                   "days": (S._date(x["date"]) - today).days}
     # the latest run and how the easy check read it
     latest = None
     r = db.execute("SELECT id, date, distance, duration, hr_avg FROM activities WHERE " + S.RUN_FAMILY_SQL +
@@ -200,7 +213,7 @@ def today_page(S, db):
                           "headline": split_action(a.get("action"))[0], "detail": split_action(a.get("action"))[1],
                           "reasons": a.get("reasons") or [], "hrv": (a.get("hrv") or {}).get("state"),
                           "checkin": _checkin(rd.get("checkin"))},
-            "session": session, "week": week, "latest_run": latest}
+            "session": session, "next": nxt, "week": week, "latest_run": latest}
 
 
 def register(app, S):

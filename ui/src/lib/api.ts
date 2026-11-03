@@ -34,6 +34,8 @@ export interface TodayPage {
   session: { kind: string; title: string; km: number | null; minutes: number | null; note: string | null; done: boolean;
              actual: Actual | null; race: boolean; target: Target | null; steps: Step[]; phase: string | null;
              week: number | null };
+  next: { date: string; dow: string; kind: string; title: string; km: number | null; minutes: number | null;
+          strides: number; race: boolean; target: Target | null; days: number } | null;
   week: { start: string; phase: string | null; km: number; runs: number; days: Day[];
           held: { key: string; name: string; text: string } | null } | null;
   latest_run: { id: number; date: string; km: number; pace: string | null; hr: number | null;

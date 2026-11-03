@@ -16,8 +16,8 @@ export function Card({ label, span = 12, tone, children, aside }:
   );
 }
 
-export function Stat({ value, sub, small }: { value: ReactNode; sub?: ReactNode; small?: boolean }) {
-  return (<div><div className={cls("stat-value", small && "sm")}>{value}</div>{sub && <div className="stat-sub">{sub}</div>}</div>);
+export function Stat({ value, sub, small, toned }: { value: ReactNode; sub?: ReactNode; small?: boolean; toned?: boolean }) {
+  return (<div><div className={cls("stat-value", small && "sm", toned && "toned")}>{value}</div>{sub && <div className="stat-sub">{sub}</div>}</div>);
 }
 
 export function Pill({ children, tone, dot }: { children: ReactNode; tone?: Tone; dot?: boolean }) {

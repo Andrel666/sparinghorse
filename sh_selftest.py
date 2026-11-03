@@ -16209,6 +16209,8 @@ def _stc_ui_today():
     # (c) the helpers
     if U.split_action("Good to go — run today's session") != ("Good to go", "Run today's session"):
         fails.append(f"(c) split_action: {U.split_action('Good to go — run today' + chr(39) + 's session')}")
+    if U.split_action("Good to go — and today's a rest day")[1] != "Today's a rest day":
+        fails.append("(c) split_action left the leading conjunction")
     if U.split_action("Rest") != (None, "Rest") or U.limit_held({}) is not None:
         fails.append("(c) empty cases mishandled")
     zl = {"rows": [{"key": "easy", "hr": {"hi": 145}, "pace_slower_than": {"fmt": "6:21"}}], "hr_anchor": {"anchor": "lthr"}}
@@ -16234,6 +16236,9 @@ def _stc_ui_today():
                    (today.isoformat() + "T06:00:00", today.isoformat(), "{}", json.dumps(plan)))
         fx.commit()
         d = U.today_page(S, fx)
+        nx = d.get("next")
+        if nx and not (nx["date"] > today.isoformat() and nx.get("km")):
+            fails.append(f"(a) next session is not a future planned run: {nx}")
         for k in ("readiness", "session", "week", "race"):
             if not d.get(k):
                 fails.append(f"(a) page lacks {k}")
