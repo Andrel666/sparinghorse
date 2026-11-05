@@ -1,5 +1,6 @@
 // The shared building blocks. Pages compose these; none of them style themselves.
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import type { Tone } from "../lib/format";
 
 type Span = 3 | 4 | 5 | 6 | 7 | 8 | 12;
@@ -51,10 +52,11 @@ export function Table<T>({ cols, rows, keyOf }: { cols: Col<T>[]; rows: T[]; key
 }
 
 /** A page's headline numbers: one row of big figures on hairlines (see DESIGN.md "figures row"). */
-export interface FigureT { k: ReactNode; v: ReactNode; s?: ReactNode; signal?: boolean; tone?: Tone }
+export interface FigureT { k: ReactNode; v: ReactNode; s?: ReactNode; signal?: boolean; tone?: Tone; to?: string }
 export function Figures({ items }: { items: FigureT[] }) {
-  return <div className="figures">{items.map((f, i) => (
-    <div key={i} className={cls("figure", f.signal && "signal", f.tone && `tone-${f.tone}`)}>
-      <span className="k">{f.k}</span><span className={cls("v", f.tone && "toned")}>{f.v}</span>{f.s && <span className="s">{f.s}</span>}
-    </div>))}</div>;
+  return <div className="figures">{items.map((f, i) => {
+    const c = cls("figure", f.signal && "signal", f.tone && `tone-${f.tone}`, f.to && "link");
+    const body = <><span className="k">{f.k}</span><span className={cls("v", f.tone && "toned")}>{f.v}</span>{f.s && <span className="s">{f.s}</span>}</>;
+    return f.to ? <Link key={i} to={f.to} className={c}>{body}</Link> : <div key={i} className={c}>{body}</div>;
+  })}</div>;
 }

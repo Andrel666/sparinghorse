@@ -9,7 +9,7 @@ import { Card, Figures, ListItem, PageHead, Pill } from "../components/ui";
 import { Drawer, MonthGrid, Tabs } from "../components/layout";
 import { Road } from "../components/Road";
 import { Week } from "../components/Week";
-import { SessionBlock } from "../components/Session";
+import { DayDetail } from "../components/Session";
 import { ComponentChip } from "../components/Component";
 import { Banner, Help } from "../components/feedback";
 import { LimitSource, basisLabel, hasSource } from "../components/LimitSource";
@@ -71,7 +71,7 @@ function WeekView({ p, onWeek, onDay, onLimit, onDiff }: { p: PlanPage; onWeek: 
             : <span className="flag" title={w.deload.why || undefined}>{w.deload.text}</span>)}
           {w.flags.map(f => <span key={f.text} className={`flag${f.tone ? ` tone-${f.tone}` : ""}`} title={f.hint || undefined}>{f.text}</span>)}
         </div>}
-        <Week days={w.days} phase={w.phase} />
+        <Week days={w.days} phase={w.phase} onDay={onDay} today={p.today} />
         <div className="list" style={{ gap: 0 }}>{lines.map(l => l.s
           ? <SessionLine key={l.d + l.s.kind} s={l.s} onDay={onDay} onRun={id => nav(`/runs?id=${id}`)} />
           : <div key={l.d} className="sline rest"><span /><span>{dateShort(l.d)}</span><span>Rest</span><span /></div>)}</div>
@@ -224,8 +224,7 @@ export function Plan() {
         {limit && <LimitSource k={limit} />}
       </Drawer>
       <Drawer title={day ? dateLong(day) : ""} open={!!day} onClose={() => setDay(null)}>
-        {(() => { const xs = day ? p.week.sessions.filter(x => x.date === day) : [];
-                  return xs.length ? xs.map(s => <SessionBlock key={s.kind} s={s} />) : <span className="muted">Rest day.</span>; })()}
+        <DayDetail sessions={day ? p.week.sessions.filter(x => x.date === day) : []} onRun={() => setDay(null)} />
       </Drawer>
     </div>);
   }}</Query>;

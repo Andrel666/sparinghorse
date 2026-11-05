@@ -198,12 +198,19 @@ def today_page(S, db):
                     "deload": (("Deload retired — the block was absorbed." if dl.get("retired") else
                                 "This down week is not owed by the numbers — answer it on the Plan page."
                                 if dl.get("offer") else "Deload kept.") + (f" {dl['why']}" if dl.get("why") else ""))
-                              if dl.get("judged") else None}
+                              if dl.get("judged") else None,
+                    # the drawer behind each day, and the week's progress (planned runs only)
+                    "sessions": [{**_session_detail(S, db, x, zones), **_session_line(S, x, tiso)} for x in w["sessions"]],
+                    "km_done": round(sum((x.get("actual") or {}).get("km") or 0 for x in w["sessions"]), 1),
+                    "runs_done": sum(1 for x in w["sessions"] if not x.get("unplanned") and (x.get("done") or x.get("moved_to"))),
+                    "runs_planned": sum(1 for x in w["sessions"] if not x.get("unplanned") and x.get("km"))}
     # the next session still to run (what a rest day looks forward to)
-    nxt = None
+    nxt, coming = None, []
     if log:
         ahead = [x for w in log["weeks"] for x in w["sessions"]
                  if x["date"] > tiso and not x.get("unplanned") and not x.get("done") and x.get("km")]
+        coming = [{**_session_detail(S, db, x, zones), "dow": _dow(S, x["date"]), "days": (S._date(x["date"]) - today).days}
+                  for x in sorted(ahead, key=lambda y: y["date"])[:COMING_N]]
         if ahead:
             x = min(ahead, key=lambda y: y["date"])
             nxt = {"date": x["date"], "dow": S._date(x["date"]).strftime("%a"), "kind": x.get("kind"),
@@ -213,14 +220,19 @@ def today_page(S, db):
                    "days": (S._date(x["date"]) - today).days}
     # the latest run and how the easy check read it
     latest = None
-    r = db.execute("SELECT id, date, distance, duration, hr_avg FROM activities WHERE " + S.RUN_FAMILY_SQL +
+    r = db.execute("SELECT id, date, distance, duration, hr_avg, hr_max, trimp, training_effect, recovery_time "
+                   "FROM activities WHERE " + S.RUN_FAMILY_SQL +
                    " AND distance>0 ORDER BY date_time DESC LIMIT 1").fetchone()
     if r:
         ed = S.effort_discipline(db) or {}
         er = next((x for x in ed.get("runs") or [] if x.get("date") == r["date"]), {})
         latest = {"id": r["id"], "date": r["date"], "km": round(r["distance"], 1),
                   "pace": _pace(r["duration"] / r["distance"]) if r["distance"] else None, "hr": r["hr_avg"],
-                  "verdict": er.get("verdict"), "verdict_text": VERDICT_TEXT.get(er.get("verdict") or "")}
+                  "verdict": er.get("verdict"), "verdict_text": VERDICT_TEXT.get(er.get("verdict") or ""),
+                  "minutes": round(r["duration"] / 60) if r["duration"] else None, "hr_max": r["hr_max"],
+                  "trimp": round(r["trimp"]) if r["trimp"] else None,
+                  "te": round(r["training_effect"], 1) if r["training_effect"] else None,
+                  "recovery_h": round(r["recovery_time"]) if r["recovery_time"] else None}
     _run, cross = S.latest_running_activity(db)
     if latest is not None and cross:
         latest["cross_training"] = (f"Your latest activity was {cross.get('sport')} on {cross.get('date')} — not a run. "
@@ -251,7 +263,136 @@ def today_page(S, db):
                           "reasons": a.get("reasons") or [], "hrv": (a.get("hrv") or {}).get("state"),
                           "hrv_line": _hrv_line(a.get("hrv")), "ai_line": _ai_line(a),
                           "checkin": _checkin(rd.get("checkin"))},
-            "session": session, "next": nxt, "week": week, "latest_run": latest}
+            "session": session, "next": nxt, "week": week, "latest_run": latest, "coming": coming,
+            "glance": today_glance(S, db, week, json.loads(plan_row["plan"]) if plan_row else None, today),
+            "recovery": today_recovery(S, db, a.get("hrv"))}
+
+
+HRV_WORD = {"ok": "inside the band", "low": "below the band", "high": "above the band"}
+COMING_N = 5                    # sessions listed under "Coming up"
+RECOVERY_MARKERS = ("resting_hr", "sleep_duration", "weight")   # the nightly markers Today shows, when recorded
+
+
+def _hms_s(t):
+    """'1:59' / '1:59:30' → seconds. Two parts read as h:mm under 10, else mm:ss (a 5k goal like '24:30')."""
+    try:
+        p = [int(x) for x in str(t).strip().split(":")]
+    except (TypeError, ValueError):
+        return None
+    if len(p) == 3:
+        return p[0] * 3600 + p[1] * 60 + p[2]
+    if len(p) == 2:
+        return p[0] * 3600 + p[1] * 60 if p[0] < 10 else p[0] * 60 + p[1]
+    return None
+
+
+def _hm(hours):
+    m = int(round(hours * 60))
+    return f"{m // 60}h {m % 60:02d}m"
+
+
+def race_call(pred_s, lo_s, hi_s, goal_s):
+    """How the predicted finish reads against the goal → (tone, words)."""
+    if not (pred_s and goal_s):
+        return None, None
+    gap = int(round(pred_s - goal_s))
+    m, sec = divmod(abs(gap), 60)
+    by = f"{m}:{sec:02d}" if m else f"{sec} s"
+    if hi_s and hi_s <= goal_s:
+        return "ok", "inside the goal even at the slow end of the range"
+    if gap <= 0:
+        return "ok", f"{by} under the goal"
+    if lo_s and lo_s > goal_s:
+        return "bad", f"{by} over the goal — even the fast end misses it"
+    return "warn", f"{by} over the goal"
+
+
+def today_glance(S, db, week, plan, today):
+    """Today's headline numbers, worded: this week, fitness, form, load ratio, the race call, the last 7 days."""
+    out = []
+    if week:
+        out.append({"key": "week", "label": "This week", "value": f"{week['km_done']:g} / {week['km'] or 0:g} km",
+                    "sub": f"{week['runs_done']} of {week['runs_planned']} runs done", "tone": None, "link": "/plan"})
+    hist = (S.reconstruct_history(db) or [])[-180:]
+    ctl, tsb = _series(hist, "ctl"), _series(hist, "tsb")
+    if ctl:
+        d = _delta(ctl)
+        ramp = round(ctl[-1]["v"] - ctl[-8]["v"], 1) if len(ctl) >= 8 else None
+        out.append({"key": "fitness", "label": "Fitness", "value": f"{ctl[-1]['v']:.0f} CTL",
+                    "sub": " · ".join(x for x in [f"{_sign(d)} in 4 weeks" if d is not None else None,
+                                                  ramp_word(ramp)] if x), "tone": None, "link": "/fitness"})
+    if tsb:
+        f = tsb[-1]["v"]
+        out.append({"key": "form", "label": "Form", "value": f"{_sign(round(f))} TSB",
+                    "sub": next(w for t, w in FORM_WORDS if f > t), "tone": "warn" if f <= FORM_TIRED else None,
+                    "link": "/fitness"})
+    acwr = dict(S.latest_snapshot(db) or {}).get("acwr")
+    if acwr is not None:
+        st = load_state(acwr)
+        lo, hi = ACWR_BAND
+        out.append({"key": "load", "label": "Load ratio", "value": f"{acwr:.2f}",
+                    "sub": {"high": "above", "low": "below", "in": "inside"}[st] + f" the steady band {lo}–{hi}",
+                    "tone": "warn" if st == "high" else None, "link": "/fitness"})
+    obj = (plan or {}).get("objective") or {}
+    ft = ((plan or {}).get("feasibility") or {}).get("finish_time") or {}
+    if ft.get("hms"):
+        band = ft.get("band") or {}
+        tone, words = race_call(ft.get("seconds") or _hms_s(ft["hms"]), band.get("lo_seconds"), band.get("hi_seconds"),
+                                _hms_s(obj.get("target")))
+        out.append({"key": "race", "label": f"{obj.get('label') or 'Race'} prediction", "value": ft["hms"],
+                    "sub": " · ".join(x for x in [f"goal {obj['target']}" if obj.get("target") else None, words,
+                                                  f"range {band['lo_hms']}–{band['hi_hms']}" if band.get("lo_hms") else None] if x),
+                    "tone": tone, "link": "/plan"})
+    since, prev = (today - timedelta(days=6)).isoformat(), (today - timedelta(days=13)).isoformat()
+    rows = db.execute("SELECT date, distance, duration FROM activities WHERE " + S.RUN_FAMILY_SQL +
+                      " AND distance>0 AND date>=? AND id NOT IN (SELECT id FROM ignored_activities)", (prev,)).fetchall()
+    now7 = [r for r in rows if r["date"] >= since]
+    km7, km_before = sum(r["distance"] for r in now7), sum(r["distance"] for r in rows if r["date"] < since)
+    mins = sum(r["duration"] or 0 for r in now7) / 60
+    out.append({"key": "last7", "label": "Last 7 days", "value": f"{km7:.1f} km",
+                "sub": " · ".join(x for x in [f"{len(now7)} run{'s' if len(now7) != 1 else ''}",
+                                              f"{int(mins // 60)}h {int(mins % 60):02d}m" if mins else None,
+                                              f"{_sign(round(km7 - km_before, 1))} km on the 7 before"] if x),
+                "tone": None, "link": "/runs"})
+    return out
+
+
+def today_recovery(S, db, hrv):
+    """The overnight signals in one place: HRV against its band, then the nightly markers, each with its last 30 days."""
+    today = datetime.now().date()
+    cut = (today - timedelta(days=30)).isoformat()
+    fresh = (today - timedelta(days=2)).isoformat()
+    out = []
+    h = hrv or {}
+    if h.get("baseline") is not None:
+        pts = [{"date": r["snapshot_date"], "v": round(r["hrv_baseline"], 1)} for r in db.execute(
+            "SELECT snapshot_date, hrv_baseline FROM shape_snapshots WHERE hrv_baseline IS NOT NULL AND snapshot_date>=? "
+            "ORDER BY snapshot_date", (cut,)).fetchall()]
+        band = h.get("band") or []
+        out.append({"key": "hrv", "label": "HRV", "value": f"{h['baseline']:.0f}", "unit": "ms",
+                    "sub": " · ".join(x for x in [f"band {band[0]:.0f}–{band[1]:.0f}" if len(band) == 2 else None,
+                                                  HRV_WORD.get(h.get("state"))] if x),
+                    "state": "ok" if h.get("state") == "ok" else "watch" if h.get("state") else None, "series": pts})
+    for key in RECOVERY_MARKERS:
+        m = S.MARKERS.get(key)
+        rows = db.execute("SELECT date, value FROM health_markers WHERE marker=? ORDER BY date DESC LIMIT 60", (key,)).fetchall()
+        if not m or not rows:
+            continue
+        last = rows[0]
+        series = [{"date": r["date"], "v": r["value"]} for r in reversed(rows) if r["date"] >= cut]
+        hours = m.get("unit") == "h"           # sleep reads as 6h 40m, not 6.67 h
+        fmt = (lambda v: _hm(v)) if hours else (lambda v: f"{round(v, 1):g}")
+        # nightly markers are noisy: the week's average against the month's, not one night against another
+        wk = [p["v"] for p in series if p["date"] >= (today - timedelta(days=6)).isoformat()]
+        mo = [p["v"] for p in series]
+        age = (today - S._date(last["date"])).days
+        out.append({"key": key, "label": m["label"], "unit": "" if hours else m.get("unit", ""),
+                    "value": _hm(last["value"]) if hours else f"{last['value']:g}",
+                    "sub": " · ".join(x for x in [f"7-day avg {fmt(sum(wk) / len(wk))}" if wk else None,
+                                                  f"30-day {fmt(sum(mo) / len(mo))}" if len(mo) > len(wk) else None,
+                                                  None if last["date"] >= fresh else f"last read {age} days ago"] if x),
+                    "state": marker_state(last["value"], m.get("ref"), m.get("good")), "series": series})
+    return out
 
 
 # ── Fitness ───────────────────────────────────────────────────────────────────────────────────
@@ -260,6 +401,7 @@ ACWR_BAND = (0.8, 1.3)          # the steady-training band Classic's gauge shade
 RAMP_STEADY = 1.0               # CTL points/week within which fitness reads "steady"
 FORM_WORDS = ((10, "Fresh — well rested"), (0, "Fresh"), (-10, "Training load is showing"),
               (-20, "Tired"), (float("-inf"), "Very tired"))
+FORM_TIRED = -20                # at or below: "Tired" and worse, the form figure turns warn
 
 
 def load_state(acwr):

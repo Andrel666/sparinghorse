@@ -41,9 +41,15 @@ export interface TodayPage {
   next: { date: string; dow: string; kind: string; title: string; km: number | null; minutes: number | null;
           strides: number; race: boolean; target: Target | null; days: number } | null;
   week: { start: string; phase: string | null; km: number; runs: number; days: Day[]; deload: string | null;
-          held: Held | null } | null;
+          held: Held | null; sessions?: SessionDetail[]; km_done?: number; runs_done?: number; runs_planned?: number } | null;
   latest_run: { id: number; date: string; km: number; pace: string | null; hr: number | null;
-                verdict: string | null; verdict_text: string | null; cross_training?: string } | null;
+                verdict: string | null; verdict_text: string | null; cross_training?: string; minutes: number | null;
+                hr_max: number | null; trimp: number | null; te: number | null; recovery_h: number | null } | null;
+  // added with the day drawer and the glance row — optional, so a backend that predates them still renders
+  coming?: (Omit<SessionDetail, "mark" | "activity_id" | "reflection" | "component" | "moved_dow" | "runs"> & { dow: string; days: number })[];
+  glance?: { key: string; label: string; value: string; sub: string; tone: "ok" | "warn" | "bad" | null; link: string }[];
+  recovery?: { key: string; label: string; value: string; unit: string; sub: string; state: "ok" | "watch" | null;
+              series: { date: string; v: number }[] }[];
 }
 
 export interface Tile { key: string; label: string; value: number | null; unit: string; delta: number | null;

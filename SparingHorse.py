@@ -7043,7 +7043,21 @@ def llm_readiness(hrv, energy, sleep, note, session=None):
         "for cardiac/exertional signs. Never diagnose; you flag and defer to their doctor. Keep action "
         "to one sentence."
     )
-    return llm_json(system, user, READINESS_SCHEMA, effort="low")
+    # The same signals give the same call: memoised per day on the exact prompt, so every page load is not a
+    # fresh model round-trip (6–11 s on the CLI). A new check-in, note or session changes the prompt → a new call.
+    key = hashlib.sha256(f"{datetime.now().date().isoformat()}\0{system}\0{user}".encode()).hexdigest()
+    hit = _READINESS_MEMO.get(key)
+    if hit is not None:
+        return dict(hit)
+    out = llm_json(system, user, READINESS_SCHEMA, effort="low")
+    if out.get("ok"):                      # failures are not remembered — the next load tries again
+        if len(_READINESS_MEMO) >= 64:
+            _READINESS_MEMO.clear()
+        _READINESS_MEMO[key] = dict(out)
+    return out
+
+
+_READINESS_MEMO = {}
 
 
 # Plan explanation (§6c) — narrate the already-computed plan and the *why* behind each change,

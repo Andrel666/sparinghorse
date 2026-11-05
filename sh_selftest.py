@@ -16201,11 +16201,46 @@ def _stc_ui_today():
     the week start, the race countdown; (b) its pieces come from the engine's own readers, not
     re-derived: the held-by sentence names the plan's own binding limit, the target is the zones
     table's easy ceiling, strides come from the session (flag or note), workout steps add up to the
-    session's minutes; (c) split_action and limit_held handle the empty cases."""
+    session's minutes; (c) split_action and limit_held handle the empty cases; (d) the day drawer and the
+    figures: the week carries one session per planned day (the log's own), km_done is the run km, "coming
+    up" is the next future planned runs in date order, the glance carries the plan's own predicted finish,
+    race_call words the band against the goal; (e) the AI readiness call is asked once per identical prompt
+    per day, and a failure is not remembered."""
     import json
     from datetime import date as _d
     fails = []
     U = UIAPI
+    # (d) the race call and goal parsing — pure
+    if (U._hms_s("1:59"), U._hms_s("1:59:30"), U._hms_s("24:30"), U._hms_s("x")) != (7140, 7170, 1470, None):
+        fails.append("(d) _hms_s misreads a goal")
+    for args, want in [((7123, 6547, 7750, 7140), "ok"), ((7300, 6547, 7750, 7140), "warn"), ((7170, 6547, 7750, 7140), "warn"),
+                       ((7300, 7200, 7750, 7140), "bad"), ((7000, 6500, 7100, 7140), "ok"), ((7000, None, None, None), None)]:
+        if U.race_call(*args)[0] != want:
+            fails.append(f"(d) race_call{args} → {U.race_call(*args)} not {want}")
+    if U.race_call(7123, 6547, 7750, 7140)[1] != "17 s under the goal":
+        fails.append(f"(d) race_call words: {U.race_call(7123, 6547, 7750, 7140)[1]}")
+    # (e) the readiness memo: same prompt → one model call; a failed call is retried
+    calls = []
+    saved_llm = S.llm_json
+    try:
+        S._READINESS_MEMO.clear()
+        S.llm_json = lambda *a, **k: (calls.append(1), {"ok": True, "verdict": "green", "action": "Go"})[1]
+        hv = {"state": "ok", "baseline": 40, "band": [35, 45]}
+        S.llm_readiness(hv, "good", "good", "fine")
+        S.llm_readiness(hv, "good", "good", "fine")
+        if len(calls) != 1:
+            fails.append(f"(e) identical readiness prompt asked the model {len(calls)}×")
+        S.llm_readiness(hv, "heavy", "good", "fine")
+        if len(calls) != 2:
+            fails.append("(e) a changed check-in reused the cached call")
+        S.llm_json = lambda *a, **k: (calls.append(1), {"ok": False, "error": "x"})[1]
+        S.llm_readiness(hv, "ok", "poor", "")
+        S.llm_readiness(hv, "ok", "poor", "")
+        if len(calls) != 4:
+            fails.append("(e) a failed call was remembered")
+    finally:
+        S.llm_json = saved_llm
+        S._READINESS_MEMO.clear()
     # (c) the helpers
     if U.split_action("Good to go — run today's session") != ("Good to go", "Run today's session"):
         fails.append(f"(c) split_action: {U.split_action('Good to go — run today' + chr(39) + 's session')}")
@@ -16251,6 +16286,22 @@ def _stc_ui_today():
         bk = ((cur[0].get("limits") or {}).get("binding") if cur else None)
         if bk and (w.get("held") or {}).get("key") != bk:
             fails.append(f"(b) held-by is not the plan's binding limit: {w.get('held')} vs {bk}")
+        # (d) the day drawer, coming up, the glance
+        lw = [x for x in S.block_log(fx)["weeks"] if x["start"] == w.get("start")]
+        if lw and [x["date"] for x in w.get("sessions") or []] != [x["date"] for x in lw[0]["sessions"]]:
+            fails.append("(d) the week's drawer sessions are not the log's sessions")
+        if lw and abs((w.get("km_done") or 0) - sum((x.get("actual") or {}).get("km") or 0 for x in lw[0]["sessions"])) > 0.05:
+            fails.append("(d) km_done is not the run km")
+        co = d.get("coming") or []
+        if not co or len(co) > U.COMING_N or [x["date"] for x in co] != sorted(x["date"] for x in co) \
+                or any(x["date"] <= today.isoformat() or not x.get("km") for x in co) or (nx and co[0]["date"] != nx["date"]):
+            fails.append(f"(d) coming up is not the next future planned runs: {[x['date'] for x in co]}")
+        ft = (plan.get("feasibility") or {}).get("finish_time") or {}
+        race_g = next((g for g in d.get("glance") or [] if g["key"] == "race"), None)
+        if ft.get("hms") and (race_g or {}).get("value") != ft["hms"]:
+            fails.append(f"(d) the glance's prediction is not the plan's finish: {race_g} vs {ft.get('hms')}")
+        if not any(g["key"] == "week" for g in d.get("glance") or []):
+            fails.append("(d) the glance lacks the week")
         z = S.training_zones(fx)
         easy = next(r for r in z["rows"] if r["key"] == "easy")
         t = U.session_target(S, fx, "easy", z)

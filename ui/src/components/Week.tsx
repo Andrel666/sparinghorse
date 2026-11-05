@@ -11,20 +11,25 @@ function what(d: Day, short = false) {
   return `${name}${dist}${d.strides ? (short ? "+" : " + strides") : ""}`;
 }
 
-export function Week({ days, phase }: { days: Day[]; phase?: string | null }) {
+/** `onDay` makes each day a button that opens its detail (Today, Plan). */
+export function Week({ days, phase, onDay, selected, today }: { days: Day[]; phase?: string | null; onDay?: (date: string) => void;
+  selected?: string | null; today?: string }) {
   return (
-    <div className="week" role="list">
-      {days.map(d => (
-        <div key={d.date} role="listitem" data-phase={phase || undefined}
-             className={["day", d.kind === "rest" && !d.actual ? "rest" : "", d.status].join(" ")}
+    <div className="week" role={onDay ? "group" : "list"} aria-label={onDay ? "The week — pick a day for details" : undefined}>
+      {days.map(d => {
+        const Tag = onDay ? "button" : "div";
+        return (
+        <Tag key={d.date} role={onDay ? undefined : "listitem"} data-phase={phase || undefined} {...(onDay ? { type: "button" as const, onClick: () => onDay(d.date),
+               "aria-label": `${d.dow} ${Number(d.date.slice(8))}: ${what(d)}${d.status === "done" ? ", done" : d.status === "missed" ? ", missed" : ""}. Show details` } : {})}
+             className={["day", d.kind === "rest" && !d.actual ? "rest" : "", d.status, today === d.date ? "today" : "", selected === d.date ? "selected" : ""].join(" ")}
              title={d.moved_to ? `Run on ${dayName(d.moved_to)}` : undefined}>
           <span className="dow"><span className="full">{d.dow} </span><span className="short">{d.dow[0]} </span>{Number(d.date.slice(8))}</span>
           <span className="what"><span className="full">{MARK[d.status] || ""}{what(d)}</span>
             <span className="short">{MARK[d.status] || ""}{what(d, true)}</span></span>
           {d.actual && <span className="muted num detail">{d.actual.km} km{d.actual.hr ? ` · ${d.actual.hr} bpm` : ""}</span>}
           {d.moved_to && <span className="muted detail">↷ {dayName(d.moved_to)}</span>}
-        </div>
-      ))}
+        </Tag>);
+      })}
     </div>
   );
 }

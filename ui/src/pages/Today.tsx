@@ -1,7 +1,12 @@
-// Today: the day in one card (verdict | session | check-in), then the week and the latest run.
+// Today: the day in one band (verdict | session | check-in), the headline numbers, then the week (each day opens),
+// the latest run, what's coming and the overnight signals — the first page, so most questions end here.
+import { useState } from "react";
 import { useToday, type TodayPage } from "../lib/api";
 import { bpm, dateLong, dateShort, km, minutes, pace, verdictTone } from "../lib/format";
-import { Card, ListItem, PageHead, Pill } from "../components/ui";
+import { Card, Figures, ListItem, PageHead, Pill } from "../components/ui";
+import { Drawer } from "../components/layout";
+import { DayDetail, type DaySession } from "../components/Session";
+import { Spark } from "../components/charts";
 import { Week } from "../components/Week";
 import { Steps } from "../components/Steps";
 import { Checkin } from "../components/Checkin";
@@ -55,9 +60,43 @@ function Session({ d }: { d: TodayPage }) {
     </div>);
 }
 
+const MARKER_TONE = { ok: "ok", watch: "warn" } as const;
+
+function Coming({ items, onDay }: { items: NonNullable<TodayPage["coming"]>; onDay: (d: string) => void }) {
+  if (!items.length) return <span className="muted">Nothing planned ahead.</span>;
+  return <div className="list" style={{ gap: 0 }}>{items.map(c => (
+    <button key={c.date + c.kind} type="button" className="sline coming" onClick={() => onDay(c.date)} title="Show the session">
+      <span className="muted">{c.dow} {Number(c.date.slice(8))}</span>
+      <span><b>{c.race ? "Race" : c.title}</b> {km(c.km)}{c.strides ? ` + ${c.strides}× strides` : ""}
+        {c.target && <span className="muted"> · {c.target.text}</span>}</span>
+      <span className="muted num">{c.minutes ? `~${minutes(c.minutes)}` : ""}</span>
+      <span className="muted">{c.days === 1 ? "tomorrow" : `in ${c.days} d`} ›</span>
+    </button>))}</div>;
+}
+
+function Recovery({ items }: { items: NonNullable<TodayPage["recovery"]> }) {
+  if (!items.length) return <span className="muted">No overnight data yet — HRV, resting HR and sleep arrive with the watch sync.</span>;
+  return <div className="list" style={{ gap: 0 }}>{items.map(m => (
+    <div key={m.key} className="marker-row">
+      <div className="list" style={{ gap: 2 }}>
+        <span className="muted" style={{ fontSize: "var(--fs-label)" }}>{m.label}</span>
+        <span className={`num marker-v${m.state ? ` tone-${MARKER_TONE[m.state]} toned` : ""}`}>{m.value}<small> {m.unit}</small></span>
+        <span className="muted" style={{ fontSize: "var(--fs-label)" }}>{m.sub}</span>
+      </div>
+      <div className="marker-spark">{m.series.length > 1 && <Spark pts={m.series} />}</div>
+    </div>))}
+    <Link to="/body" className="linkish" style={{ marginTop: "var(--sp-2)" }}>All body markers →</Link>
+  </div>;
+}
+
 export function Today() {
+  const [day, setDay] = useState<string | null>(null);
   return <Query q={useToday()}>{d => {
-    const r = d.readiness, tone = verdictTone(r.verdict), lr = d.latest_run;
+    const r = d.readiness, tone = verdictTone(r.verdict), lr = d.latest_run, w = d.week;
+    // the day drawer reads this week's sessions, or a coming one further out
+    const daySessions: DaySession[] = !day ? [] : w && day >= w.start && day <= w.days[6].date
+      ? (w.sessions ?? []).filter(x => x.date === day) : (d.coming ?? []).filter(x => x.date === day);
+    const glance = d.glance ?? [];
     return (
       <div className="page">
         <PageHead title="Today">
@@ -77,22 +116,37 @@ export function Today() {
             <Session d={d} />
             <div><span className="card-label">Check in</span><Checkin initial={r.checkin} /></div>
           </section>
-          {d.week && <Card label={`This week · ${km(d.week.km)} · ${d.week.runs} runs`} span={8}>
-            <Week days={d.week.days} phase={d.week.phase} />
-            <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{d.week.held ? `${d.week.held.text}.` : "No limit binds this week."}
-              {d.week.deload ? ` ${d.week.deload}` : ""}</span>
+          {glance.length > 0 && <div className="span-12"><Figures items={glance.map(g => ({
+            k: g.label, v: g.value, s: g.sub, tone: g.tone ?? undefined, to: g.link }))} /></div>}
+          {w && <Card label="This week" span={8}
+                      aside={<Link to="/plan" className="linkish" style={{ fontSize: "var(--fs-small)" }}>Plan this week →</Link>}>
+            {w.km_done != null && <div className="meter" role="img" aria-label={`${w.km_done} of ${w.km} km run`}>
+              <span style={{ width: `${Math.min(100, w.km ? (100 * w.km_done) / w.km : 0)}%`, background: "var(--text)" }} /></div>}
+            <Week days={w.days} phase={w.phase} onDay={w.sessions ? setDay : undefined} selected={day} today={d.today} />
+            <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{w.sessions ? "Pick a day for its session, targets and the run. " : ""}
+              {w.held ? `${w.held.text}.` : "No limit binds this week."}{w.deload ? ` ${w.deload}` : ""}</span>
           </Card>}
           {lr && <Card label={`Latest run · ${dateShort(lr.date)}`} span={4} tone={verdictTone(lr.verdict)}>
             <div className="list">
               <ListItem k="Distance"><span className="num">{km(lr.km)}</span></ListItem>
+              {lr.minutes != null && <ListItem k="Time"><span className="num">{minutes(lr.minutes)}</span></ListItem>}
               <ListItem k="Pace"><span className="num">{pace(lr.pace)}</span></ListItem>
-              <ListItem k="Heart rate"><span className="num">{bpm(lr.hr)}</span></ListItem>
+              <ListItem k="Heart rate"><span className="num">{bpm(lr.hr)}{lr.hr_max ? ` · max ${lr.hr_max}` : ""}</span></ListItem>
+              {lr.trimp != null && <ListItem k="Load"><span className="num">{lr.trimp} TRIMP</span></ListItem>}
+              {lr.te != null && <ListItem k="Training effect"><span className="num">{lr.te}</span></ListItem>}
+              {lr.recovery_h != null && <ListItem k="Recovery"><span className="num">{lr.recovery_h} h</span></ListItem>}
             </div>
             {lr.verdict_text && <Pill tone={verdictTone(lr.verdict)} dot>{cap(lr.verdict_text)}</Pill>}
             {lr.cross_training && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{lr.cross_training}</span>}
             <Link to={`/runs?id=${lr.id}`} className="linkish">Open the run →</Link>
           </Card>}
+          {d.coming && <Card label="Coming up" span={8}><Coming items={d.coming} onDay={setDay} /></Card>}
+          {d.recovery && <Card label="Recovery" span={4}><Recovery items={d.recovery} /></Card>}
         </div>
+        <Drawer title={day ? dateLong(day) : ""} open={!!day} onClose={() => setDay(null)}>
+          <DayDetail sessions={daySessions} onRun={() => setDay(null)} />
+          <Link to="/plan" className="linkish" onClick={() => setDay(null)}>See the week on the Plan page →</Link>
+        </Drawer>
       </div>
     );
   }}</Query>;
