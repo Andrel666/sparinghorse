@@ -56,6 +56,15 @@ export interface TodayPage {
               series: { date: string; v: number }[] }[];
   where?: Where | null;
   why?: { key: string; text: string; detail?: string; link: string }[];
+  vs_plan?: VsPlan | null;
+}
+
+/** Today's "vs. the original plan" (sh_ui_api.today_vs_plan): the race's pinned first plan against today. */
+export interface VsPlan {
+  since: string | null; race: string | null; pinned: boolean; just_set: boolean; lede: string | null;
+  items: { key: "ctl" | "vo2" | "long"; label: string; actual: number | null; planned: number | null; diff: number | null;
+           pct: number | null; unit: "km" | null; state: "ahead" | "behind" | "level" | "upcoming" | "unknown";
+           tone: "ok" | "warn" | null; word: string | null; when: string | null; note: string | null; link: string }[];
 }
 
 /** Where the athlete is on the road (Today's "Where you are"). */

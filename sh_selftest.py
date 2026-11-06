@@ -16635,6 +16635,138 @@ def _stc_ui_parity():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_vs_original():
+    """Fork §VSO — Today's 'you vs the original plan'. On a three-plan road for one race: (a) the first
+    save pins the earliest plan that spans the runway, and both /api/vsplan and the drift chart read
+    it; (b) a pin WINS over the live search (the point of pinning: a rule change can't move the
+    baseline); (c) a pin that no longer reaches race day falls back to the live search and is re-pinned;
+    another race's pin is never borrowed; (d) the numbers: the gap is planned-vs-actual on the shown
+    values with the % of the planned one, the long run reads LAST week while this week's long day is
+    still ahead, and the planned VO₂max is the original span pro-rated by the TRIMP laid so far;
+    (e) a race that is run returns no card."""
+    import sqlite3 as _sq
+    from datetime import date as _d, timedelta as _td
+    fails = []
+    today = _d(2026, 6, 3)                                   # a Wednesday: this week's long run is ahead
+    race = (today + _td(weeks=10)).isoformat()
+    mon = S._monday(today)
+
+    def plan_from(start_mon, long_km=16.0, until=race):
+        wk, d = [], start_mon
+        while d <= S._date(until):
+            wk.append({"start": d.isoformat(), "km": 10.0 + long_km, "trimp_total": 180.0,
+                       "sessions": [{"date": (d + _td(days=1)).isoformat(), "kind": "easy", "km": 10.0, "trimp": 60.0},
+                                    {"date": (d + _td(days=6)).isoformat(), "kind": "long", "km": long_km, "trimp": 120.0}]})
+            d += _td(days=7)
+        return {"ok": True, "mode": "race", "base": {"weeks": wk}, "shape": {"ctl": 40.0, "atl": 40.0},
+                "objective": {"label": "Goal Marathon", "date": race, "type": "marathon", "priority": "A"},
+                "feasibility": {"projected_ctl": 60.0, "finish_time": {"seconds": 12000, "at_evo2": 52.0,
+                                                                       "today": {"at_evo2": 50.0}}}}
+
+    mem = _sq.connect(":memory:"); mem.row_factory = _sq.Row
+    mem.executescript(S.SCHEMA)
+    ids = {}
+    for name, back, lk, until in (("short", 4, 16.0, (today + _td(weeks=2)).isoformat()),  # never reaches race day
+                                  ("p1", 3, 16.0, race), ("p2", 2, 17.0, race), ("p3", 0, 18.0, race)):
+        fd = (today - _td(weeks=back)).isoformat()
+        cur = mem.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)",
+                          (fd + "T08:00:00", fd, "{}", S.json.dumps(plan_from(mon - _td(weeks=back), lk, until))))
+        ids[name] = cur.lastrowid
+    oid = mem.execute("INSERT INTO objectives(type,label,date,target,priority,status,created_at) "
+                      "VALUES('marathon','Goal Marathon',?,'finish','A','upcoming',?)", (race, S._now_iso())).lastrowid
+    mem.execute("INSERT INTO objectives(type,label,date,target,priority,status,created_at,baseline_plan_id) "
+                "VALUES('marathon','Other Marathon',?,'finish','A','upcoming',?,?)", (race, S._now_iso(), ids["p2"]))
+    runs = [((mon - _td(days=6)), 8.0), ((mon - _td(days=1)), 14.0), ((mon + _td(days=1)), 6.0)]
+    for i, (dd, km) in enumerate(runs, start=1):
+        mem.execute("INSERT INTO activities (id, date_time, date, sport, distance, duration, trimp) "
+                    "VALUES (?,?,?,?,?,?,?)", (i, dd.isoformat() + "T07:00:00", dd.isoformat(), "Running",
+                                               km, km * 330, km * 7))
+    mem.commit()
+
+    def drift_anchor():
+        undo = _patch_globals(get_db=(lambda: mem))
+        try:
+            with S.app.test_request_context("/api/plandrift"):
+                return ((S.api_plandrift().get_json() or {}).get("anchor") or {}).get("for_date")
+        finally:
+            undo()
+
+    fd_of = {n: (today - _td(weeks=b)).isoformat() for n, b in (("p1", 3), ("p2", 2), ("p3", 0))}
+    try:
+        # (a) the first save pins the earliest plan that spans the runway (not the short one, not
+        #     another race's pin)
+        S._pin_baseline(mem)
+        pin = mem.execute("SELECT baseline_plan_id FROM objectives WHERE id=?", (oid,)).fetchone()[0]
+        if pin != ids["p1"]:
+            fails.append(f"(a) pinned plan {pin}, want the earliest full-runway plan {ids['p1']}")
+        r = S.vs_original(mem, today=today)
+        if not (r.get("ok") and r["baseline"]["plan_id"] == ids["p1"] and r["baseline"]["pinned"]):
+            fails.append(f"(a) vsplan baseline {r.get('baseline')}, want pinned p1")
+        if drift_anchor() != fd_of["p1"]:
+            fails.append(f"(a) the drift chart anchors on {drift_anchor()}, not the pinned p1")
+        # (b) the pin wins over the live search
+        mem.execute("UPDATE objectives SET baseline_plan_id=? WHERE id=?", (ids["p2"], oid)); mem.commit()
+        r = S.vs_original(mem, today=today)
+        if r.get("baseline", {}).get("plan_id") != ids["p2"]:
+            fails.append(f"(b) a pin on p2 did not win: baseline {r.get('baseline')}")
+        if drift_anchor() != fd_of["p2"]:
+            fails.append(f"(b) the drift chart ignored the pin: {drift_anchor()}")
+        S._pin_baseline(mem)
+        if mem.execute("SELECT baseline_plan_id FROM objectives WHERE id=?", (oid,)).fetchone()[0] != ids["p2"]:
+            fails.append("(b) a valid pin was overwritten on the next save")
+        # (c) a pin that stops reaching race day falls back to the live search, then re-pins
+        mem.execute("UPDATE objectives SET baseline_plan_id=? WHERE id=?", (ids["short"], oid)); mem.commit()
+        r = S.vs_original(mem, today=today)
+        if not (r.get("baseline", {}).get("plan_id") == ids["p1"] and not r["baseline"]["pinned"]):
+            fails.append(f"(c) a stale pin was not replaced by the live search: {r.get('baseline')}")
+        S._pin_baseline(mem)
+        if mem.execute("SELECT baseline_plan_id FROM objectives WHERE id=?", (oid,)).fetchone()[0] != ids["p1"]:
+            fails.append("(c) the stale pin was not re-pinned on the next save")
+        # (d) the numbers
+        r = S.vs_original(mem, today=today)
+        m = {x["key"]: x for x in r.get("metrics") or []}
+        lr = m.get("long") or {}
+        if (lr.get("when"), lr.get("actual"), lr.get("planned"), lr.get("diff"), lr.get("pct"), lr.get("state")) != \
+                ("last week", 14.0, 16.0, -2.0, -12.5, "behind"):
+            fails.append(f"(d) long run off: {lr}")
+        c = m.get("ctl") or {}
+        if c.get("actual") is None or c.get("planned") is None or c.get("diff") != round(c["actual"] - c["planned"], 0):
+            fails.append(f"(d) CTL gap is not actual − planned on the shown numbers: {c}")
+        elif c.get("pct") != round((c["actual"] - c["planned"]) / c["planned"] * 100, 1):
+            fails.append(f"(d) CTL % is not the gap over the planned value: {c}")
+        p1 = S.json.loads(mem.execute("SELECT plan FROM plans WHERE id=?", (ids["p1"],)).fetchone()[0])
+        load = [(s["date"], s["trimp"]) for w in p1["base"]["weeks"] for s in w["sessions"]
+                if fd_of["p1"] <= s["date"] < race]
+        want_v = 50.0 + 2.0 * sum(t for d, t in load if d <= today.isoformat()) / sum(t for _, t in load)
+        if (m.get("vo2") or {}).get("planned") != round(want_v, 1):
+            fails.append(f"(d) planned VO₂max {m.get('vo2', {}).get('planned')}, want {round(want_v, 1)}")
+        # (f) the new UI's card is the same numbers, worded: tone/word per state, each figure a door
+        u = UIAPI.today_vs_plan(S, mem, today) or {}
+        ui = {x["key"]: x for x in u.get("items") or []}
+        if [x["key"] for x in u.get("items") or []] != ["ctl", "vo2", "long"]:
+            fails.append(f"(f) the UI card's figures: {list(ui)}")
+        lu = ui.get("long") or {}
+        if (lu.get("actual"), lu.get("planned"), lu.get("pct"), lu.get("unit"), lu.get("tone"), lu.get("word"),
+                lu.get("label")) != (14.0, 16.0, -12.5, "km", "warn", "behind plan", "Long run"):
+            fails.append(f"(f) the UI long-run figure is not the engine's, worded: {lu}")
+        if not all(x.get("link") for x in ui.values()):
+            fails.append("(f) a UI figure has no door")
+        # (e) after the race there is no card, in either UI
+        if S.vs_original(mem, today=S._date(race) + _td(days=1)).get("ok"):
+            fails.append("(e) a run race still returned a card")
+        if UIAPI.today_vs_plan(S, mem, S._date(race) + _td(days=1)) is not None:
+            fails.append("(e) the new UI still shows the card after the race")
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        mem.close()
+    return _st("det", "vs-original",
+               "Today's 'vs the original plan' reads the race's pinned first plan (a pin wins, a stale one "
+               "falls back and re-pins, the drift chart agrees), and shows planned vs actual with the gap in "
+               "units and percent; the long run waits for its day",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -25480,7 +25612,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),
