@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/api/vsplan` is private; the pin id is withheld from the public objectives view. Distances follow the
   km/mi setting. In the new UI it is a "Vs. the original plan" card on Today under "Where you are": a strip
   of three figures (you vs plan, gap and % in the sub line), each a door (fitness chart, Fitness, plan
-  history), worded once in `sh_ui_api.today_vs_plan`. `det/vs-original`, mutation-tested.
+  history), worded once in `sh_ui_api.today_vs_plan`. A ▲ / ▼ before your number reads above / below the plan at a
+  glance, in the figure's tone. `det/vs-original`, mutation-tested.
 - **New UI: full parity with Classic.** Every Classic feature was inventoried (`ui/PARITY.md`) and carried
   over: the frame (Sync now, auto-sync, freshness, theme, units, first-run guide, data-quality banner with
   delete/restore, toasts, confirm dialog, help bubbles, offline shell); Today (HRV and AI lines, halt banner,

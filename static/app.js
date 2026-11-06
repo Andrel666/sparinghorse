@@ -3436,7 +3436,7 @@ function renderVsPlan(d){
     const when = m.when ? ` <span class="muted">· ${esc(m.when)}</span>` : "";
     return `<div class="vso-cell vso-${esc(m.state)}">
       <div class="vso-label">${esc(m.label)}${when}</div>
-      <div class="vso-nums"><span class="vso-you" title="You">${vsoNum(m.actual, m.unit)}</span>
+      <div class="vso-nums"><span class="vso-you" title="You">${m.diff ? `<span class="vso-arrow" aria-hidden="true">${m.diff>0?"▲":"▼"}</span>` : ""}${vsoNum(m.actual, m.unit)}</span>
         <span class="vso-vs">vs</span> <span class="vso-plan" title="Original plan">${vsoNum(m.planned, m.unit)}</span></div>
       ${gap}
       <div class="vso-state">${esc(VSO_STATE[m.state]||m.state)}${m.note?` <span class="muted">— ${esc(m.note)}</span>`:""}</div>

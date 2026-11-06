@@ -1501,6 +1501,8 @@ details.section > summary:focus-visible{outline:2px solid var(--focus);outline-o
 #vsplan .vso-label{font-size:13px;color:var(--muted);margin-bottom:4px}
 #vsplan .vso-nums{font-family:var(--mono);font-size:15px}
 #vsplan .vso-you{font-size:22px;font-weight:600;color:var(--text)}
+#vsplan .vso-arrow{font-size:.6em;vertical-align:.25em;margin-right:.2em;color:var(--muted)}
+#vsplan .vso-ahead .vso-arrow{color:var(--ok-ink)} #vsplan .vso-behind .vso-arrow{color:var(--warn-ink)}
 #vsplan .vso-vs{color:var(--muted);font-size:12px;margin:0 2px}
 #vsplan .vso-plan{color:var(--muted)}
 #vsplan .vso-gap{font-family:var(--mono);font-size:14px;margin-top:4px}
