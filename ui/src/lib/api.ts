@@ -53,11 +53,20 @@ export interface TodayPage {
   coming?: (Omit<SessionDetail, "mark" | "activity_id" | "reflection" | "component" | "moved_dow" | "runs"> & { dow: string; days: number })[];
   glance?: { key: string; label: string; value: string; sub: string; hint?: string | null; tone: "ok" | "warn" | "bad" | null; link: string }[];
   recovery?: { key: string; label: string; value: string; unit: string; sub: string; state: "ok" | "watch" | null;
-              series: { date: string; v: number }[] }[];
+              series: { date: string; v: number }[]; link?: string }[];
   where?: Where | null;
   why?: { key: string; text: string; detail?: string; link: string }[];
+  vs_plan?: VsPlan | null;
   endurance?: { label: string; now: number; reaches: string | null; already: boolean; race_morning: number | null;
                  has_race: boolean; tone: "ok" | "warn" | null; link: string } | null;
+}
+
+/** Today's "vs. the original plan" (sh_ui_api.today_vs_plan): the race's pinned first plan against today. */
+export interface VsPlan {
+  since: string | null; race: string | null; pinned: boolean; just_set: boolean; lede: string | null;
+  items: { key: "ctl" | "vo2" | "long"; label: string; actual: number | null; planned: number | null; diff: number | null;
+           pct: number | null; unit: "km" | null; state: "ahead" | "behind" | "level" | "upcoming" | "unknown";
+           tone: "ok" | "warn" | null; word: string | null; when: string | null; note: string | null; link: string }[];
 }
 
 /** Runalyze's marathon shape now and along the plan (sh_ui_api.endurance_page). */

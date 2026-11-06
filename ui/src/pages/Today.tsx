@@ -2,8 +2,8 @@
 // this week and why it looks like that, the latest run, the overnight signals. Every number is a door.
 // The check-in and each day's detail open in a drawer (?checkin=1, ?day=), so back closes them.
 import { useSearchParams, Link } from "react-router-dom";
-import { useToday, type TodayPage, type Where } from "../lib/api";
-import { bpm, dateLong, dateShort, km, minutes, pace, verdictTone } from "../lib/format";
+import { useToday, type TodayPage, type VsPlan, type Where } from "../lib/api";
+import { bpm, dateLong, dateShort, km, minutes, pace, reading, verdictTone } from "../lib/format";
 import { Card, PageHead, Pill, Strip } from "../components/ui";
 import { Week } from "../components/Week";
 import { Steps } from "../components/Steps";
@@ -117,6 +117,30 @@ function WhereYouAre({ w, endu }: { w: Where; endu?: TodayPage["endurance"] }) {
     </Card>);
 }
 
+/** You against the race's original plan: your number, the plan's, the gap in units and in percent. */
+function VsOriginal({ v }: { v: VsPlan }) {
+  type It = VsPlan["items"][number];
+  const num = (x: number | null, u: It["unit"]) => (x == null ? "—" : u === "km" ? km(x) : reading(x));
+  // the glance cue: ▲ above the plan's number, ▼ below it (the figure's tone says whether that matters)
+  const arrow = (m: It) => m.diff == null || m.diff === 0 ? null
+    : <span aria-hidden="true" style={{ fontSize: "0.6em", verticalAlign: "0.25em", marginRight: "0.2em" }}>{m.diff > 0 ? "▲" : "▼"}</span>;
+  const gap = (m: It) => {
+    if (m.diff == null) return m.note ?? m.word ?? undefined;
+    const sign = m.diff > 0 ? "+" : m.diff < 0 ? "−" : "±";
+    const pct = m.pct != null ? ` (${sign}${Math.abs(m.pct).toFixed(1)}%)` : "";
+    return `${sign}${num(Math.abs(m.diff), m.unit)}${pct} · ${m.word}`;
+  };
+  return (
+    <Card label="Vs. the original plan" span={12} lede={v.lede}
+          aside={<Link to="/plan?view=history" className="linkish t-small">History ›</Link>}>
+      <Strip items={v.items.map(m => ({
+        k: m.when && m.when !== "this week" ? `${m.label} · ${m.when}` : m.label,
+        v: <><span style={{ whiteSpace: "nowrap" }}>{arrow(m)}{num(m.actual, m.unit)}</span><small className="muted" style={{ whiteSpace: "nowrap" }}> vs {num(m.planned, m.unit)}</small></>,
+        s: gap(m), hint: m.note, tone: m.tone ?? undefined, to: m.link,
+      }))} />
+    </Card>);
+}
+
 function Why({ items }: { items: NonNullable<TodayPage["why"]> }) {
   return <ul className="why-list">{items.map(x => (
     <li key={x.key}><Link to={x.link} title={x.detail}>{x.text}<span className="muted"> ›</span></Link></li>))}</ul>;
@@ -125,7 +149,7 @@ function Why({ items }: { items: NonNullable<TodayPage["why"]> }) {
 function Recovery({ items }: { items: NonNullable<TodayPage["recovery"]> }) {
   if (!items.length) return <span className="muted">No overnight data yet.</span>;
   return <div>{items.map(m => (
-    <Link key={m.key} to={`/fitness?tab=body#${m.key}`} className="marker-row" aria-label={`${m.label} ${m.value} ${m.unit}. ${m.sub}. Open the marker`}>
+    <Link key={m.key} to={m.link ?? `/fitness?tab=body#${m.key}`} className="marker-row" aria-label={`${m.label} ${m.value} ${m.unit}. ${m.sub}. Open the marker`}>
       <div className="list" style={{ gap: 2 }}>
         <span className="muted t-label">{m.label}</span>
         <span className={`num marker-v${m.state ? ` tone-${MARKER_TONE[m.state]} toned` : ""}`}>{m.value}<small> {m.unit}</small></span>
@@ -175,6 +199,7 @@ export function Today() {
         </section>
         <div className="grid">
           {d.where && <WhereYouAre w={d.where} endu={d.endurance} />}
+          {d.vs_plan && <VsOriginal v={d.vs_plan} />}
           {w && <Card label="This week" span={8}
                       aside={<Link to="/plan" className="linkish t-small">Plan ›</Link>}>
             {w.km_done != null && <>

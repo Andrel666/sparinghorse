@@ -1624,7 +1624,8 @@ CREATE TABLE IF NOT EXISTS objectives (
     resolved_at TEXT,                -- §RL: when resolve_passed_races settled it
     removed_at  TEXT,                -- §OBJ3: when remove took it off the calendar (NULL once put back)
     start_time  TEXT,                -- §GUN: HH:MM local gun time (optional; NULL counts to midnight)
-    start_tz    TEXT                 -- SH-64: IANA zone the gun time is in (optional; NULL = the viewer's own)
+    start_tz    TEXT,                -- SH-64: IANA zone the gun time is in (optional; NULL = the viewer's own)
+    baseline_plan_id INTEGER         -- §VSO: the plans.id pinned as this race's original plan (its founding road)
 );
 
 -- Versioned training plans. Each generation is a new row → diff-able history (§4).
@@ -1925,6 +1926,10 @@ def init_db():
     # race's clock, not the viewer's. NULL = the old semantics (the viewer's own zone).
     if "start_tz" not in ocols:
         db.execute("ALTER TABLE objectives ADD COLUMN start_tz TEXT")
+    # §VSO migration: `baseline_plan_id` — the race's original plan, pinned the first time one is
+    # saved, so "vs the original plan" can't drift to another row when the matching rules change.
+    if "baseline_plan_id" not in ocols:
+        db.execute("ALTER TABLE objectives ADD COLUMN baseline_plan_id INTEGER")
     # SH-49 migration: the same stamp on away windows, so ✕ gets a 24 h put-back like a race.
     avcols = {r["name"] for r in db.execute("PRAGMA table_info(availability)").fetchall()}
     if "removed_at" not in avcols:
@@ -6596,6 +6601,10 @@ def save_plan(db, plan):
          json.dumps(plan.get("shape", {})), json.dumps(plan)),
     )
     db.commit()
+    try:
+        _pin_baseline(db)          # §VSO — pin the race's original plan the first time it exists
+    except (sqlite3.Error, ValueError, TypeError, KeyError) as e:
+        print(f"[vso] baseline pin skipped: {e}")   # never fail a plan save over the pin
 
 
 def seed_objectives(db):
@@ -7963,6 +7972,7 @@ def _private_only_path(p):
     so the score is public while the HR-led critique stays private."""
     return (p in ("/api/health", "/api/settings", "/api/secrets",
                   "/api/secrets/validate", "/api/runs", "/api/plan/calendar", "/api/race/plan",   # §RB/§PCAL/§RDAY — carry HR
+                  "/api/vsplan",                          # §VSO — the athlete's own runs vs the plan
                   "/api/coach/messages", "/api/coach/chat", "/api/coach/clear",       # §COACH
                   "/api/system")                          # 0.56.1 — the household's timestamps
             or p.startswith("/api/suunto")                # §SG — OAuth + watch push are owner-only
@@ -9220,6 +9230,7 @@ _PV_WITHHELD = {
     "objectives[].created_at",               # when the athlete planned their season
     "objectives[].outcome", "objectives[].resolved_at",      # §RL — a race RESULT is personal
     "objectives[].removed_at",                                # §OBJ3 — when a race came off the calendar
+    "objectives[].baseline_plan_id",                          # §VSO — an internal plans.id, meaningless off the box
     "activity.hr_avg", "activity.hr_max", "activity.cross_training",
     "activity.date_time",                    # 0.55.1 (review S3) — the TIME of day is the household
     #                                          routine /healthz already keeps private; the date stays
@@ -9702,6 +9713,217 @@ def _plan_goal_view(p, goal):
     return None
 
 
+# ── §VSO — "you vs the original plan" ──────────────────────────────────────────────────────────
+# The founding road (§6b) used to be re-derived on every read: the earliest saved plan for this race
+# that spans its runway. Plans are append-only, so the row is always there, but WHICH row qualifies
+# depends on the matching rules (§GM, SH-85) and on the plan format, and both have changed. The race
+# now pins its original plan (`objectives.baseline_plan_id`) the first time one is saved; the pin
+# wins while it still describes this race and still reaches race day (a race moved later can outrun
+# it), and the live search is the fallback, then re-pinned on the next save.
+VSO_BANDS = {"ctl": 2.0, "vo2": 0.3, "long": 1.0}   # |gap| inside these reads "on plan"
+
+
+def _spans_runway(p, race_date):
+    w = _plan_weeks(p)
+    return bool(w) and (race_date is None or _date(w[-1]["start"]) >= race_date - timedelta(days=21))
+
+
+def _baseline_pin(db, goal):
+    """The plans.id pinned for `goal` (a race dict), or None. Tolerates a database without the
+    column (the public box reads a copy that may predate it)."""
+    if not goal or not goal.get("date"):
+        return None
+    try:
+        objs = db.execute("SELECT * FROM objectives WHERE baseline_plan_id IS NOT NULL "
+                          "ORDER BY id DESC").fetchall()
+    except sqlite3.OperationalError:
+        return None
+    for o in objs:
+        if _same_race(dict(o), goal):
+            return o["baseline_plan_id"]
+    return None
+
+
+def _founding_road(db, rows, goal, this_goal, race_date, use_pin=True):
+    """(row, plan, pinned) — the original plan for `goal` among `rows` (plans ordered by id): the
+    pinned row while it still qualifies, else the earliest row that is this race's road and spans
+    its runway. (None, None, False) when nothing qualifies — the caller decides the fallback."""
+    pin = _baseline_pin(db, goal) if (use_pin and goal) else None
+    if pin is not None:
+        for r in rows:
+            if r["id"] == pin:
+                p = json.loads(r["plan"])
+                if this_goal(p) and _spans_runway(p, race_date):
+                    return r, p, True
+                break
+    for r in rows:
+        p = json.loads(r["plan"])
+        if this_goal(p) and _spans_runway(p, race_date):
+            return r, p, False
+    return None, None, False
+
+
+def _goal_matcher(goal):
+    if goal:
+        return lambda p: _plan_goal_view(p, goal) is not None
+    return lambda p: not (p.get("objective") or {}).get("date")
+
+
+def _pin_baseline(db):
+    """After a save: make sure the latest plan's race has its original plan pinned. A no-op when the
+    plan has no dated race, or when the pin still qualifies."""
+    rows = db.execute("SELECT id, for_date, plan FROM plans ORDER BY id").fetchall()
+    if not rows:
+        return
+    goal = json.loads(rows[-1]["plan"]).get("objective") or {}
+    if not goal.get("date"):
+        return
+    try:
+        objs = db.execute("SELECT * FROM objectives WHERE status='upcoming' ORDER BY id DESC").fetchall()
+    except sqlite3.OperationalError:
+        return
+    orow = next((o for o in objs if _same_race(dict(o), goal)), None)
+    if orow is None or "baseline_plan_id" not in orow.keys():
+        return
+    row, _p, pinned = _founding_road(db, rows, goal, _goal_matcher(goal), _date(goal["date"]))
+    if row is not None and not pinned and orow["baseline_plan_id"] != row["id"]:
+        db.execute("UPDATE objectives SET baseline_plan_id=? WHERE id=?", (row["id"], orow["id"]))
+        db.commit()
+
+
+def _vso_metric(key, label, unit, actual, planned, digits=1, note=None, when=None):
+    m = {"key": key, "label": label, "unit": unit, "note": note, "when": when,
+         "actual": None if actual is None else round(actual, digits),
+         "planned": None if planned is None else round(planned, digits),
+         "diff": None, "pct": None, "state": "unknown"}
+    if actual is not None and planned is not None:
+        actual, planned = m["actual"], m["planned"]      # the gap is between the numbers shown
+        diff = actual - planned
+        m["diff"] = round(diff, digits) + 0.0            # + 0.0: no "−0" on the card
+        m["pct"] = (round(diff / planned * 100.0, 1) + 0.0) if planned > 0 else None
+        band = VSO_BANDS[key]
+        m["state"] = "ahead" if diff > band else "behind" if diff < -band else "level"
+    return m
+
+
+def vs_original(db, today=None):
+    """§VSO — this week against the ORIGINAL plan for the current race: where that plan put the athlete
+    today on fitness (CTL), on eVO₂max, and on the week's long run, next to where they are. Each
+    metric carries the two numbers, the gap and the gap in percent of the planned value.
+
+    CTL reads the original plan's own projected curve at TODAY (rolled from its sessions, like the
+    drift chart) against the de-duplicated reconstruction, corrected by the same t0 seam the drift
+    scorecard subtracts: the plan seeds from the snapshot, the actual curve is rebuilt locally, so the
+    two start a few points apart by construction, not by training.
+    eVO₂max: the original plan stored today's model value and its race-day projection; the projection
+    is driven by the weekly load, so the planned value at a date is that span pro-rated by the share
+    of the plan's TRIMP laid up to it. Actual is the same model value now (`_ft_speed_state`).
+    Long run: the original plan's longest `long` session in this week against the longest run the
+    athlete logged in it; until that day comes it reads last week instead (an unrun Sunday is not −100 %)."""
+    today = today or datetime.now().date()
+    rows = db.execute("SELECT id, created_at, for_date, plan FROM plans ORDER BY id").fetchall()
+    if not rows:
+        return {"ok": False, "error": "No plan yet — generate one first."}
+    current = json.loads(rows[-1]["plan"])
+    obj = current.get("objective") or {}
+    goal = obj if obj.get("date") else None
+    race_date = _date(goal["date"]) if goal else None
+    if race_date and today > race_date:
+        return {"ok": False, "error": "The race is run — the plan drift card has the reckoning."}
+    row, anchor, pinned = _founding_road(db, rows, goal, _goal_matcher(goal), race_date)
+    if anchor is None:
+        row, anchor, pinned = rows[-1], current, False
+    aw = _plan_weeks(anchor)
+    if not aw:
+        return {"ok": False, "error": "No saved plan spans the runway to compare against."}
+    a0 = _date(aw[0]["start"])
+    base = {"plan_id": row["id"], "for_date": row["for_date"], "pinned": pinned,
+            "race": ({"label": goal.get("label"), "date": goal.get("date")} if goal else None)}
+    just_set = row["id"] == rows[-1]["id"] or row["for_date"] == today.isoformat()
+    if today < a0:
+        return {"ok": True, "baseline": base, "just_set": True, "week": _monday(today).isoformat(),
+                "metrics": []}
+    sessions = sorted(((s["date"], s) for w in aw for s in (w.get("sessions") or []) if s.get("date")),
+                      key=lambda x: x[0])
+    metrics = []
+
+    # — fitness (CTL) —
+    ad = _plan_daily_trimps(anchor)
+    ash = anchor.get("shape") or {}
+    plan_ctl = ({p["date"]: p["ctl"] for p in roll(ad, a0, today, ctl0=ash.get("ctl") or 0.0,
+                                                   atl0=ash.get("atl") or 0.0)} if ad else {})
+    hist = {p["date"]: p["ctl"] for p in reconstruct_history(db, end=today.isoformat())}
+    act_ctl = hist.get(today.isoformat())
+    planned_ctl = plan_ctl.get(today.isoformat())
+    if planned_ctl is not None and a0.isoformat() in plan_ctl and a0.isoformat() in hist:
+        planned_ctl += hist[a0.isoformat()] - plan_ctl[a0.isoformat()]   # the t0 seam (see docstring)
+    metrics.append(_vso_metric("ctl", "Fitness (CTL)", "", act_ctl, planned_ctl, digits=0))
+
+    # — eVO₂max —
+    ft = ((_plan_goal_view(anchor, goal) or {}).get("finish_time") or {}) if goal else {}
+    v0, vstar = (ft.get("today") or {}).get("at_evo2"), ft.get("at_evo2")
+    planned_v = None
+    if v0 is not None and vstar is not None and race_date:
+        start = _date(row["for_date"])
+        load = [(d, s.get("trimp") or 0.0) for d, s in sessions if start <= _date(d) < race_date]
+        total = sum(t for _, t in load)
+        done = sum(t for d, t in load if _date(d) <= today)
+        planned_v = v0 + (vstar - v0) * (done / total if total else 0.0)
+    try:
+        actual_v = _ft_speed_state(db)[0]
+    except (sqlite3.Error, ValueError, TypeError, ZeroDivisionError):
+        actual_v = None
+    metrics.append(_vso_metric("vo2", "VO₂max", "", actual_v, planned_v, digits=1,
+                               note=None if planned_v is not None else
+                               "the original plan carries no VO₂max projection"))
+
+    # — long run (this week, or last week until this week's long-run day comes) —
+    drop = dropped_ids(db)
+
+    def _week_long(mon):
+        """(the original plan's long session in the week starting `mon`, {date: longest run km} so far)"""
+        end = mon + timedelta(days=6)
+        longs = [s for d, s in sessions if mon <= _date(d) <= end and s.get("kind") == "long"]
+        top = max(longs, key=lambda s: s.get("km") or 0.0) if longs else None
+        runs = db.execute("SELECT id, date, distance FROM activities WHERE " + RUN_FAMILY_SQL +
+                          " AND date >= ? AND date <= ?",
+                          (mon.isoformat(), min(end, today).isoformat())).fetchall()
+        by_day = {}
+        for r in runs:
+            if r["id"] not in drop:
+                by_day[r["date"]] = max(by_day.get(r["date"], 0.0), r["distance"] or 0.0)
+        return top, by_day
+
+    mon = _monday(today)
+    top, by_day = _week_long(mon)
+    when = "this week"
+    # The long-run day still ahead, or today with nothing run yet: an unrun Sunday is not −100 %.
+    # Read the last full week instead; in the plan's first week there is none, so it waits.
+    pending = top and (_date(top["date"]) > today or
+                       (_date(top["date"]) == today and not by_day.get(today.isoformat())))
+    if pending and mon - timedelta(days=7) >= a0:
+        (top, by_day), when, pending = _week_long(mon - timedelta(days=7)), "last week", False
+    best = max(by_day.values(), default=None)
+    if pending:
+        m = _vso_metric("long", "Long run", "km", None, top.get("km"), when=when,
+                        note=f"planned for {_date(top['date']).strftime('%a %d %b')}")
+        m["state"] = "upcoming"
+    elif top:
+        m = _vso_metric("long", "Long run", "km", best or 0.0, top.get("km"), when=when)
+    else:
+        m = _vso_metric("long", "Long run", "km", best, None, when=when,
+                        note="no long run in the original plan this week")
+    metrics.append(m)
+    return {"ok": True, "baseline": base, "just_set": just_set, "week": mon.isoformat(),
+            "metrics": metrics}
+
+
+@app.get("/api/vsplan")
+def api_vsplan():
+    """§VSO — Today's 'vs the original plan' card (private: carries the athlete's own runs)."""
+    return jsonify(vs_original(get_db()))
+
+
 @app.get("/api/plandrift")
 def api_plandrift():
     """The plan's drift from its founding statement (§6b, visible). Three slow-moving, weekly
@@ -9780,15 +10002,12 @@ def api_plandrift():
         po = p.get("objective") or {}
         return not po.get("date")   # race-less: the race-less plans
 
-    anchor_row, anchor = rows[-1], current
-    for r in rows:
-        p = json.loads(r["plan"])
-        if not _this_goal(p):
-            continue                                 # a plan for a different/no goal isn't this road
-        w = _plan_weeks(p)
-        if w and (race_date is None or _date(w[-1]["start"]) >= race_date - timedelta(days=21)):
-            anchor_row, anchor = r, p
-            break
+    # §VSO — the race's pinned original plan wins while it still qualifies; a picked earlier LEG
+    # (head_goal set) keeps the live search, because its road starts with its chain (SH-85).
+    anchor_row, anchor, _pinned = _founding_road(db, rows, goal, _this_goal, race_date,
+                                                 use_pin=head_goal is None)
+    if anchor is None:
+        anchor_row, anchor = rows[-1], current
     aw = _plan_weeks(anchor)
     if not aw:
         return jsonify(ok=False, error="no saved plan spans the runway to anchor against")

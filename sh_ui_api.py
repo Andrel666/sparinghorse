@@ -317,7 +317,41 @@ def today_page(S, db):
             "where": today_where(S, db, log, week, json.loads(plan_row["plan"]) if plan_row else None, today),
             "why": today_why(S, week, log, json.loads(plan_row["plan"]) if plan_row else None, today),
             "recovery": today_recovery(S, db, a.get("hrv")),
+            "vs_plan": today_vs_plan(S, db, today),
             "endurance": today_endurance(S, db, today)}
+
+
+# §VSO — Today's "vs. the original plan": the engine's `vs_original`, worded for the card. Each figure
+# opens where its number is drawn; the long run opens the plan history, where the original road is.
+VSO_LABEL = {"ctl": "Fitness", "vo2": "VO₂max", "long": "Long run"}
+VSO_LINK = {"ctl": "/fitness#fitness-fatigue", "vo2": "/fitness", "long": "/plan?view=history"}
+VSO_TONE = {"ahead": "ok", "behind": "warn"}
+VSO_WORD = {"ahead": "ahead of plan", "behind": "behind plan", "level": "on plan", "upcoming": "still to come"}
+
+
+def today_vs_plan(S, db, today):
+    """This week against the race's ORIGINAL plan (the pinned founding road): per metric the athlete's
+    number, the plan's, the gap and the gap in percent, a tone and a word. None when there is no card to
+    show (no plan, the race is run). Distances stay in km here; the UI converts them."""
+    try:
+        r = S.vs_original(db, today=today)
+    except (ValueError, KeyError, TypeError) as e:
+        print(f"[ui] vs_plan skipped: {e}")
+        return None
+    if not r.get("ok") or not r.get("metrics"):
+        return None
+    b = r["baseline"]
+    fd = S._date(b["for_date"]) if b.get("for_date") else None
+    since = f"{fd.day} {fd.strftime('%b')}" if fd else None
+    lede = ("Original plan set today: the gaps open as the weeks land." if r.get("just_set") else
+            f"Where the plan saved {since} said you would be today." if since else None)
+    items = [{"key": m["key"], "label": VSO_LABEL.get(m["key"], m["label"]), "actual": m["actual"],
+              "planned": m["planned"], "diff": m["diff"], "pct": m["pct"], "unit": m["unit"] or None,
+              "state": m["state"], "tone": VSO_TONE.get(m["state"]), "word": VSO_WORD.get(m["state"]),
+              "when": m["when"], "note": m["note"], "link": VSO_LINK.get(m["key"], "/plan?view=history")}
+             for m in r["metrics"]]
+    return {"since": b.get("for_date"), "race": (b.get("race") or {}).get("label"), "pinned": b.get("pinned"),
+            "just_set": r.get("just_set"), "lede": lede, "items": items}
 
 
 # §ENDU — Runalyze's marathon shape (or the race's share of it), now and along the plan. Shown only:
@@ -548,6 +582,9 @@ def today_recovery(S, db, hrv):
     cut = (today - timedelta(days=30)).isoformat()
     fresh = (today - timedelta(days=2)).isoformat()
     out = []
+    rd = today_rest_days(S, db, today)
+    if rd:
+        out.append(rd)
     h = hrv or {}
     if h.get("baseline") is not None:
         pts = [{"date": r["snapshot_date"], "v": round(r["hrv_baseline"], 1)} for r in db.execute(
@@ -578,6 +615,45 @@ def today_recovery(S, db, hrv):
                                                   None if last["date"] >= fresh else f"last read {age} days ago"] if x),
                     "state": marker_state(last["value"], m.get("ref"), m.get("good")), "series": series})
     return out
+
+
+# Runalyze's "rest days": how many days of COMPLETE rest bring form (TSB = CTL − ATL) back to 0, a
+# balanced load (Runalyze's calculations panel, "rest days needed to reach TSB = 0"). Read off the
+# app's own de-duplicated reconstruction (the same EWMA Runalyze uses, validated against its
+# snapshots), so it counts today's run and ignores duplicate uploads. Informational: the plan owns
+# what to run; this says how deep the fatigue is.
+REST_DAYS_MAX = 60
+
+
+def rest_days(S, ctl, atl, start):
+    """Days of zero load from `start` until CTL − ATL ≥ 0 (0 when it already is; capped)."""
+    if ctl - atl >= 0:
+        return 0
+    for i, p in enumerate(S.roll({}, start, start + timedelta(days=REST_DAYS_MAX - 1), ctl0=ctl, atl0=atl), start=1):
+        if p["ctl"] - p["atl"] >= 0:
+            return i
+    return REST_DAYS_MAX
+
+
+def today_rest_days(S, db, today):
+    """The Recovery card's rest-days row, or None without a history."""
+    hist = S.reconstruct_history(db, end=today.isoformat()) or []
+    if not hist:
+        return None
+    last = hist[-1]
+    ctl, atl = last["ctl"], last["atl"]
+    tsb = ctl - atl
+    n = rest_days(S, ctl, atl, today + timedelta(days=1))
+    cut = (today - timedelta(days=30)).isoformat()
+    r = round(tsb)
+    tsb_txt = f"{'+' if r > 0 else '−' if r < 0 else ''}{abs(r):.0f}"
+    by = f" ({(today + timedelta(days=n)).strftime('%a')})" if n <= 6 else ""
+    sub = f"form is balanced · TSB {tsb_txt}" if n == 0 else f"full rest to TSB 0{by} · now {tsb_txt}"
+    return {"key": "rest_days", "label": "Rest days", "value": f"{n}{'+' if n >= REST_DAYS_MAX else ''}",
+            "unit": "day" if n == 1 else "days", "sub": sub,
+            "state": "watch" if tsb <= FORM_TIRED else None,
+            "series": [{"date": p["date"], "v": round(p["ctl"] - p["atl"], 1)} for p in hist if p["date"] >= cut],
+            "link": "/fitness#fitness-fatigue"}
 
 
 # ── Fitness ───────────────────────────────────────────────────────────────────────────────────
