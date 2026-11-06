@@ -38,7 +38,7 @@ one by one against the new UI. ✅ in the new UI · — deliberately not carried
 | Stale-plan / stale-seed banners with Generate | ✅ |
 | Races drawer: priority, move date, gun time + zone, remove (confirm) / put back 24 h, add, past results | ✅ |
 | Chain of races: pick the race in view (drift follows it) | ✅ |
-| Active adjustment + clear; Tell the horse → apply / dismiss, or log a note | ✅ |
+| Active adjustment + clear; Tell the horse → apply / dismiss, or log a note | ✅ Tell the horse drawer (`/plan?tell=1`) |
 | Road: phases, race flags, tune-ups, today marker, run vs planned | ✅ |
 | Week: status, dates, km, eq-km, km run + ahead, runs, CTL at week end, load ratio, intent, lock | ✅ |
 | Week flags (all 13) and deload retire / keep | ✅ worded in `sh_ui_api.week_flags` |
@@ -47,12 +47,12 @@ one by one against the new UI. ✅ in the new UI · — deliberately not carried
 | Limits: every limit, holds / ran over, headroom, basis, source drawer | ✅ |
 | Races tile: finish band bar, median and goal ticks, CTL on race day, verdict, later-race curve, now vs race day, source | ✅ |
 | Posture + source, pace zones + source, pace note, rebuilt at | ✅ |
-| Month calendar, race-day plan, try another target | ✅ |
+| Month calendar, race-day plan, try another target | ✅ Month uses the one calendar (planned + run, week totals) |
 | Drift: scorecard, after-race reckoning, A-race chain, 5 charts, Original → Now / Conservative vs Assertive | ✅ History tab |
 | AI goal parsing, A-race adjudication, plan explain | — Classic no longer renders these either (SH-86 / SH-88) |
 
 ## Runs
-| Calendar: zone dots, +N, other-sport mark, multi-run picker, month nav, legend | ✅ |
+| Calendar: zone dots, +N, other-sport mark, multi-run picker, month nav, legend | ✅ the one calendar, shared with Plan → Month (planned days ghosted) |
 | Totals: month / 12 mo / all time incl. load, since | ✅ |
 | Run: every metric incl. ground contact and vertical oscillation, time of day, split-recording chip | ✅ |
 | Read back: kind, summary, rough signal, 1+1, strides | ✅ |
@@ -72,7 +72,7 @@ one by one against the new UI. ✅ in the new UI · — deliberately not carried
 | Track record: checkpoints, horizons, prescription, readiness calls, override weeks, bands, race table | ✅ |
 
 ## Body
-| Marker cards: latest, ok / watch vs range, readings, first → last, stale age | ✅ |
+| Marker cards: latest, ok / watch vs range, readings, first → last, stale age | ✅ Fitness → Body tab (`/body` redirects); HRV added |
 | Chart with the reference band, hover, 6m / 1y / All (saved per marker) | ✅ |
 | Nightly-data-stopped banner | ✅ |
 | Add a reading | ✅ |
@@ -90,7 +90,7 @@ one by one against the new UI. ✅ in the new UI · — deliberately not carried
 | Backup (.db), export (.json), backfill | ✅ |
 
 ## Coach
-| Chat, suggestions, off / no-AI states, clear, Enter to send | ✅ |
+| Chat, suggestions, off / no-AI states, clear, Enter to send | ✅ Coach page + Ask drawer (`?ask=1`) on every page |
 
 ## Music
 | Spotify connect / reconnect / disconnect, pull plays, return message | ✅ Music → Music settings |
