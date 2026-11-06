@@ -510,6 +510,19 @@ a 1 % gap there is a lot; that is why the units are always printed beside the pe
 - The tile shows the plan's numbers with **no gap** on the day the original plan was set, and the card
   hides itself once the race is run (the scorecard then takes over). It is private (it reads your
   runs) and is not on the public box.
+### Endurance for the race (Runalyze's marathon shape)
+*Is the plan giving you the endurance the race asks for?* Runalyze's **marathon shape** scores two things:
+your weekly km over the last 182 days (67 %, against a target that grows with VO₂max: ~92 km/week at 54) and
+your long runs over the last 70 days (33 %; only the km **past 13** count, squared, so one 30 km run beats
+two 20 km runs, and each run fades over 70 days). Runalyze's race prediction expects distance^1.23 % of it:
+**100 % for a marathon, 42.5 % for a half**, 17 % for a 10k. Below that it slows your prediction.
+
+The app works the same number out from your runs (and checks it against the value Runalyze reports), then
+runs it forward over your plan's sessions to race morning. **Today** shows it in *Where you are* as a share
+of what your race needs (for example *Half endurance 65 % · 100 % by 3 Jan*). **Plan → Race day** has the
+card: now, race morning, the day it reaches 100 %, how much comes from weekly km and how much from long
+runs, and the curve against the 100 % line. For a half, weekly km carries most of it: long runs only add a
+few points unless they go well past 13 km. This is information only: the plan is not built to reach it.
 
 ### Plan drift / the scorecard
 *The road vs. the road as it stands.* Five charts (distance, effort/TRIMP, CTL, race-outcome, and the

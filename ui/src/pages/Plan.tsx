@@ -17,6 +17,7 @@ import { LimitSource, basisLabel, hasSource } from "../components/LimitSource";
 import { RacesDrawer, RacesTile, type Diff } from "./plan/Races";
 import { AdjustmentBanner, TellTheHorse } from "./plan/Adjust";
 import { DriftView } from "./plan/Drift";
+import { Endurance } from "./plan/Endurance";
 import { Query } from "./Query";
 
 type View = "week" | "month" | "race" | "history";
@@ -150,6 +151,7 @@ function RaceView() {
         </form>
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-small)" }}>{r.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
       </Card>
+      <Endurance />
     </div>)}</Query>;
 }
 

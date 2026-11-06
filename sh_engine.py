@@ -6535,6 +6535,68 @@ def generate_rebase(block_start, ctl0, atl0, easy_pace_sec, adjust=None, shape=N
 # over 42 km. The absolute time is a rough ESTIMATE (real marathon time also rides fuelling, pacing,
 # heat, the day); the ROBUST signal is the comparative — more runway ⇒ more CTL ⇒ less fade ⇒ faster.
 RACE_KM = {"marathon": 42.195, "half": 21.0975, "10k": 10.0, "5k": 5.0}
+
+
+# ── §ENDU — Runalyze's MARATHON SHAPE ("basic endurance"), ported ───────────────────────────────
+# Runalyze/Runalyze inc/core/Calculation/BasicEndurance.php (and the prognosis adjustment in
+# inc/core/Sports/Running/Prognosis/VO2max.php), reproduced number for number so the app can PROJECT
+# it along the plan — Runalyze only reports today's. Runalyze's own words: "not scientifically based,
+# our own attempt to adjust the prognosis for long distances". Shown, never planned against.
+#   shape = 100 × (0.67 × week part + 0.33 × long-run part)
+#   week part  = km in the last 182 days (70–182, by history length) × 7 / days / VO₂max^1.135
+#   long part  = Σ over runs > 13 km in the last 70 days of
+#                (2 − 2/70 × days ago) × ((km − 13) / (12·ln(VO₂max/4) − 13))² × 7 / 70
+#   a race of d km needs d^1.23 % (100 % for the marathon, 42.5 % for the half); below it Runalyze's
+#   VO₂max prognosis scales VO₂max by min(1, 0.6 + 0.4 × max(0, 1 − (need − shape)/100)).
+# Locked against Runalyze's own unit tests by det/marathon-shape. Reference and design notes: docs/MARATHON_SHAPE.md.
+MS_MIN_VO2 = 25.0          # MINIMAL_EFFECTIVE_VO2MAX
+MS_LONG_MIN_KM = 13.0      # MIN_KM_FOR_LONGJOG (a Runalyze account setting; 13 is its default)
+MS_WEEK_DAYS = 182         # DAYS_FOR_WEEK_KM
+MS_WEEK_DAYS_MIN = 70      # DAYS_FOR_WEEK_KM_MIN
+MS_LONG_DAYS = 70          # DAYS_FOR_LONGJOGS
+MS_W_LONG = 0.33           # PERCENTAGE_LONGJOGS (the week part takes the rest)
+
+
+def ms_targets(vo2, long_min=MS_LONG_MIN_KM):
+    """(target km per week, target long-run km) at this VO₂max — Runalyze's getTargetWeekKm and
+    getRealTargetLongjogKmPerWeek."""
+    v = max(vo2 or 0.0, MS_MIN_VO2)
+    return v ** 1.135, math.log(v / 4.0) * 12.0
+
+
+def marathon_shape(runs, day, vo2, first_day=None, long_min=MS_LONG_MIN_KM, week_days=MS_WEEK_DAYS,
+                   week_days_min=MS_WEEK_DAYS_MIN, long_days=MS_LONG_DAYS, w_long=MS_W_LONG):
+    """Runalyze's marathon shape at the END of `day` from `runs` [(date, km)]. Returns the unrounded
+    percentage and its parts: {pct, week_pct, long_pct (each a fraction of its target), km, points,
+    days, target_week_km, target_long_km}. `first_day` (the first run) shortens the week window for a
+    young history, as Runalyze does from the account's start."""
+    days = week_days if first_day is None else max(week_days_min, min(week_days, (day - first_day).days))
+    t_week, t_long = ms_targets(vo2, long_min)
+    div = (t_long - long_min) ** 2
+    km = pts = 0.0
+    for d, dist in runs:
+        age = (day - d).days
+        if age < 0 or not dist:
+            continue
+        if age < days:
+            km += dist
+        if age < long_days and dist > long_min:
+            pts += (2.0 - 2.0 / long_days * age) * (dist - long_min) ** 2 / div
+    week_pct = km * 7.0 / days / t_week
+    long_pct = pts * 7.0 / long_days
+    return {"pct": 100.0 * ((1.0 - w_long) * week_pct + w_long * long_pct), "week_pct": week_pct,
+            "long_pct": long_pct, "km": km, "points": pts, "days": days,
+            "target_week_km": t_week, "target_long_km": t_long}
+
+
+def ms_required(distance_km):
+    """The marathon shape a race of this distance asks for, in % (Runalyze: distance^1.23)."""
+    return distance_km ** 1.23
+
+
+def ms_adjustment(distance_km, shape_pct):
+    """Runalyze's prognosis factor on VO₂max for this distance at this shape (1.0 = no penalty)."""
+    return min(1.0, 0.6 + 0.4 * max(0.0, 1.0 - (ms_required(distance_km) - shape_pct) / 100.0))
 FADE_PER_CTL = 0.008   # +0.8% to race pace per CTL point of endurance deficit below the floor
 FADE_CAP = 1.35        # never project worse than +35% (beyond that it's a walk, not a time the model owns)
 

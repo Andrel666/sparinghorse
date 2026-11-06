@@ -532,6 +532,7 @@ a.marker-row:hover { background: var(--surface-2); }
 /* y-axis values, laid over the chart's left edge */
 .chart .yticks { position: absolute; left: 0; top: 0; height: calc(100% - 22px); pointer-events: none; z-index: 1; }
 .chart .yticks.bars { height: auto; }
+.chart > div > .yticks { height: 100%; }   /* Lines: the ticks span the plot box alone, not its caption */
 .chart .yticks span { position: absolute; left: 0; transform: translateY(-50%); font-size: var(--fs-label); line-height: 1; color: var(--muted);
   background: var(--bg); padding: 1px 3px 1px 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .chart .yticks span:first-child { transform: none; }

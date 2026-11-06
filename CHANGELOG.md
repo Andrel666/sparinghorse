@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The road to marathon shape (Runalyze's), along the plan.** Runalyze's marathon shape is ported number for
+  number (`sh_engine.marathon_shape`: 67 % weekly km over 182 days against VO₂max^1.135, 33 % long runs over
+  13 km, squared and fading over 70 days) and projected along the plan's sessions to race morning, at the plan's
+  rising VO₂max. A race needs distance^1.23 % (Runalyze's prognosis): 100 % for the marathon, **42.5 % for the
+  half**, so the figure reads as a share of that need ("Half endurance 65 % · 100 % by 3 Jan"). Today shows it in
+  "Where you are"; Plan → Race day has the card: now, race morning, the day it reaches 100 %, how much comes from
+  weekly km and from long runs, and the curve against the 100 % line. Our number is checked against the
+  `marathonShape` Runalyze reports daily (stored since day one, unused until now). Shown only: the plan is not
+  built to reach it. `/api/ui/endurance` (private); `det/marathon-shape` holds Runalyze's own unit tests,
+  mutation-tested. Reference, assumptions and ideas to build on: `docs/MARATHON_SHAPE.md`.
+- **Fixed (new UI):** a line chart's y-axis values sat on its caption when the legend wrapped on a phone.
 - **Rest days on Today (Runalyze's).** The new UI's Recovery card opens with **rest days**: how many days of
   full rest bring form (TSB = CTL − ATL) back to 0, as Runalyze's calculations panel defines it, with the day
   it gets there, today's TSB and a 30-day TSB sparkline; amber at the "tired" line (TSB ≤ −20). Read off the

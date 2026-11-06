@@ -25,6 +25,7 @@ Today,"Race countdown to the gun time in the race's zone, priority, verdict",don
 Today,"Latest run, cross-training note, open the run",done,
 Today,"Vs. the original plan: CTL, VO₂max, long run — you vs plan, gap and %",done,sh_ui_api.today_vs_plan
 Today,"Recovery: rest days to TSB 0 (Runalyze's), with TSB sparkline",done,sh_ui_api.today_rest_days
+Today,"Half/marathon endurance (Runalyze marathon shape) now and along the plan; Plan → Race day card",done,sh_ui_api.endurance_page
 Plan,"Generate plan, ""Re-planned — changes"" banner",done,
 Plan,Stale-plan / stale-seed banners with Generate,done,
 Plan,"Races drawer: priority, move date, gun time + zone, remove (confirm) / put back 24 h, add, past results",done,

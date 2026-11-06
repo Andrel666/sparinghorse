@@ -11356,6 +11356,125 @@ def _fmt_pace_s(sec):
     return f"{sec // 60}:{sec % 60:02d}"
 
 
+# ── §ENDU — the road to marathon shape (or the race's endurance) ────────────────────────────────
+ENDU_PAST_DAYS = 56        # the measured part of the curve
+ENDU_CHECK_DAYS = 60       # how far back our number is checked against Runalyze's own
+
+
+def _endu_vo2_reader(db):
+    """date → Runalyze's effective VO₂max on or before it (the value its shape uses)."""
+    rows = [(r["snapshot_date"], r["effective_vo2max"]) for r in db.execute(
+        "SELECT snapshot_date, effective_vo2max FROM shape_snapshots WHERE effective_vo2max IS NOT NULL "
+        "ORDER BY snapshot_date").fetchall()]
+
+    def at(iso):
+        v = None
+        for d, x in rows:
+            if d > iso:
+                break
+            v = x
+        return v if v is not None else (rows[0][1] if rows else None)
+    return at, (rows[-1][1] if rows else None)
+
+
+def endurance_road(db, today=None):
+    """§ENDU — Runalyze's marathon shape now, along the plan to race day, against what the race needs.
+
+    Measured days read the athlete's runs (de-duplicated, ignored runs out) at Runalyze's effective
+    VO₂max of that day. Days ahead add the latest plan's sessions (today's too while nothing is logged
+    today; race day itself is left out: the value is race MORNING's) at today's VO₂max moved by the
+    plan's own projected rise, pro-rated by its TRIMP — a rising VO₂max raises the targets, as it does
+    in Runalyze. The race needs distance^1.23 % (marathon 100 %, half 42.5 %); without a race, the
+    marathon's 100 %. `check` compares our number with the marathonShape Runalyze reported."""
+    import sh_engine as _E
+    today = today or datetime.now().date()
+    drop = dropped_ids(db)
+    runs = [(_date(r["date"]), r["distance"] or 0.0) for r in db.execute(
+        "SELECT id, date, distance FROM activities WHERE " + RUN_FAMILY_SQL + " AND date IS NOT NULL AND date != ''"
+    ).fetchall() if r["id"] not in drop and r["date"] <= today.isoformat()]
+    if not runs:
+        return {"ok": False, "error": "No runs yet."}
+    first = min(d for d, _ in runs)
+    vo2_at, vo2_now = _endu_vo2_reader(db)
+    if vo2_now is None:
+        return {"ok": False, "error": "No VO₂max from Runalyze yet."}
+
+    row = db.execute("SELECT plan FROM plans ORDER BY id DESC LIMIT 1").fetchone()
+    plan = json.loads(row["plan"]) if row else {}
+    obj = plan.get("objective") or {}
+    race_date = _date(obj["date"]) if obj.get("date") else None
+    if race_date and race_date < today:
+        race_date = None
+    dist = _E.RACE_KM.get((obj.get("type") or "").lower()) if race_date else None
+    need = _E.ms_required(dist) if dist else 100.0
+    label = ("Marathon shape" if not dist or dist >= 42 else
+             {"half": "Half endurance", "10k": "10k endurance", "5k": "5k endurance"}.get(obj.get("type"), "Endurance"))
+
+    # the plan's sessions ahead, and its projected VO₂max rise (model scale → applied as a delta)
+    ran_today = any(d == today for d, _ in runs)
+    ahead = []
+    for w in _plan_weeks(plan):
+        for s in w.get("sessions") or []:
+            try:
+                d = _date(s.get("date"))
+            except (TypeError, ValueError):
+                continue
+            if (d > today or (d == today and not ran_today)) and (race_date is None or d < race_date) \
+                    and s.get("kind") not in (None, "rest", "race") and (s.get("km") or 0) > 0:
+                ahead.append((d, float(s["km"]), s.get("trimp") or 0.0))
+    ft = (plan.get("feasibility") or {}).get("finish_time") or {}
+    v0, vstar = (ft.get("today") or {}).get("at_evo2"), ft.get("at_evo2")
+    total = sum(t for *_x, t in ahead)
+    rise = (vstar - v0) if (v0 is not None and vstar is not None and total) else 0.0
+
+    def vo2_future(day):
+        done = sum(t for d, _k, t in ahead if d <= day)
+        return vo2_now + rise * (done / total if total else 0.0)
+
+    end = (race_date - timedelta(days=1)) if race_date else today
+    plan_runs = runs + [(d, k) for d, k, _t in ahead]
+    series, reach = [], None
+    d = today - timedelta(days=ENDU_PAST_DAYS)
+    while d <= end:
+        future = d > today
+        v = vo2_future(d) if future else vo2_at(d.isoformat())
+        r = _E.marathon_shape(plan_runs if future else runs, d, v, first_day=first)
+        series.append({"date": d.isoformat(), "v": round(r["pct"], 1), "kind": "plan" if future else "actual"})
+        if future and reach is None and r["pct"] >= need:
+            reach = d.isoformat()
+        d += timedelta(days=1)
+
+    def parts(day, use, v):
+        r = _E.marathon_shape(use, day, v, first_day=first)
+        return {"date": day.isoformat(), "pct": round(r["pct"], 1), "of_need": round(100.0 * r["pct"] / need),
+                "week": round(100.0 * (1 - _E.MS_W_LONG) * r["week_pct"], 1),
+                "long": round(100.0 * _E.MS_W_LONG * r["long_pct"], 1),
+                "km_week": round(r["km"] * 7.0 / r["days"], 1), "target_week_km": round(r["target_week_km"], 1),
+                "target_long_km": round(r["target_long_km"], 1), "vo2": round(v, 1)}
+    now = parts(today, runs, vo2_at(today.isoformat()))
+    race_morning = parts(end, plan_runs, vo2_future(end)) if race_date else None
+    if now["pct"] >= need:
+        reach = today.isoformat()
+
+    # does our number match Runalyze's? (its API's marathonShape: a percent, or a fraction ≤ 3)
+    check = None
+    snaps = db.execute("SELECT snapshot_date, marathon_shape, effective_vo2max FROM shape_snapshots "
+                       "WHERE marathon_shape IS NOT NULL AND snapshot_date >= ? AND snapshot_date <= ? "
+                       "ORDER BY snapshot_date", ((today - timedelta(days=ENDU_CHECK_DAYS)).isoformat(),
+                                                  today.isoformat())).fetchall()
+    if snaps:
+        scale = 100.0 if max(r["marathon_shape"] for r in snaps) <= 3.0 else 1.0
+        errs = [abs(_E.marathon_shape(runs, _date(r["snapshot_date"]), r["effective_vo2max"] or vo2_now,
+                                      first_day=first)["pct"] - r["marathon_shape"] * scale) for r in snaps]
+        last = snaps[-1]
+        check = {"n": len(errs), "mean_abs": round(sum(errs) / len(errs), 1), "date": last["snapshot_date"],
+                 "runalyze": round(last["marathon_shape"] * scale, 1)}
+    return {"ok": True, "label": label, "need": round(need, 1), "distance_km": dist,
+            "race": ({"label": obj.get("label"), "date": obj.get("date"), "type": obj.get("type")} if race_date else None),
+            "now": now, "race_morning": race_morning, "reaches": reach, "series": series, "check": check,
+            "long_min_km": _E.MS_LONG_MIN_KM}
+
+
 def race_plan(db, target_text=None):
     """§RDAY — the pacing plan for the plan's A race: segments, km splits, checkpoints, HR guardrails,
     how the target sits against the prediction and the athlete's best, and race-morning notes."""

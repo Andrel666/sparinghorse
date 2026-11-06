@@ -57,6 +57,8 @@ export interface TodayPage {
   where?: Where | null;
   why?: { key: string; text: string; detail?: string; link: string }[];
   vs_plan?: VsPlan | null;
+  endurance?: { label: string; now: number; reaches: string | null; already: boolean; race_morning: number | null;
+                 has_race: boolean; tone: "ok" | "warn" | null; link: string } | null;
 }
 
 /** Today's "vs. the original plan" (sh_ui_api.today_vs_plan): the race's pinned first plan against today. */
@@ -65,6 +67,16 @@ export interface VsPlan {
   items: { key: "ctl" | "vo2" | "long"; label: string; actual: number | null; planned: number | null; diff: number | null;
            pct: number | null; unit: "km" | null; state: "ahead" | "behind" | "level" | "upcoming" | "unknown";
            tone: "ok" | "warn" | null; word: string | null; when: string | null; note: string | null; link: string }[];
+}
+
+/** Runalyze's marathon shape now and along the plan (sh_ui_api.endurance_page). */
+export interface EndurancePart { date: string; pct: number; of_need: number; week: number; long: number; km_week: number;
+  target_week_km: number; target_long_km: number; vo2: number }
+export interface EndurancePage {
+  ok: true; label: string; need: number; distance_km: number | null; race: { label: string; date: string; type: string } | null;
+  now: EndurancePart; race_morning: EndurancePart | null; reaches: string | null; long_min_km: number;
+  series: { date: string; v: number; kind: "actual" | "plan" }[];
+  check: { n: number; mean_abs: number; date: string; runalyze: number } | null; lede: string; why: string[];
 }
 
 /** Where the athlete is on the road (Today's "Where you are"). */
@@ -204,6 +216,7 @@ export interface RunsLog { ok: true; month: string; range: string | null; km: nu
 export const useRunsLog = (month?: string, range?: string | null) =>
   q<RunsLog>(["ui", "runslog", month, range], `/api/ui/runs?${new URLSearchParams(Object.entries({ month, range }).filter(([, v]) => v) as [string, string][])}`);
 export const useRunsMonth = (month?: string) => q<RunsMonth>(["ui", "runs", month], `/api/runs${month ? `?month=${month}` : ""}`);
+export const useEndurance = () => q<EndurancePage>(["ui", "endurance"], "/api/ui/endurance");
 export const useRacePlan = (target?: string) => q<RacePlanT>(["ui", "race", target], `/api/race/plan${target ? `?target=${encodeURIComponent(target)}` : ""}`);
 export const useProfile = (id?: number) => q<Profile>(["ui", "profile", id], `/api/activity/${id}/profile`, !!id);
 export const useRunMap = (id?: number) => q<{ has_gps: boolean; path: [number, number][] }>(["ui", "map", id], `/api/activity/${id}/map`, !!id);

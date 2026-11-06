@@ -51,6 +51,8 @@ export function Lines({ series, height = 220, fmt = (v: number) => v.toFixed(1),
   const todayX = x(day(localToday()));
   return (
     <figure className="chart" style={{ margin: 0, position: "relative" }}>
+      {/* the ticks sit over the plot only: a caption that wraps (phones) must not move them onto it */}
+      <div style={{ position: "relative" }}>
       <YTicks a={y.a} b={y.b} fmt={tick} />
       <svg viewBox={`0 0 ${w} ${height}`} width="100%" height={height} preserveAspectRatio="none" role="img"
            aria-label={series.map(s => `${s.label} ${s.pts.at(-1)?.v}`).join(", ")}
@@ -65,6 +67,7 @@ export function Lines({ series, height = 220, fmt = (v: number) => v.toFixed(1),
                                strokeWidth={2} strokeDasharray={s.dashed ? "6 4" : undefined} vectorEffect="non-scaling-stroke" />)}
         {hover != null && <line x1={x(hover)} x2={x(hover)} y1={0} y2={height} stroke="var(--text)" opacity={0.3} vectorEffect="non-scaling-stroke" />}
       </svg>
+      </div>
       {at && at.length > 0 && <div className="readout">{at[0].p.date} · {at.map(({ s, p }) => `${s.label} ${s.label === "Load ratio" ? p.v.toFixed(2) : fmt(p.v)}`).join(" · ")}</div>}
       <figcaption className="row muted" style={{ justifyContent: "space-between", fontSize: "var(--fs-label)" }}>
         <span>{numDay(lo)}</span>
