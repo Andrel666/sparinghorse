@@ -1039,7 +1039,7 @@ function effPlot(pts, key, cls, fit){
 function renderEfficiency(d){
   const host=$("#effbody"); if(!host) return;
   if(!d || d.ok===false){
-    host.innerHTML=`<div class="empty">${esc((d&&d.reason)||"No efficiency read yet")} — the chart starts once four aerobic runs land with heart-rate data.</div>`;
+    host.innerHTML=`<div class="empty">${esc(U.t((d&&d.reason)||"No efficiency read yet"))} — the chart starts once four aerobic runs land with heart-rate data.</div>`;
     return;
   }
   const pts=d.series||[], first=pts[0], last=pts[pts.length-1];

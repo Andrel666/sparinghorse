@@ -510,6 +510,7 @@ a 1 % gap there is a lot; that is why the units are always printed beside the pe
 - The tile shows the plan's numbers with **no gap** on the day the original plan was set, and the card
   hides itself once the race is run (the scorecard then takes over). It is private (it reads your
   runs) and is not on the public box.
+
 ### Endurance for the race (Runalyze's marathon shape)
 *Is the plan giving you the endurance the race asks for?* Runalyze's **marathon shape** scores two things:
 your weekly km over the last 182 days (67 %, against a target that grows with VO₂max: ~92 km/week at 54) and
