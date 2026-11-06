@@ -1270,6 +1270,16 @@ def body_page(S, db):
             "injuries": [{"start": i["start"], "end": i.get("end"), "label": i.get("label")} for i in inj]}
 
 
+def help_short(text):
+    """A setting's help as its first sentence (the field shows that; the rest sits behind More)."""
+    t = re.sub(r"\s+", " ", text or "").strip()
+    for m in re.finditer(r"[.!?](\s|$)", t):
+        head = t[:m.start() + 1]
+        if not re.search(r"(\be\.g|\bi\.e|\betc|\bvs|\bapprox|\bmin|\bmax|\d)\.$", head):
+            return head
+    return t
+
+
 # ── Settings ──────────────────────────────────────────────────────────────────────────────────
 # Typed inputs for the settings that have a fixed set of answers (Classic shows free-text boxes).
 CHOICES = {
@@ -1291,6 +1301,7 @@ def settings_page(S, db):
     for spec in S.SETTINGS_SPEC:
         v, src = S._resolve_setting(db, spec)
         by[spec["key"]] = {"key": spec["key"], "label": spec["label"], "help": spec.get("help", ""),
+                           "help_short": help_short(spec.get("help", "")),
                            "kind": "choice" if spec["key"] in CHOICES else spec.get("kind", "line"),
                            "choices": [{"v": a, "t": b} for a, b in CHOICES.get(spec["key"], [])],
                            "value": v or "", "source": src}

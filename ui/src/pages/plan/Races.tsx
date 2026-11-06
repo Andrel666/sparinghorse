@@ -19,12 +19,12 @@ const TYPES = ["5k", "10k", "half", "marathon", "custom"];
 const ZONES: string[] = (() => { try { return (Intl as unknown as { supportedValuesOf: (k: string) => string[] }).supportedValuesOf("timeZone"); } catch { return []; } })();
 
 function pastChip(o: Objective) {
-  if (o.status === "lapsed") return "lapsed — no race-day run";
+  if (o.status === "lapsed") return "lapsed: no race-day run";
   let oc: { status?: string; dnf_km?: number; actual?: string; beat?: boolean; goal?: string } = {};
   try { oc = JSON.parse(o.outcome || "{}"); } catch { /* old rows */ }
   if (oc.status === "dnf") return `DNF at ${oc.dnf_km} km`;
   if (oc.actual) return `✓ ${oc.actual}${oc.beat === true ? " · beat the goal" : oc.beat === false ? ` · goal ${oc.goal} missed` : ""}`;
-  return "run — result unverified";
+  return "run: result unverified";
 }
 
 export function RacesDrawer({ current, onDiff }: { current?: string; onDiff: (d?: Diff) => void }) {
@@ -37,14 +37,14 @@ export function RacesDrawer({ current, onDiff }: { current?: string; onDiff: (d?
   const restore = useAction<Res, number>(id => `/api/objectives/${id}/restore`, undefined, { done, fail: "Could not put the race back" });
   const remove = useAction<Res, Objective>(o => `/api/objectives/${o.id}/remove`, undefined, {
     confirm: o => ({ title: `Remove ${o.label}?`, ok: "Remove",
-      intro: "It comes off the calendar and the plan re-anchors on the next race — maintenance if none is left.",
+      intro: "It comes off the calendar and the plan re-anchors on the next race: maintenance if none is left.",
       lines: [`${dateShort(o.date)} · ${o.type} · ${o.target}`], alt: "It stays listed for 24 hours with a put-back control." }),
     done, fail: "Could not remove the race" });
   const blank = { label: "", type: "marathon", date: "", start_time: "", start_tz: "", priority: "A", target: "" };
   const [f, setF] = useState(blank);
   const add = useAction<Res, void>("/api/objectives", () => ({ label: f.label || "Race", type: f.type, date: f.date, priority: f.priority,
     target: f.target || "finish", start_time: f.start_time || null, start_tz: f.start_tz || null }),
-    { done: r => { setF(blank); onDiff(r.diff); return "Race added — the plan re-periodized"; }, fail: "Could not add the race" });
+    { done: r => { setF(blank); onDiff(r.diff); return "Race added: the plan re-periodized"; }, fail: "Could not add the race" });
   if (!q.data) return <span className="muted">Loading races…</span>;
   const today = localToday();
   const up = q.data.filter(o => o.status === "upcoming");
@@ -52,47 +52,43 @@ export function RacesDrawer({ current, onDiff }: { current?: string; onDiff: (d?
     .sort((a, b) => (b.removed_at || "").localeCompare(a.removed_at || ""));
   const past = q.data.filter(o => o.status === "done" || o.status === "lapsed").sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
   return (
-    <div className="list" style={{ gap: "var(--sp-4)" }}>
+    <div className="list races-drawer">
       <datalist id="tzlist">{ZONES.map(z => <option key={z} value={z} />)}</datalist>
-      {!up.length && <span className="muted">No races — the plan holds fitness (maintenance).</span>}
+      {!up.length && <span className="muted">No races: the plan holds fitness (maintenance).</span>}
       {up.map(o => (
-        <div key={o.id} className="race-row" style={{ outline: o.date === current ? "2px solid var(--accent)" : undefined }}>
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <b>{o.label}{o.date === current ? " · current" : ""}</b>
-            <button type="button" className="btn" aria-label={`Remove ${o.label}`} onClick={() => remove.mutate(o)}>✕</button>
-          </div>
-          <div className="row">
-            <span className="seg" role="group" aria-label="Priority">{["A", "B", "C"].map(p => (
+        <section key={o.id} className="race-group" aria-label={o.label}>
+          <div className="race-head"><b>{o.label}</b>{o.date === current && <Pill tone="ok">current</Pill>}
+            <span className="muted">{o.type} · goal {o.target}</span></div>
+          <div className="form-grid">
+            <label>Priority<span className="seg" role="group" aria-label="Priority">{["A", "B", "C"].map(p => (
               <button key={p} type="button" aria-pressed={o.priority === p} disabled={pri.isPending}
-                      onClick={() => o.priority !== p && pri.mutate({ id: o.id, priority: p })}>{p}</button>))}</span>
-            <input type="date" className="input" style={{ width: "auto" }} defaultValue={o.date} aria-label="Race date" title="Move this race — the plan re-periodizes around the new day"
-                   onChange={e => e.target.value && e.target.value !== o.date && move.mutate({ id: o.id, date: e.target.value })} />
-            <input type="time" className="input" style={{ width: "auto" }} defaultValue={o.start_time || ""} aria-label="Gun time" title="The countdown targets the gun time"
-                   onBlur={e => (e.target.value || null) !== (o.start_time || null) && time.mutate({ id: o.id, start_time: e.target.value || null })} />
-            <input className="input" style={{ width: "16ch" }} list="tzlist" defaultValue={o.start_tz || ""} placeholder={o.default_tz || "your zone"} aria-label="Time zone"
-                   onBlur={e => (e.target.value || null) !== (o.start_tz || null) && time.mutate({ id: o.id, start_time: o.start_time, start_tz: e.target.value || null })} />
-            <span className="muted">{o.type} · goal {o.target}</span>
+                      onClick={() => o.priority !== p && pri.mutate({ id: o.id, priority: p })}>{p}</button>))}</span></label>
+            <label>Date<input type="date" className="input" defaultValue={o.date}
+                   onChange={e => e.target.value && e.target.value !== o.date && move.mutate({ id: o.id, date: e.target.value })} /></label>
+            <label>Gun time<input type="time" className="input" defaultValue={o.start_time || ""}
+                   onBlur={e => (e.target.value || null) !== (o.start_time || null) && time.mutate({ id: o.id, start_time: e.target.value || null })} /></label>
+            <label>Time zone<input className="input" list="tzlist" defaultValue={o.start_tz || ""} placeholder={o.default_tz || "your zone"}
+                   onBlur={e => (e.target.value || null) !== (o.start_tz || null) && time.mutate({ id: o.id, start_time: o.start_time, start_tz: e.target.value || null })} /></label>
           </div>
-        </div>))}
+          <button type="button" className="linkish danger" onClick={() => remove.mutate(o)}>Remove race</button>
+        </section>))}
       {removed.length > 0 && <div><b>Removed in the last 24 hours</b>{removed.map(o => (
         <div key={o.id} className="row" style={{ justifyContent: "space-between" }}><span className="muted">{o.priority} · {o.label} · {dateShort(o.date)} · {o.type}</span>
           <button type="button" className="btn" onClick={() => restore.mutate(o.id)}>Put back</button></div>))}</div>}
-      <form className="list" style={{ gap: 8 }} onSubmit={e => { e.preventDefault(); if (f.date) add.mutate(); }}>
-        <b>Add a race</b>
-        <div className="row">
-          <input className="input" style={{ flex: 2, minWidth: 160 }} placeholder="Race name" value={f.label} onChange={e => setF({ ...f, label: e.target.value })} aria-label="Race name" />
-          <select className="input" style={{ width: "auto" }} value={f.type} onChange={e => setF({ ...f, type: e.target.value })} aria-label="Distance">
-            {TYPES.map(t => <option key={t}>{t}</option>)}</select>
-          <input type="date" required className="input" style={{ width: "auto" }} value={f.date} onChange={e => setF({ ...f, date: e.target.value })} aria-label="Date" />
+      <form className="race-group" onSubmit={e => { e.preventDefault(); if (f.date) add.mutate(); }}>
+        <div className="race-head"><b>Add a race</b></div>
+        <div className="form-grid">
+          <label className="wide">Name<input className="input" placeholder="Race name" value={f.label} onChange={e => setF({ ...f, label: e.target.value })} /></label>
+          <label>Distance<select className="input" value={f.type} onChange={e => setF({ ...f, type: e.target.value })}>
+            {TYPES.map(t => <option key={t}>{t}</option>)}</select></label>
+          <label>Date<input type="date" required className="input" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></label>
+          <label>Gun time<input type="time" className="input" value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} /></label>
+          <label>Time zone<input className="input" list="tzlist" placeholder={up[0]?.default_tz || "your zone"} value={f.start_tz} onChange={e => setF({ ...f, start_tz: e.target.value })} /></label>
+          <label>Priority<select className="input" value={f.priority} onChange={e => setF({ ...f, priority: e.target.value })}>
+            {["A", "B", "C"].map(p => <option key={p}>{p}</option>)}</select></label>
+          <label>Goal<input className="input" placeholder="e.g. 1:59" value={f.target} onChange={e => setF({ ...f, target: e.target.value })} /></label>
         </div>
-        <div className="row">
-          <input type="time" className="input" style={{ width: "auto" }} value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} aria-label="Gun time (optional)" title="Gun time (optional)" />
-          <input className="input" style={{ width: "16ch" }} list="tzlist" placeholder={up[0]?.default_tz || "your zone"} value={f.start_tz} onChange={e => setF({ ...f, start_tz: e.target.value })} aria-label="Time zone" />
-          <select className="input" style={{ width: "auto" }} value={f.priority} onChange={e => setF({ ...f, priority: e.target.value })} aria-label="Priority">
-            {["A", "B", "C"].map(p => <option key={p}>{p}</option>)}</select>
-          <input className="input" style={{ width: "14ch" }} placeholder="goal (finish / 3:55)" value={f.target} onChange={e => setF({ ...f, target: e.target.value })} aria-label="Goal" />
-          <button type="submit" className="btn primary" disabled={add.isPending || !f.date}>{add.isPending ? "Planning…" : "Add race"}</button>
-        </div>
+        <button type="submit" className="btn primary" disabled={add.isPending || !f.date} style={{ alignSelf: "flex-start" }}>{add.isPending ? "Planning…" : "Add race"}</button>
       </form>
       {past.length > 0 && <div><b>Past races</b>{past.map(o => (
         <div key={o.id} className="list-item"><span className="k">{dateShort(o.date)}</span><span className="v">{o.label} · {o.type} <Pill>{pastChip(o)}</Pill></span></div>))}</div>}
@@ -138,13 +134,13 @@ export function RacesTile({ rows, selected, onSelect, onEdit }: { rows: RaceRow[
               <div className="row muted" style={{ justifyContent: "space-between", fontSize: "var(--fs-label)" }}><span>{hm(lo)}</span><span>{hm((lo + hi) / 2)}</span><span>{hm(hi)}</span></div>
               <span className="num">{r.finish.lo}–{r.finish.hi} · median <b>{r.finish.hms}</b>{r.target ? ` · goal ${r.target}` : ""}</span>
             </>}
-            <span className="muted" style={{ fontSize: "var(--fs-small)" }}>Fitness on race day: CTL {r.proj_ctl ?? "—"} · verdict: {r.verdict ?? "—"}</span>
+            <span className="muted t-small">Fitness on race day: CTL {r.proj_ctl ?? "—"} · verdict: {r.verdict ?? "—"}</span>
             <button type="button" className="linkish" aria-expanded={open === r.date} onClick={() => setOpen(open === r.date ? null : r.date)}>
               {open === r.date ? "Hide the source ↑" : "Why this range, and the source →"}</button>
             {open === r.date && <div className="list" style={{ gap: 8, fontSize: "var(--fs-small)" }}>
               {r.note ? <span>{bold(r.note)}</span> : <span>Projected verdict: <b>{r.verdict}</b></span>}
               {r.later.length > 0 && <span>If the race were later (same training): {r.later.map(l => `+${l.weeks} w → ${l.hms}`).join(" · ")}</span>}
-              {r.anchor_stale_days != null && <span className="muted">◷ last measured {r.anchor_stale_days} days ago — today's shape unread</span>}
+              {r.anchor_stale_days != null && <span className="muted">◷ last measured {r.anchor_stale_days} days ago: today's shape unread</span>}
               {r.now && r.finish && <span><b>Now:</b> off today's shape {r.now.hms} → by race day {r.finish.hms} · the build buys {Math.round(r.now.gain_s / 60)} min</span>}
               <LimitSource k="finish" />
             </div>}

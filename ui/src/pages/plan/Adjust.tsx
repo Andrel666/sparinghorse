@@ -14,10 +14,10 @@ export function AdjustmentBanner({ a, onDiff }: { a: Adjustment; onDiff: (d?: Di
   const clear = useAction<{ ok: boolean; diff?: Diff }>("/api/adjustment/clear", undefined, { done: r => { onDiff(r.diff); return "Adjustment cleared"; } });
   return (
     <Banner tone={a.medical ? "bad" : "warn"} action={<button type="button" className="btn" onClick={() => clear.mutate()}>Clear adjustment</button>}>
-      <b>{a.medical ? "Medical flag" : "Active adjustment"} — {a.effect}</b>
+      <b>{a.medical ? "Medical flag" : "Active adjustment"}: {a.effect}</b>
       <div className="muted">“{a.note}” · {a.from} → {a.until}{a.summary ? ` · ${a.summary}` : ""}</div>
       {a.clamp && <div className="muted">Engine clamp: {a.clamp}</div>}
-      {a.medical && <div className="muted">Sparing Horse tracks and flags — it never diagnoses. Clear this once your doctor signs off.</div>}
+      {a.medical && <div className="muted">Sparing Horse tracks and flags: it never diagnoses. Clear this once your doctor signs off.</div>}
     </Banner>);
 }
 
@@ -34,8 +34,8 @@ export function TellTheHorse({ enabled, onDiff, bare }: { enabled: boolean; onDi
   if (prop?.ok && prop.kind === "log" && !logNote.isPending && !logNote.isSuccess) logNote.mutate(prop.note || text);
   const body = (
     <>
-      <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
-        Something about a run you've done is logged on it. Something ahead (a niggle, a trip, a bad week) proposes easing the plan — it only ever eases.</span>
+      <span className="muted t-small">
+        Something about a run you've done is logged on it. Something ahead (a niggle, a trip, a bad week) proposes easing the plan: it only ever eases.</span>
       <form className="row" onSubmit={e => { e.preventDefault(); if (text.trim()) { setProp(null); logNote.reset(); propose.mutate(text.trim()); } }}>
         <input className="input" style={{ flex: 1, maxWidth: "none" }} value={text} disabled={!enabled} onChange={e => setText(e.target.value)}
                placeholder={enabled ? "e.g. calf tight since Sunday, or: travelling Thursday to Sunday" : "Needs an AI connection and AI judgment switched on in Settings"} aria-label="Tell the horse" />

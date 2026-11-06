@@ -54,9 +54,9 @@ function FitnessView({ head }: { head: ReactNode }) {
                             { pts: d.chart.plan, color: "var(--signal)", label: "Planned fitness", dashed: true },
                             { pts: d.chart.tsb, color: "", label: "Form", hidden: true },
                             { pts: d.chart.acwr, color: "", label: "Load ratio", hidden: true }]} />
-            {d.chart.check && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
+            {d.chart.check && <span className="muted t-small">
               Model {d.chart.check.model.fitness} / {d.chart.check.model.fatigue} vs Runalyze {d.chart.check.runalyze.fitness} / {d.chart.check.runalyze.fatigue}
-              {d.chart.check.close ? " — they agree." : " — they differ; a sync or a duplicate may be missing."}</span>}
+              {d.chart.check.close ? ": they agree." : ": they differ; a sync or a duplicate may be missing."}</span>}
             {d.chart.duplicates > 0 && !d.chart.check?.close && <Banner tone="warn">Heads-up: {d.chart.duplicates} duplicate
               activities inflate Runalyze's numbers. Delete them on Runalyze, or delete the leftover copy here (banner at the top).</Banner>}
           </Card>
@@ -64,9 +64,9 @@ function FitnessView({ head }: { head: ReactNode }) {
             {d.load.acwr != null && <>
               <div className="stat-value sm num">{d.load.acwr.toFixed(2)}×</div>
               <Gauge value={d.load.acwr} band={d.load.band} />
-              <span style={{ fontSize: "var(--fs-small)" }}>{d.load.text}</span>
+              <span className="t-small">{d.load.text}</span>
             </>}
-            {d.load.ramp != null && <ListItem k="Last 7 days">Fitness {d.load.ramp > 0 ? "+" : ""}{d.load.ramp} — {d.load.ramp_word}</ListItem>}
+            {d.load.ramp != null && <ListItem k="Last 7 days">Fitness {d.load.ramp > 0 ? "+" : ""}{d.load.ramp}: {d.load.ramp_word}</ListItem>}
           </Card>
           <Card id="easy" label={`Easy runs · last ${d.easy.window_days} days`} span={12}
                 tone={verdictTone(d.easy.too_hard ? "too_hard" : d.easy.hot ? "hot" : d.easy.judged ? "on" : null)}>
@@ -74,10 +74,10 @@ function FitnessView({ head }: { head: ReactNode }) {
               <span className="stat-value sm num toned">{d.easy.on ?? 0}/{d.easy.judged ?? 0}</span>
               <span className="muted">easy enough, judged by {d.easy.by} {d.easy.ceiling ? `(${d.easy.ceiling})` : ""}</span>
             </div>
-            {d.easy.agreement && <span style={{ fontSize: "var(--fs-small)" }}>{d.easy.agreement}</span>}
-            {d.easy.lt1 && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{d.easy.lt1} {d.easy.lthr_note ?? ""}</span>}
-            {d.easy.detrained && <span style={{ fontSize: "var(--fs-small)" }}>{d.easy.detrained}</span>}
-            {d.easy.field_test && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{d.easy.field_test}</span>}
+            {d.easy.agreement && <span className="t-small">{d.easy.agreement}</span>}
+            {d.easy.lt1 && <span className="muted t-small">{d.easy.lt1} {d.easy.lthr_note ?? ""}</span>}
+            {d.easy.detrained && <span className="t-small">{d.easy.detrained}</span>}
+            {d.easy.field_test && <span className="muted t-small">{d.easy.field_test}</span>}
             <Table cols={EASY_COLS} rows={d.easy.runs} keyOf={r => r.date + r.km} />
           </Card>
           <Card id="weekly" label="Weekly distance" lede={d.weekly_headline ?? undefined} span={8}>
@@ -89,7 +89,7 @@ function FitnessView({ head }: { head: ReactNode }) {
                 <span className="num">{z.pace ? `${z.pace}/km` : "—"}</span>
                 <span className="muted num"> · {z.hr ? (z.hr.lo && z.hr.hi ? `${z.hr.lo}–${z.hr.hi}` : z.hr.hi ? `≤ ${z.hr.hi}` : `≥ ${z.hr.lo}`) + " bpm" : "—"}</span>
               </ListItem>))}</div>
-            <span className="muted" style={{ fontSize: "var(--fs-label)" }}>{d.zones_note}</span>
+            <span className="muted t-label">{d.zones_note}</span>
           </Card>
           <Durability d={d} />
           <Card id="efficiency" label="Aerobic efficiency · speed per heartbeat" span={6} tone={d.efficiency.verdict === "improving" ? "ok" : undefined}>
@@ -97,7 +97,7 @@ function FitnessView({ head }: { head: ReactNode }) {
             <Scatter dots={efDots} xLabel="date" yLabel="efficiency" xFmt={v => numDay(t0 + v)}
                      fit={ed.fit ? ed.fit.map(p => [day(p.date) - t0, p.v] as [number, number]) : undefined} />
             {ed.points.some(p => p.temp != null) && <Bars items={ed.points.map(p => ({ label: `${p.date} · ${p.temp ?? "?"} °C`, v: p.temp ?? 0 }))} height={40} unit="°C" />}
-            {ed.temp_note && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{ed.temp_note}</span>}
+            {ed.temp_note && <span className="muted t-small">{ed.temp_note}</span>}
           </Card>
           {d.track_full.races.length === 0 && !d.track_full.lines.length
             ? <Card id="track" label="Prediction track record" span={12}><span className="muted">{d.track_full.empty ?? "Nothing scored yet."}</span></Card>
@@ -137,17 +137,17 @@ function Durability({ d }: { d: FitnessPage }) {
       <span>{m.headline || d.durability.text}</span>
       {view === "chart" ? <>
         <Scatter dots={dots} xLabel="distance (km)" yLabel="fade %" refs={dd.lines} fit={fitLine(cur) || fitLine(other)} />
-        <div className="row"><span className="muted" style={{ fontSize: "var(--fs-label)" }}>Compare with</span>
+        <div className="row"><span className="muted t-label">Compare with</span>
           {m.builds.filter(b => !b.current).map(b => <button key={b.key} type="button" className={`btn${b.key === cmp ? " primary" : ""}`} aria-pressed={b.key === cmp}
             onClick={() => setCmp(b.key)}>{b.label}{b.pb ? " (best)" : ""}</button>)}</div>
         <div className="row">{[cur, other].filter(Boolean).map(b => <Pill key={b!.key}><span className="dot" style={{ background: color(b!) }} />
           {b!.label}: {b!.horizon} · {b!.current ? `${b!.n} runs so far` : b!.pb ? "best build" : `${b!.n} runs`}</Pill>)}</div>
-        <span className="muted" style={{ fontSize: "var(--fs-label)" }}>Grey: long runs · rings: race day · lower is better</span>
+        <span className="muted t-label">Grey: long runs · rings: race day · lower is better</span>
       </> : <Table phone="scroll" cols={[{ head: "Build", cell: (b: FitnessPage["durability_more"]["builds"][number]) => `${b.label}${b.pb ? " · best" : ""}` },
           ...m.bands.map((band, i) => ({ head: band, num: true, cell: (b: FitnessPage["durability_more"]["builds"][number]) => b.cells[i]
             ? <span className={`tone-${tint(b.cells[i]!.median)} toned`}>{b.cells[i]!.median}% <span className="muted">({b.cells[i]!.n})</span></span> : <span className="muted">—</span> })),
           { head: "Race", num: true, cell: b => b.race_pct != null ? <span className={`tone-${tint(b.race_pct)} toned`}>{b.race_pct}%</span> : b.current ? "race day" : "—" }]}
           rows={m.builds} keyOf={b => b.key} />}
-      <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{m.footnote}{d.durability.note ? ` · ${d.durability.note}` : ""}</span>
+      <span className="muted t-small">{m.footnote}{d.durability.note ? ` · ${d.durability.note}` : ""}</span>
     </Card>);
 }

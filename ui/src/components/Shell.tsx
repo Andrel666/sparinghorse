@@ -1,6 +1,8 @@
 // The app frame: sidebar on desktop, tab bar + More sheet on phones — both built from PAGES.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { NavLink, useLocation, useNavigate, useNavigationType, type Location } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate, useNavigationType, useSearchParams, type Location } from "react-router-dom";
+import { Drawer } from "./layout";
+import { Chat } from "./Chat";
 import { BackCtx, type Back } from "../lib/trail";
 import { PAGES } from "../lib/pages";
 import { Icon } from "./Icon";
@@ -41,6 +43,9 @@ export function Shell({ children }: { children: ReactNode }) {
   const tabs = nav.filter(p => p.tab), rest = nav.filter(p => !p.tab);
   const inMore = rest.some(p => p.path === loc.pathname);
   const back = useTrail(loc), go = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const asking = params.get("ask") === "1";            // the Ask drawer: the coach chat over any page
+  const setAsk = (on: boolean) => setParams(p => { const n = new URLSearchParams(p); if (on) n.set("ask", "1"); else n.delete("ask"); return n; });
   return (
     <div className="shell">
       <header className="nav" aria-label="Sparing Horse">
@@ -49,11 +54,17 @@ export function Shell({ children }: { children: ReactNode }) {
           {[...top, ...bottom].map(p => <NavLink key={p.path} to={p.path} end className={navCls} state={ROOT}>{p.label}</NavLink>)}
         </nav>
         <div className="nav-spacer" />
+        {loc.pathname !== "/coach" && <button type="button" className="btn ask-btn" aria-expanded={asking} onClick={() => setAsk(true)}>
+          <Icon name="chat" />Ask</button>}
         {shell.data && <TopBar s={shell.data} />}
       </header>
       <main className="main" onClick={() => more && setMore(false)}>
         {back && <div className="backbar"><button type="button" className="back-link" onClick={() => go(-back.steps)}>‹ {back.label}</button></div>}
         <BackCtx.Provider value={back}>{children}</BackCtx.Provider></main>
+      <Drawer title="Ask the coach" open={asking} onClose={() => setAsk(false)}>
+        <Chat />
+        <Link to="/coach" className="linkish" onClick={() => setAsk(false)} state={{ root: true }}>Open the coach page ›</Link>
+      </Drawer>
       {more && <div className="more-sheet" role="menu">
         {rest.map(p => <NavLink key={p.path} to={p.path} className={navCls} state={ROOT} onClick={() => setMore(false)}>
           <Icon name={p.icon} />{p.label}</NavLink>)}

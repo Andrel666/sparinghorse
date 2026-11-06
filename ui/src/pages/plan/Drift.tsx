@@ -35,8 +35,8 @@ const gapText = (g: Gap | undefined, what: string, u = "") => !g || g.state === 
 function Block({ title, note, series, fmt }: { title: string; note: string; series: Series[]; fmt?: (v: number) => string }) {
   const has = series.some(s => s.pts.length > 1);
   return <Card span={6} label={title}>
-    {has ? <Lines series={series} height={180} fmt={fmt} /> : <span className="muted">Not enough history yet — the road will move as results come in.</span>}
-    <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{note}</span></Card>;
+    {has ? <Lines series={series} height={180} fmt={fmt} /> : <span className="muted">Not enough history yet: the road will move as results come in.</span>}
+    <span className="muted t-small">{note}</span></Card>;
 }
 
 export function DriftView({ race }: { race?: string }) {
@@ -67,7 +67,7 @@ export function DriftView({ race }: { race?: string }) {
           {sc?.chain && <Table cols={[{ head: "A race", cell: (c: NonNullable<typeof sc.chain>[number]) => c.label }, { head: "Date", cell: c => dateShort(c.date) },
             { head: "Peak CTL", cell: c => `${c.founding} → ${c.now}`, num: true }, { head: "", cell: c => c.run ? "run" : c.trend }]}
             rows={sc.chain} keyOf={c => c.date} />}
-          <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
+          <span className="muted t-small">
             {d.anchor && `Baseline: the plan of ${dateShort(d.anchor.for_date)}${d.anchor.is_current ? " (just sealed)" : ""} · ${d.anchor.versions} versions on record`}
             {d.race && ` · ${d.race.label}, ${d.race.weeks_away} weeks out`}
             {d.duplicate_count ? ` · ${d.duplicate_count} duplicate activities inflate the actuals` : ""}
@@ -91,7 +91,7 @@ export function DriftView({ race }: { race?: string }) {
             <Lines height={180} series={[{ pts: pts(d.ctl?.initial, "ctl"), color: "var(--muted)", label: "Original", dashed: true },
                      { pts: pts(d.ctl?.actual, "ctl"), color: "var(--text)", label: "Actual" },
                      { pts: pts(d.ctl?.current, "ctl"), color: "var(--signal)", label: "Now", dashed: true }]} />
-            <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
+            <span className="muted t-small">
               {d.ctl_forecast_bias?.n ? `The weekly fitness forecast runs ${d.ctl_forecast_bias.direction} by ${d.ctl_forecast_bias.median_err_pct}% (${d.ctl_forecast_bias.n} settled).`
                 : "No weekly fitness forecast has settled yet."}
               <Help>Each week the engine forecasts end-of-week fitness; once the week is lived, the forecast is scored against what happened.</Help></span>
@@ -107,7 +107,7 @@ export function DriftView({ race }: { race?: string }) {
           <Block title="Cumulative distance" note={`${NAME[cf.vs]} is your road now; ${NAME[cf.regime]} is ${cf.regime === "assertive" ? "what earning it unlocks" : "the floor if the gate re-closes"}.`}
             fmt={v => `${dist(v).toFixed(0)} ${unit()}`}
             series={[{ pts: curDist.filter(x => x.kind === "actual").map(x => ({ date: x.date, v: x.cum })), color: "var(--text)", label: "Run" },
-                     { pts: curDist.map(x => ({ date: x.date, v: x.cum })), color: "var(--text)", label: `${NAME[cf.vs]} — now` },
+                     { pts: curDist.map(x => ({ date: x.date, v: x.cum })), color: "var(--text)", label: `${NAME[cf.vs]}: now` },
                      { pts: pts(cf.distance, "cum"), color: "var(--signal)", label: NAME[cf.regime], dashed: true }]} />
           <Block title="Weekly training load" note="TRIMP per week under each posture." fmt={v => v.toFixed(0)}
             series={[{ pts: pts(d.effort?.current, "trimp"), color: "var(--text)", label: NAME[cf.vs] },
@@ -121,7 +121,7 @@ export function DriftView({ race }: { race?: string }) {
               <ListItem k={NAME[cf.regime]}>peak CTL {cf.outcome.peak_ctl} · finish {cf.outcome.finish}</ListItem>
               {cf.outcome.curve?.filter(c => c.plus_weeks).length ? <ListItem k="With more runway">{cf.outcome.curve.filter(c => c.plus_weeks).map(c => `+${c.plus_weeks} w → ${c.hms}`).join(" · ")}</ListItem> : null}
             </div>
-            <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{cf.reason}</span>
+            <span className="muted t-small">{cf.reason}</span>
             <Pill>{cf.regime === "assertive" ? "the upside if the posture is earned" : "the floor if the gate re-closes"}</Pill>
           </Card>
         </>}

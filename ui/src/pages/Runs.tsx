@@ -22,25 +22,25 @@ const TOTALS: [string, string, (v: unknown) => string][] = [["runs", "Runs", v =
 
 function RunDetail({ id, onGone }: { id: number; onGone: () => void }) {
   const ignore = useAction<{ ok: boolean }, boolean>(on => `/api/activity/${id}/${on ? "ignore" : "unignore"}`, () => ({ reason: "manual" }),
-    { done: () => "Saved — your stats are recomputed" });
+    { done: () => "Saved: your stats are recomputed" });
   const del = useAction<{ ok: boolean }>(`/api/activity/${id}/delete`, undefined, {
     confirm: { title: "Delete this activity?", ok: "Delete locally",
-      lines: ["It is removed from this app's copy only — Runalyze keeps it.", "Fitness, fatigue and the plan are recomputed without it.",
+      lines: ["It is removed from this app's copy only: Runalyze keeps it.", "Fitness, fatigue and the plan are recomputed without it.",
               "A full backfill would bring it back if Runalyze still has it."], alt: "Use Ignore instead to exclude it reversibly." },
     done: () => { onGone(); return "Activity deleted"; } });
   return <Query q={useRun(id)}>{r => (
-    <Card span={7} label={`${dateLong(r.date)}${r.time ? ` · ${r.time}` : ""} · ${r.sport}${r.title ? ` — ${r.title}` : ""}`} tone={verdictTone(r.verdict)}
+    <Card span={7} label={`${dateLong(r.date)}${r.time ? ` · ${r.time}` : ""} · ${r.sport}${r.title ? `: ${r.title}` : ""}`} tone={verdictTone(r.verdict)}
           aside={<span className="row">
             {r.ignored ? <><Pill>Ignored</Pill><button className="btn" onClick={() => ignore.mutate(false)}>Undo</button></>
               : <button className="btn" title="Exclude this run from your stats (reversible)" onClick={() => ignore.mutate(true)}><Icon name="hide" /> Ignore</button>}
             <button className="btn" onClick={() => del.mutate()}><Icon name="trash" /> Delete</button></span>}>
-      {r.split && <Pill>1+1 · part {r.split.index}/{r.split.parts} — the whole run was {km(r.split.km)} in {r.split.min} min; these numbers are this part only</Pill>}
+      {r.split && <Pill>1+1 · part {r.split.index}/{r.split.parts}: the whole run was {km(r.split.km)} in {r.split.min} min; these numbers are this part only</Pill>}
       <div className="figures run-hero">{r.stats.filter(s => s.v && s.primary).map(s =>
         <div key={s.k} className="figure"><span className="k">{s.k}</span><span className="v">{s.v}</span></div>)}</div>
       <div className="run-secondary">{r.stats.filter(s => s.v && !s.primary).map(s =>
         <div key={s.k}><span className="muted">{s.k}</span> <b className="num">{s.v}</b></div>)}</div>
       {r.readback?.kind && <span><b>Read back:</b> {r.readback.composite ? `1+1 (${r.readback.composite} parts) · ` : ""}{r.readback.kind}
-        {r.readback.summary ? ` — ${r.readback.summary}` : ""}{r.readback.rough ? " · rough signal" : ""}
+        {r.readback.summary ? `: ${r.readback.summary}` : ""}{r.readback.rough ? " · rough signal" : ""}
         <Help>Detected from the run's own streams: warm-up, work and recovery segments, and what kind of session that adds up to.</Help></span>}
       {r.readback?.strides && <span className="muted"><b>Strides read:</b> {r.readback.strides}</span>}
       {r.verdict_text && <Pill tone={verdictTone(r.verdict)} dot>{r.verdict_text}</Pill>}
@@ -114,7 +114,7 @@ export function Runs() {
               <thead><tr><th /><th className="num">Month</th><th className="num">12 mo</th><th className="num">All time</th></tr></thead>
               <tbody>{TOTALS.map(([k, t, f]) => <tr key={k}><td>{t}</td><td className="num">{f(m.stats[k])}</td><td className="num">{f(m.stats12[k])}</td>
                 <td className="num">{f(m.statsAll[k])}</td></tr>)}</tbody></table></div>
-            {m.since && <span className="muted" style={{ fontSize: "var(--fs-label)" }}>All time = since {new Date(m.since).toLocaleDateString()}</span>}
+            {m.since && <span className="muted t-label">All time = since {new Date(m.since).toLocaleDateString()}</span>}
           </div>
           <div className="span-7 runs-right">
             {picked && <button type="button" className="linkish phone-only" onClick={() => pick(undefined)}>‹ Runs</button>}

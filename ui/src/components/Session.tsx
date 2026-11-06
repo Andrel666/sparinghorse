@@ -48,8 +48,8 @@ export function DayDetail({ sessions, onRun, ranHere = [], movedFrom }: { sessio
         return (
           <div key={`${s.kind}${i}`} className="list" style={{ gap: "var(--sp-3)" }}>
             <SessionBlock s={s as SessionDetail} />
-            {s.note && s.note.toLowerCase() !== s.title.toLowerCase() && !s.steps.length && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{s.note}</span>}
-            {s.reflection && <p style={{ fontSize: "var(--fs-small)" }}><b>How it went:</b> {s.reflection}</p>}
+            {s.note && s.note.toLowerCase() !== s.title.toLowerCase() && !s.steps.length && <span className="muted t-small">{s.note}</span>}
+            {s.reflection && <p className="t-small"><b>How it went:</b> {s.reflection}</p>}
             {runs.length > 0 && <div className="list" style={{ gap: 4 }}>{runs.map((r, j) => r.activity_id &&
               <Link key={j} to={`/runs?id=${r.activity_id}`} className="linkish" onClick={onRun}>
                 Open the run{runs.length > 1 ? ` ${j + 1}` : ""}{r.km != null ? ` · ${km(r.km)}` : ""}{r.pace ? ` at ${pace(r.pace)}` : ""} →</Link>)}</div>}

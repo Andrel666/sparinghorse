@@ -124,9 +124,9 @@ function Recovery({ items }: { items: NonNullable<TodayPage["recovery"]> }) {
   return <div>{items.map(m => (
     <Link key={m.key} to={`/fitness?tab=body#${m.key}`} className="marker-row" aria-label={`${m.label} ${m.value} ${m.unit}. ${m.sub}. Open the marker`}>
       <div className="list" style={{ gap: 2 }}>
-        <span className="muted" style={{ fontSize: "var(--fs-label)" }}>{m.label}</span>
+        <span className="muted t-label">{m.label}</span>
         <span className={`num marker-v${m.state ? ` tone-${MARKER_TONE[m.state]} toned` : ""}`}>{m.value}<small> {m.unit}</small></span>
-        <span className="muted" style={{ fontSize: "var(--fs-label)" }}>{m.sub}</span>
+        <span className="muted t-label">{m.sub}</span>
       </div>
       <div className="marker-spark">{m.series.length > 1 ? <Spark pts={m.series} /> : null}</div>
     </Link>))}
@@ -144,7 +144,7 @@ function LatestRun({ lr }: { lr: NonNullable<TodayPage["latest_run"]> }) {
       ]} />
       {(lr.verdict_line || lr.verdict_text) && <Link to="/fitness#easy" style={{ textDecoration: "none", color: "inherit", alignSelf: "flex-start" }}>
         <Pill tone={verdictTone(lr.verdict)} dot>{lr.verdict_line ?? cap(lr.verdict_text!)}</Pill></Link>}
-      {lr.cross_training && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{lr.cross_training}</span>}
+      {lr.cross_training && <span className="muted t-small">{lr.cross_training}</span>}
     </Card>);
 }
 
@@ -173,7 +173,7 @@ export function Today() {
         <div className="grid">
           {d.where && <WhereYouAre w={d.where} />}
           {w && <Card label="This week" span={8}
-                      aside={<Link to="/plan" className="linkish" style={{ fontSize: "var(--fs-small)" }}>Plan ›</Link>}>
+                      aside={<Link to="/plan" className="linkish t-small">Plan ›</Link>}>
             {w.km_done != null && <>
               <span className="num">{w.km_done} of {w.km} km · {w.runs_done} of {w.runs_planned} runs</span>
               <div className="meter" role="img" aria-label={`${w.km_done} of ${w.km} km run`}>

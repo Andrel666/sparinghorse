@@ -48,7 +48,7 @@ function WeekView({ p, onWeek, onDay, onLimit, onDiff }: { p: PlanPage; onWeek: 
                                                          onLimit: (key: string) => void; onDiff: (d?: Diff) => void }) {
   const w = p.week, nav = useNavigate();
   const deload = useAction<{ ok: boolean; diff?: Diff }, boolean>("/api/plan/deload", retire => ({ week: w.deload?.week, retire }),
-    { done: r => { onDiff(r.diff); return "Answer recorded — the plan re-laid the week"; }, fail: "Could not record the answer" });
+    { done: r => { onDiff(r.diff); return "Answer recorded: the plan re-laid the week"; }, fail: "Could not record the answer" });
   const have = new Set(w.sessions.map(s => s.date));
   const lines = [...w.sessions.map(s => ({ d: s.date, s })), ...DAYS(w.start).filter(d => !have.has(d)).map(d => ({ d, s: null }))]
     .sort((a, b) => a.d.localeCompare(b.d));
@@ -79,7 +79,7 @@ function WeekView({ p, onWeek, onDay, onLimit, onDiff }: { p: PlanPage; onWeek: 
                    onClick={() => onDay(l.d)} label={`${dateShort(l.d)}: rest day, a run moved here. Show it`} />
             : <Row key={l.d} lead={lead} main={<span className="muted" style={{ fontWeight: 400 }}>Rest</span>} />;
         })}</div>
-        {w.intent && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{w.intent}</span>}
+        {w.intent && <span className="muted t-small">{w.intent}</span>}
       </Card>
       <Card span={4} label="Why this week looks like this" id="limits">
         <span>{w.held ? `${w.held.text}.` : "No limit binds this week."}</span>
@@ -92,7 +92,7 @@ function WeekView({ p, onWeek, onDay, onLimit, onDiff }: { p: PlanPage; onWeek: 
               <span>{l.name}{l.holds && <Pill tone="warn">holds the week</Pill>}{l.over && !l.holds && <Pill tone="bad">ran over</Pill>}</span>
               <span className="muted num">{l.laid} of {l.ceiling} {l.unit}</span></div>
             <div className="meter"><span style={{ width: `${(l.fill ?? 0) * 100}%` }} /></div>
-            <span className="muted" style={{ fontSize: "var(--fs-label)" }}>
+            <span className="muted t-label">
               {l.over ? `over by ${Math.abs(l.headroom ?? l.laid - l.ceiling).toFixed(2)}` : l.headroom != null ? `${l.headroom.toFixed(2)} to spare` : ""}
               {basisLabel(l.basis) ? ` · ${basisLabel(l.basis)}` : ""}{hasSource(l.key) ? " · why ›" : ""}</span>
           </button>))}</div>
@@ -107,11 +107,11 @@ function PostureAndPaces({ p, onSource }: { p: PlanPage; onSource: (k: string) =
     <Card span={4} label="Posture and paces" tier="group" id="posture">
       <button type="button" className="kv-btn" onClick={() => onSource("posture")} aria-label={`${h.posture.label}: where this comes from`}>
         <b>{h.posture.label}</b> <span className="muted">· {h.posture.ride} ›</span></button>
-      {h.posture.reason && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{h.posture.reason}</span>}
+      {h.posture.reason && <span className="muted t-small">{h.posture.reason}</span>}
       <button type="button" className="kv-btn paces" onClick={() => onSource("paces")} aria-label="The paces: where these come from">
         {p.paces.map(z => <span key={z.key}><span className="muted">{z.label.replace(" (easy ceiling)", "")}</span> <b className="num">{z.pace}</b></span>)}
         <span className="muted">/km ›</span></button>
-      {h.pace_note && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{h.pace_note}</span>}
+      {h.pace_note && <span className="muted t-small">{h.pace_note}</span>}
     </Card>);
 }
 

@@ -16,18 +16,18 @@ export function AwayDays() {
   const q = useGet<Away[]>("away", "/api/availability");
   const [f, setF] = useState({ from: "", to: "", note: "" });
   const add = useAction<{ ok: boolean }>("/api/availability", () => ({ date_from: f.from, date_to: f.to || f.from, note: f.note }),
-    { done: () => { setF({ from: "", to: "", note: "" }); return "Away days added — the plan lays around them"; }, fail: "Could not add the away days" });
+    { done: () => { setF({ from: "", to: "", note: "" }); return "Away days added: the plan lays around them"; }, fail: "Could not add the away days" });
   const rm = useAction<{ ok: boolean }, Away>(a => `/api/availability/${a.id}/remove`, undefined, {
     confirm: a => ({ title: "Clear these away days?", ok: "Clear", lines: [`${dateShort(a.date_from)} → ${dateShort(a.date_to)}${a.note ? ` · ${a.note}` : ""}`],
-      alt: "They stay listed for 24 hours with a put-back control." }), done: () => "Cleared — the plan re-laid" });
+      alt: "They stay listed for 24 hours with a put-back control." }), done: () => "Cleared: the plan re-laid" });
   const back = useAction<{ ok: boolean }, number>(id => `/api/availability/${id}/restore`, undefined, { done: () => "Put back" });
   return <Card label="Away / can't run">
-    <span className="muted" style={{ fontSize: "var(--fs-small)" }}>The plan lays its runs around these days. Away days stay private.</span>
+    <span className="muted t-small">The plan lays its runs around these days. Away days stay private.</span>
     <Query q={q}>{xs => xs.length ? <div className="list">{xs.map(a => (
       <ListItem key={a.id} k={`${dateShort(a.date_from)} → ${dateShort(a.date_to)}`}>
         {a.note}{a.active ? <button className="btn" style={{ marginLeft: 8 }} aria-label="Clear" onClick={() => rm.mutate(a)}>✕</button>
           : <><span className="muted"> · cleared</span> <button className="btn" onClick={() => back.mutate(a.id)}>Put back</button></>}</ListItem>))}</div>
-      : <span className="muted">None — you're fully available.</span>}</Query>
+      : <span className="muted">None: you're fully available.</span>}</Query>
     <form className="row" onSubmit={e => { e.preventDefault(); if (f.from) add.mutate(); }}>
       <input type="date" required className="input" style={{ width: "auto" }} value={f.from} onChange={e => setF({ ...f, from: e.target.value })} aria-label="From" />
       <input type="date" className="input" style={{ width: "auto" }} value={f.to} min={f.from} onChange={e => setF({ ...f, to: e.target.value })} aria-label="To" />
@@ -46,13 +46,13 @@ interface Cal { ok: boolean; in_force: Record<string, number>; proposal: null | 
 export function Calibration() {
   const q = useGet<Cal>("cal", "/api/calibration");
   const act = (a: string, msg: string) => useAction<{ ok: boolean }>(`/api/calibration/${a}`, undefined, { done: () => msg, fail: "Calibration failed" });
-  const fit = act("fit", "Fitted — review and approve"), ok = act("approve", "Calibration approved — in force"), rev = act("revert", "Back on the defaults");
+  const fit = act("fit", "Fitted: review and approve"), ok = act("approve", "Calibration approved: in force"), rev = act("revert", "Back on the defaults");
   return <Query q={q}>{c => {
     const p = c.proposal, n = Object.keys(c.in_force).length;
     return <Card label="Calibrate to my history">
       <span className="muted">Re-fits the engine's load and safety numbers to your runs and injury history. Nothing changes until you approve.</span>
-      {!p ? <span className="muted">{n ? "" : "No calibration — the engine runs on its defaults."}</span> : <>
-        <span><b>{p.approved ? "In force" : "Proposed — not applied"}</b> · fitted {p.created_at.slice(0, 10)} on {p.history.runs} runs</span>
+      {!p ? <span className="muted">{n ? "" : "No calibration: the engine runs on its defaults."}</span> : <>
+        <span><b>{p.approved ? "In force" : "Proposed: not applied"}</b> · fitted {p.created_at.slice(0, 10)} on {p.history.runs} runs</span>
         <Table phone="scroll" cols={[{ head: "Number", cell: (x: NonNullable<Cal["proposal"]>["params"][number]) => CAL_NAMES[x.key] || x.key },
           { head: "Default", cell: x => x.default, num: true }, { head: "Fitted", cell: x => x.value, num: true },
           { head: "Status", cell: x => x.status === "fitted" ? <Pill tone="warn">change</Pill> : x.status === "insufficient" ? "no data" : "keep" },
@@ -81,7 +81,7 @@ export function Keys({ music = false }: { music?: boolean }) {
   return <Query q={q}>{d => {
     const rows = d.secrets.filter(s => MUSIC_KEY.test(s.key) === music);
     return <Card label={music ? "Music keys" : "Keys"}>
-      {!music && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>Keys are write-only: they're never shown again. A Claude key sends Anthropic what the AI
+      {!music && <span className="muted t-small">Keys are write-only: they're never shown again. A Claude key sends Anthropic what the AI
         features need (narration, parsing, judgment, the coach) and nothing else. Check a key against its fingerprint with <code>printf %s "$KEY" | sha256sum</code>.</span>}
       {rows.map(s => {
         const r = v.data?.results?.[s.key];
@@ -91,7 +91,7 @@ export function Keys({ music = false }: { music?: boolean }) {
             : <Pill>not set</Pill>}{s.fingerprint && <code className="muted" title="sha256 of the key, first 8 characters"> fp {s.fingerprint}</code>}</label>
           <div className="row">
             <input id={`sec-${s.key}`} type="password" autoComplete="off" className="input" style={{ maxWidth: 360 }} value={draft[s.key] || ""}
-                   placeholder={s.configured ? "•••• — paste a new value to replace" : "Paste your key to enable"} onChange={e => setDraft({ ...draft, [s.key]: e.target.value })} />
+                   placeholder={s.configured ? "••••: paste a new value to replace" : "Paste your key to enable"} onChange={e => setDraft({ ...draft, [s.key]: e.target.value })} />
             <button className="btn primary" disabled={!draft[s.key]} onClick={() => save.mutate({ key: s.key, value: draft[s.key] }, { onSuccess: () => setDraft({ ...draft, [s.key]: "" }) })}>Save</button>
             {s.source === "saved" && <button className="btn" onClick={() => save.mutate({ key: s.key, value: "" })}>Clear</button>}
           </div>
@@ -107,7 +107,7 @@ type Push = { ok: boolean; pushed?: number; recreated?: number; days?: number; k
 export function Suunto() {
   const q = useGet<{ connected: boolean; user: string | null; configured: boolean; redirect_uri: string }>("suunto", "/api/suunto/status");
   const push = useAction<Push, boolean>("/api/suunto/push", recreate => ({ recreate }),
-    { done: r => `✓ ${r.pushed ?? 0} sessions pushed${r.recreated ? ` (${r.recreated} rebuilt from scratch)` : ""}${r.note ? ` — ${r.note}` : ""}`, fail: "Push failed" });
+    { done: r => `✓ ${r.pushed ?? 0} sessions pushed${r.recreated ? ` (${r.recreated} rebuilt from scratch)` : ""}${r.note ? `: ${r.note}` : ""}`, fail: "Push failed" });
   const off = useAction<{ ok: boolean }>("/api/suunto/disconnect", undefined, { done: () => "Suunto disconnected" });
   return <Query q={q}>{s => <Card label="Suunto">
     <span>{s.connected ? <Pill tone="ok">✓ connected{s.user ? ` as ${s.user}` : ""}</Pill> : s.configured ? <Pill>not connected</Pill> : <Pill>needs the 3 Suunto keys above</Pill>}</span>
@@ -121,7 +121,7 @@ export function Suunto() {
 export function Coros() {
   const q = useGet<{ connected: boolean; pending: boolean; login_url?: string; plan_end: string | null; last_push: string | null; last_error: { at: string; error: string } | null }>("coros", "/api/coros/status");
   const connect = useAction<{ ok: boolean }>("/api/coros/connect", undefined, { done: () => "Sign in to COROS to finish" });
-  const push = useAction<Push>("/api/coros/push", undefined, { done: r => `✓ ${r.days ?? 0} days pushed${r.kept ? ` — ${r.kept} completed days left alone` : ""}${r.note ? ` — ${r.note}` : ""}`, fail: "Push failed" });
+  const push = useAction<Push>("/api/coros/push", undefined, { done: r => `✓ ${r.days ?? 0} days pushed${r.kept ? `: ${r.kept} completed days left alone` : ""}${r.note ? `: ${r.note}` : ""}`, fail: "Push failed" });
   const off = useAction<{ ok: boolean }>("/api/coros/disconnect", undefined, { done: () => "COROS disconnected" });
   return <Query q={q}>{c => <Card label="COROS">
     <span>{c.connected ? <Pill tone="ok">✓ connected</Pill> : c.pending ? <Pill tone="warn">waiting for sign-in</Pill> : <Pill>not connected</Pill>}</span>
@@ -142,10 +142,10 @@ export function Access() {
   const q = useGet<{ mode: string; user: string | null; passphrase_set_on: string | null; session_days: number; cookie_secure: boolean }>("auth", "/api/auth/status");
   const [f, setF] = useState({ current: "", next: "", again: "" });
   const change = useAction<{ ok: boolean }>("/api/auth/passphrase", () => ({ current: f.current, new: f.next }),
-    { done: () => { setF({ current: "", next: "", again: "" }); return "Changed ✓ — other devices are signed out"; }, fail: "Could not change the passphrase" });
+    { done: () => { setF({ current: "", next: "", again: "" }); return "Changed ✓: other devices are signed out"; }, fail: "Could not change the passphrase" });
   return <Query q={q}>{a => a.mode === "none" ? null : <Card label="Console access">
     <span>{a.mode === "proxy" ? `Signed in through the proxy as ${a.user}.` : `Signed in with the passphrase${a.passphrase_set_on ? ` (set ${dateShort(a.passphrase_set_on.slice(0, 10))})` : ""}. Sessions last ${a.session_days} days.`}</span>
-    {!a.cookie_secure && <span style={{ color: "var(--warn)" }}>The session cookie isn't marked secure — serve this over HTTPS.</span>}
+    {!a.cookie_secure && <span style={{ color: "var(--warn)" }}>The session cookie isn't marked secure: serve this over HTTPS.</span>}
     {a.mode === "passphrase" && <form className="row" onSubmit={e => { e.preventDefault(); if (f.next === f.again && f.next.length >= 12) change.mutate(); }}>
       <input type="password" className="input" style={{ width: "18ch" }} placeholder="current" value={f.current} onChange={e => setF({ ...f, current: e.target.value })} aria-label="Current passphrase" autoComplete="current-password" />
       <input type="password" className="input" style={{ width: "18ch" }} placeholder="new (12+ characters)" value={f.next} onChange={e => setF({ ...f, next: e.target.value })} aria-label="New passphrase" autoComplete="new-password" />
@@ -165,7 +165,7 @@ export function System() {
   return <Query q={q}>{s => <Card label="System">
     <div className="list">
       <ListItem k="Engine">v{s.engine_version} · zone {s.tz}</ListItem>
-      <ListItem k="Database">{s.db_writable ? "writable" : <span style={{ color: "var(--bad)" }}>not writable ({s.db_unwritable.join(", ")}) — restart the container</span>}</ListItem>
+      <ListItem k="Database">{s.db_writable ? "writable" : <span style={{ color: "var(--bad)" }}>not writable ({s.db_unwritable.join(", ")}): restart the container</span>}</ListItem>
       <ListItem k="Last sync"><span style={{ color: s.sync_stale ? "var(--warn)" : undefined }}>{t(s.last_sync)}{s.sync_stale ? " · stale" : ""}</span></ListItem>
       <ListItem k="Nightly"><span style={{ color: !s.sched.last_ok || s.sched.fail_count ? "var(--warn)" : undefined }}>{s.sched.last_ok ? `last ok ${t(s.sched.last_ok)}` : "no nightly run yet"}{s.sched.fail_count ? ` · ${s.sched.fail_count} failures in a row` : ""}</span></ListItem>
       <ListItem k="Watches">Suunto {s.suunto.connected ? `connected · last push ${t(s.suunto.last_push)}` : "off"} · COROS {s.coros.connected ? `connected · last push ${t(s.coros.last_push)}` : "off"}</ListItem>
@@ -178,15 +178,15 @@ export function Backup() {
   const back = useAction<{ ok: boolean; activities?: { added?: number; pages_fetched?: number } }>("/api/sync?backfill=1", undefined, {
     confirm: { title: "Backfill the full history?", ok: "Backfill", danger: false, intro: "Walks every page back to your first activity.",
       lines: ["It can take longer than the gateway timeout on a long history.", "Usually only needed on a fresh machine or when old history is missing."] },
-    done: r => `Backfill done — added ${r.activities?.added ?? 0} activities across ${r.activities?.pages_fetched ?? 0} pages`, fail: "Backfill didn't complete" });
+    done: r => `Backfill done: added ${r.activities?.added ?? 0} activities across ${r.activities?.pages_fetched ?? 0} pages`, fail: "Backfill didn't complete" });
   return <Card label="Backup & export">
     <div className="row">
       <a className="btn" href="/api/backup/db" download>⬇ Database snapshot (.db)</a>
       <a className="btn" href="/api/export/json" download>⬇ Data export (.json)</a>
       <button className="btn" disabled={back.isPending} onClick={() => back.mutate()}>{back.isPending ? "Backfilling…" : "Backfill all history"}</button>
     </div>
-    <span className="help">The snapshot is a complete copy of the database — restore by stopping the app and dropping it into ./data as sparinghorse.db.
-      The JSON export carries only what can't be rebuilt (races, check-ins, reflections, adjustments, lab markers, plans, settings) — restore into a fresh
+    <span className="help">The snapshot is a complete copy of the database: restore by stopping the app and dropping it into ./data as sparinghorse.db.
+      The JSON export carries only what can't be rebuilt (races, check-ins, reflections, adjustments, lab markers, plans, settings): restore into a fresh
       instance with <code>python SparingHorse.py import &lt;file&gt;</code>. API keys are never included in either.</span>
   </Card>;
 }

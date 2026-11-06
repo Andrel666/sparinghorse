@@ -118,12 +118,3 @@ export function Row({ lead, main, sub, cols = [], trail, onClick, to, label, act
   return <div className={c} style={style}>{body}</div>;
 }
 
-/** A page's headline numbers: one row of big figures on hairlines (see DESIGN.md "figures row"). */
-export interface FigureT { k: ReactNode; v: ReactNode; s?: ReactNode; signal?: boolean; tone?: Tone; to?: string }
-export function Figures({ items }: { items: FigureT[] }) {
-  return <div className="figures">{items.map((f, i) => {
-    const c = cls("figure", f.signal && "signal", f.tone && `tone-${f.tone}`, f.to && "link");
-    const body = <><span className="k">{f.k}</span><span className={cls("v", f.tone && "toned")}>{f.v}</span>{f.s && <span className="s">{f.s}</span>}</>;
-    return f.to ? <Link key={i} to={f.to} className={c}>{body}</Link> : <div key={i} className={c}>{body}</div>;
-  })}</div>;
-}

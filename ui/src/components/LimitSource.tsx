@@ -17,13 +17,13 @@ export function LimitSource({ k }: { k: string }) {
   const b = BASIS[s.basis];
   return (
     <div className="list" style={{ gap: "var(--sp-3)" }}>
-      {b && <div><Pill tone={s.basis === "A" ? "warn" : undefined}>{b.label}</Pill> <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{b.desc}</span></div>}
+      {b && <div><Pill tone={s.basis === "A" ? "warn" : undefined}>{b.label}</Pill> <span className="muted t-small">{b.desc}</span></div>}
       {s.what && <p>{s.what}</p>}
       {s.rule && <p><b>Rule.</b> {s.rule}</p>}
       {s.use && <p><b>How the plan uses it.</b> {s.use}</p>}
       {s.refs?.length ? <div><b>Evidence</b><ul style={{ paddingLeft: 18, margin: "6px 0 0" }}>{s.refs.map(r => (
-        <li key={r.cite} style={{ marginBottom: 8 }}><span>{r.finding}</span><br /><span className="muted" style={{ fontSize: "var(--fs-small)" }}>{r.cite}</span></li>))}</ul></div> : null}
-      {s.caveat && <p className="muted" style={{ fontSize: "var(--fs-small)" }}>Caveat: {s.caveat}</p>}
+        <li key={r.cite} style={{ marginBottom: 8 }}><span>{r.finding}</span><br /><span className="muted t-small">{r.cite}</span></li>))}</ul></div> : null}
+      {s.caveat && <p className="muted t-small">Caveat: {s.caveat}</p>}
     </div>
   );
 }

@@ -32,25 +32,28 @@ function Fields({ d, names }: { d: SettingsPage; names: string[] }) {
   const [errs, setErrs] = useState<Record<string, string>>({});
   const n = Object.keys(edits).length;
   const save = useMutation({ mutationFn: () => postJSON("/api/settings", edits),
-    onSuccess: () => { setEdits({}); setErrs({}); toast(`${n} setting${n > 1 ? "s" : ""} saved ✓`, "ok"); qc.invalidateQueries(); },
+    onSuccess: () => { setEdits({}); setErrs({}); toast(`${n} setting${n > 1 ? "s" : ""} saved`, "ok"); qc.invalidateQueries(); },
     onError: e => { const b = (e as ApiError).body; setErrs((b?.errors as Record<string, string>) || {}); toast(`Not saved: ${(e as Error).message}`, "bad"); } });
   const groups = d.groups.filter(g => names.includes(g.name) && g.fields.length);
   if (!groups.length) return null;
   return <>
     {groups.map(g => (
-      <Card key={g.name} label={g.name}>
+      <Card key={g.name} label={g.name} id={`s-${g.name.toLowerCase().replace(/\W+/g, "-")}`}>
         <div className="list">{g.fields.map(f => (
           <div key={f.key} className="field">
             <label htmlFor={`set-${f.key}`}>{f.label} {f.source && <Pill>{SRC[f.source] || f.source}</Pill>}</label>
             <Input f={f} value={edits[f.key] ?? f.value} onChange={v => setEdits(e => (v === f.value ? (({ [f.key]: _, ...r }) => r)(e) : { ...e, [f.key]: v }))} />
             {errs[f.key] && <span style={{ color: "var(--bad)" }}>{errs[f.key]}</span>}
-            <span className="help">{f.help}</span>
+            {f.help_short && f.help_short !== f.help
+              ? <details className="help"><summary>{f.help_short} <span className="more">More</span></summary>{f.help.slice(f.help_short.length).trim()}</details>
+              : <span className="help">{f.help}</span>}
           </div>))}</div>
       </Card>))}
-    <div className="row" style={{ justifyContent: "flex-end" }}>
-      <button className="btn primary" disabled={!n || save.isPending} onClick={() => save.mutate()}>
-        {save.isPending ? "Saving…" : n ? `Save ${n} change${n > 1 ? "s" : ""}` : "No changes"}</button>
-    </div>
+    {n > 0 && <div className="save-bar" role="region" aria-label="Unsaved changes">
+      <span>{n} change{n > 1 ? "s" : ""}</span>
+      <button type="button" className="linkish" onClick={() => { setEdits({}); setErrs({}); }}>Discard</button>
+      <button className="btn primary" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save"}</button>
+    </div>}
   </>;
 }
 
@@ -60,6 +63,8 @@ export function Settings() {
   return <Query q={useSettings()}>{d => (
     <div className="page" style={{ maxWidth: 980 }}>
       <PageHead title="Settings"><Tabs label="Settings sections" value={tab} options={TABS} onChange={t => { setTab(t); history.replaceState(null, "", `#${t}`); }} /></PageHead>
+      <nav className="settings-index" aria-label="On this tab">{d.groups.filter(g => GROUPS[tab].includes(g.name) && g.fields.length).map(g =>
+        <a key={g.name} href={`#s-${g.name.toLowerCase().replace(/\W+/g, "-")}`}>{g.name}</a>)}</nav>
       <Fields key={tab} d={d} names={GROUPS[tab]} />
       {tab === "athlete" && <><AwayDays /><Calibration /></>}
       {tab === "connections" && <><Keys /><Suunto /><Coros /></>}
