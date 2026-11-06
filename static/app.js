@@ -3413,6 +3413,47 @@ async function loadTrack(){
        forecast that can be re-scored after the fact is not a forecast.</div>`;
 }
 
+// ── §VSO — the athlete vs. the original plan (Today) ────────────────────────
+// The race's ORIGINAL plan (pinned server-side the first time it is saved) said where the athlete
+// would be today; each metric shows both numbers, the gap in its own units and the gap as % of the plan.
+// VO₂max moves slowly — a 1 % gap there is a lot — so the units are always beside the percent.
+const VSO_STATE = {ahead:"ahead of plan", behind:"behind plan", level:"on plan", upcoming:"still to come", unknown:"—"};
+function vsoNum(v, unit){                                  // distances follow the units setting (km | mi)
+  if(v==null) return "—";
+  if(unit==="km"){ v=U.d(v); unit=U.unit; }
+  return `${(+v).toLocaleString(undefined,{maximumFractionDigits:1})}${unit?" "+unit:""}`;
+}
+function renderVsPlan(d){
+  const host=$("#vsplan"), sec=$("#sec-vsplan"); if(!host) return;
+  if(!d || !d.ok){ if(sec) sec.hidden=true; return; }       // no plan / race run: the card stays out of the way
+  if(sec) sec.hidden=false;
+  const b=d.baseline||{};
+  const since = b.for_date ? new Date(b.for_date+"T12:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"}) : "";
+  const cells=(d.metrics||[]).map(m=>{
+    const sign = m.diff==null ? "" : (m.diff>0?"+":m.diff<0?"−":"±");
+    const gap = m.diff==null ? "" :
+      `<div class="vso-gap">${sign}${vsoNum(Math.abs(m.diff), m.unit)}${m.pct!=null?` <span class="vso-pct">(${sign}${Math.abs(m.pct).toLocaleString(undefined,{maximumFractionDigits:1})}%)</span>`:""}</div>`;
+    const when = m.when ? ` <span class="muted">· ${esc(m.when)}</span>` : "";
+    return `<div class="vso-cell vso-${esc(m.state)}">
+      <div class="vso-label">${esc(m.label)}${when}</div>
+      <div class="vso-nums"><span class="vso-you" title="You">${vsoNum(m.actual, m.unit)}</span>
+        <span class="vso-vs">vs</span> <span class="vso-plan" title="Original plan">${vsoNum(m.planned, m.unit)}</span></div>
+      ${gap}
+      <div class="vso-state">${esc(VSO_STATE[m.state]||m.state)}${m.note?` <span class="muted">— ${esc(m.note)}</span>`:""}</div>
+    </div>`;
+  }).join("");
+  const race = b.race ? `${esc(b.race.label||"the race")}` : "maintenance";
+  const foot = d.just_set
+    ? `Original plan set ${esc(since)} — the comparison opens as the weeks land.`
+    : `Original plan for ${race}: saved ${esc(since)}${b.pinned?"":" (not pinned yet — it pins on the next plan save)"}.`;
+  host.innerHTML = (cells ? `<div class="vso-grid">${cells}</div>` : `<div class="empty">The original plan starts next week.</div>`)
+    + `<div class="vso-foot muted">${foot}</div>`;
+}
+async function loadVsPlan(){
+  if(!$("#vsplan")) return;
+  try{ renderVsPlan(await getJSON("/api/vsplan")); }
+  catch(e){ const sec=$("#sec-vsplan"); if(sec) sec.hidden=false; tileFail($("#vsplan"), "Vs. the original plan", loadVsPlan, e); }
+}
 async function loadDrift(){
   const host=$("#drift"); if(!host) return;
   // §CHAIN4 — the viewed race (RACE_SEL when it names a leg of THIS chain, else the next race ahead,
@@ -4354,6 +4395,7 @@ if(SH_PAGE==="today"){
   const l=$("#todayLink"); if(l){ l.textContent="← Dashboard"; l.href="/"; l.title="Back to the dashboard"; }
   const mt=document.querySelector('.mnav-btn[data-goto="today"]'); if(mt) mt.setAttribute("aria-current","page");
   loadReadiness();
+  if(!SH_READONLY) loadVsPlan();   // §VSO
   // §LIMITS (0.58.0) — this week's binding limit, from the plan's own limits block
   getJSON("/api/plan").then(p=>{
     const today=new Date().toISOString().slice(0,10);
@@ -4379,7 +4421,7 @@ if(SH_PAGE==="today"){
 }else if(SH_READONLY){
   loadReadiness();   // the public dashboard: the verdict card only (the server redacts its inputs)
 }else{
-  loadReadiness(); loadHealth(); loadSettings(); loadSecrets(); loadAuth(); loadSystem(); loadDurability(); loadEfficiency();
+  loadReadiness(); loadVsPlan(); loadHealth(); loadSettings(); loadSecrets(); loadAuth(); loadSystem(); loadDurability(); loadEfficiency();
   touchSync();   // pull today's run if it's already on Runalyze, then refresh "done ✓"
 }
 

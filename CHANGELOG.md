@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **You vs. the original plan, on Today.** A card under readiness compares the race's ORIGINAL plan with
+  today on fitness (CTL), VO₂max and the week's long run. Each tile shows both numbers, the gap in its
+  units and the gap as a % of the planned value. CTL is seam-corrected like the drift scorecard; the planned
+  VO₂max pro-rates the original projection by the share of TRIMP laid so far; the long run reads last week
+  until this week's long-run day arrives. The original plan is now **pinned** on the race
+  (`objectives.baseline_plan_id`, migrated) the first time it is saved, and `/api/plandrift` reads the same
+  pin, so the baseline cannot move when the matching rules change. A pin that no longer reaches race day
+  falls back to the live search and is re-pinned; a chain's earlier leg keeps the live search (SH-85).
+  `/api/vsplan` is private; the pin id is withheld from the public objectives view. Distances follow the
+  km/mi setting. `det/vs-original`, mutation-tested.
 - **New UI: full parity with Classic.** Every Classic feature was inventoried (`ui/PARITY.md`) and carried
   over: the frame (Sync now, auto-sync, freshness, theme, units, first-run guide, data-quality banner with
   delete/restore, toasts, confirm dialog, help bubbles, offline shell); Today (HRV and AI lines, halt banner,
