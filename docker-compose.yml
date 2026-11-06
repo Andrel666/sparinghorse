@@ -223,6 +223,20 @@ services:
     # console.
     # Host-local debug only: ports: ["127.0.0.1:8772:8770"]
 
+  # Fork §UI — the new UI on its own port. It serves the built app and forwards /api to the
+  # private container above, so the same login applies (open both on the same host name).
+  sparinghorse-ui:
+    build: ./ui
+    image: sparinghorse-ui:local
+    container_name: sparinghorse-ui
+    restart: unless-stopped
+    environment:
+      SH_API_UPSTREAM: sparinghorse:8770
+    ports:
+      - "5180:80"
+    depends_on:
+      - sparinghorse
+
 volumes:
   demo-data:      # the demo's synthetic database — disposable by design (see the service above)
 

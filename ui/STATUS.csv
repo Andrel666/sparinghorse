@@ -1,0 +1,87 @@
+area,item,status,where / note
+Global,"Sync now, error toast, all pages refresh",done,top bar
+Global,"Backfill all, with confirm",done,Settings → Console → Backup & export
+Global,"Silent auto-sync on open, refresh + toast when runs land",done,Frame
+Global,"Freshness chip ""synced N ago"", amber when stale, last-sync tooltip",done,top bar
+Global,"Theme auto / dark / light, saved",done,top bar
+Global,Units km / mi,done,format.ts (distance and pace follow the setting
+Global,First-run guide (connect → sync → add race),done,Frame banner
+Global,"Data-quality banner: duplicates (delete leftovers, confirm), ignored runs (restore)",done,Frame banner
+Global,Confirm dialog with consequences + alternative,done,feedback.tsx
+Global,Notices for action results,done,toasts
+Global,Offline / error state with Retry,done,Query.tsx
+Global,"Footer: version, Runalyze and GetSongBPM credits",done,
+Global,"""?"" help bubbles",done,Help
+Global,"Installable, offline shell",done,manifest + sw.js
+Global,"Keyboard: Enter/Space on buttons, Escape closes bubbles / drawers / dialogs",done,
+Global,"Public read-only box, demo mode",not carried over,the new UI is the private console; the public box and the demo stay Classic
+Global,"Section rail, collapsible sections, ?tab= deep links",not carried over,replaced by pages and routes
+Today,"Readiness: verdict, action, halt banner, reasons, HRV vs band, AI-judgment line",done,
+Today,"Check-in: legs, sleep, note, stop symptom",done,
+Today,"Session: kind, phase/week, km, ~min, target load, target, done line, note, workout / strides card, component",done,
+Today,Pre-plan / road complete / no plan / rest / optional-week states,done,
+Today,"Why this session, binding-limit and deload lines",done,
+Today,"Race countdown to the gun time in the race's zone, priority, verdict",done,
+Today,"Latest run, cross-training note, open the run",done,
+Plan,"Generate plan, ""Re-planned — changes"" banner",done,
+Plan,Stale-plan / stale-seed banners with Generate,done,
+Plan,"Races drawer: priority, move date, gun time + zone, remove (confirm) / put back 24 h, add, past results",done,
+Plan,Chain of races: pick the race in view (drift follows it),done,
+Plan,"Active adjustment + clear; Tell the horse → apply / dismiss, or log a note",done,
+Plan,"Road: phases, race flags, tune-ups, today marker, run vs planned",done,
+Plan,"Week: status, dates, km, eq-km, km run + ahead, runs, CTL at week end, load ratio, intent, lock",done,
+Plan,Week flags (all 13) and deload retire / keep,done,worded in sh_ui_api.week_flags
+Plan,"Session lines: ✓ ✕ + • ○, actual, moved, doubles, reflection, rest fill, click → run",done,
+Plan,Component chip with its explanation,done,
+Plan,"Limits: every limit, holds / ran over, headroom, basis, source drawer",done,
+Plan,"Races tile: finish band bar, median and goal ticks, CTL on race day, verdict, later-race curve, now vs race day, source",done,
+Plan,"Posture + source, pace zones + source, pace note, rebuilt at",done,
+Plan,"Month calendar, race-day plan, try another target",done,
+Plan,"Drift: scorecard, after-race reckoning, A-race chain, 5 charts, Original → Now / Conservative vs Assertive",done,History tab
+Plan,"AI goal parsing, A-race adjudication, plan explain",not carried over,Classic no longer renders these either (SH-86 / SH-88)
+Runs,"Calendar: zone dots, +N, other-sport mark, multi-run picker, month nav, legend",done,
+Runs,"Totals: month / 12 mo / all time incl. load, since",done,
+Runs,"Run: every metric incl. ground contact and vertical oscillation, time of day, split-recording chip",done,
+Runs,"Read back: kind, summary, rough signal, 1+1, strides",done,
+Runs,"Profile: pace / HR / cadence / elevation / GCT / VO, hover preview, click lock, HR-zone strip + legend, avg HR line, readout",done,
+Runs,"Ignore / undo, delete with confirm",done,
+Runs,Route map,done,
+Fitness,"Shape tiles with trends, % of all-time max, form word",done,
+Fitness,"Load gauge, CTL ramp",done,
+Fitness,"Fitness & fatigue: planned fitness to race day, hover (fitness, fatigue, form, load ratio), model check, duplicate heads-up",done,
+Fitness,"Weekly distance, full history, scroll back",done,
+Fitness,"Easy runs: score, table (GAP, HR %, drift, TE, feel, verdict), LT1, pace ↔ HR, manual-LTHR age, detrained, field-test offer",done,
+Fitness,Zones table + anchors,done,
+Fitness,"Durability: chart / table switch, compare-with builds, horizons, bands, footnote",done,
+Fitness,"Efficiency: chart, fitted line, temperature panel, note",done,
+Fitness,"Track record: checkpoints, horizons, prescription, readiness calls, override weeks, bands, race table",done,
+Body,"Marker cards: latest, ok / watch vs range, readings, first → last, stale age",done,
+Body,"Chart with the reference band, hover, 6m / 1y / All (saved per marker)",done,
+Body,Nightly-data-stopped banner,done,
+Body,Add a reading,done,
+Body,Injury history,done,
+Settings,"Every setting, typed, its source, per-field errors",done,
+Settings,"Away days: list, add, clear (confirm), put back",done,
+Settings,"Calibration: fit / approve / revert, parameters, injury lines not read, unlisted breaks",done,
+Settings,"Keys: set, clear, validate, fingerprint",done,
+Settings,"Suunto: connect, push week, rebuild, disconnect",done,
+Settings,"COROS: connect, sign in, push, disconnect, last error",done,
+Settings,"Console access: mode, change passphrase, log out",done,
+Settings,System status,done,
+Settings,"Backup (.db), export (.json), backfill",done,
+Coach,"Chat, suggestions, off / no-AI states, clear, Enter to send",done,
+Music,"Spotify connect / reconnect / disconnect, pull plays, return message",done,Music → Music settings
+Music,"last.fm / ListenBrainz, comfort ceiling, step, lift, half-time, discovery",done,
+Music,Music keys,done,
+Music,"Library: counts, tempo bands, sources table, refresh with progress",done,
+Music,"Cadence ramp / ladder, targets, how the targets are set",done,Music → Playlists
+Music,"Next run hero, coming up, preview / build / rebuild, result with tracks",done,
+Music,"Run read-back: stats, songs table, keep / leave it out",done,
+Today,Rest-day layout leaves a lot of empty space,open,Next design pass
+Design,"Accessibility audit (screen reader, keyboard order) of the redesigned UI",open,Contrast fixed; full audit not run yet
+Release,PR #18 (new UI) merged to main,open,Waiting for your review
+Engine,Fix 3: exclude races run while injured from the prediction,open,"Agreed earlier, not built yet"
+Engine,Step-limit decision: calibrated 1.15 vs the default,open,Needs your call
+Repo,Delete merged branches on the fork,open,"Optional; deletion was blocked for me, you can run it"
+Upstream,Issue text for dros74/sparinghorse,open,"Drafted, not posted; the author hasn't answered yet"
+Tests,det/one-clock fails on macOS,open,Known before this work; unrelated to the UI

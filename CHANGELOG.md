@@ -14,6 +14,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **New UI: full parity with Classic.** Every Classic feature was inventoried (`ui/PARITY.md`) and carried
+  over: the frame (Sync now, auto-sync, freshness, theme, units, first-run guide, data-quality banner with
+  delete/restore, toasts, confirm dialog, help bubbles, offline shell); Today (HRV and AI lines, halt banner,
+  why-this-session, deload line, live gun-time countdown in the race's zone, cross-training note); Plan
+  (generate + re-plan diff, stale banners, races drawer with priority/date/gun time/zone/remove/put back/add/
+  past results, race chain, adjustment banner and Tell the horse, road flags and today, every week flag, deload
+  retire/keep, session marks/doubles/reflections, races tile with the finish band, posture and paces sources,
+  full drift with Conservative vs Assertive); Runs (multi-run days, other sports, load totals, profile chart,
+  ignore/delete); Fitness (form and load ratio on hover, durability chart/table/compare, zone anchors, the
+  whole track record); Body (charts with the reference band, ranges, stopped-data banner, add a reading);
+  Settings (Athlete / Connections / Console: sources, per-field errors, away days, keys, Suunto, COROS,
+  passphrase, system, backup/export, backfill); Music (playlists, ramp, build/preview, read-back verdicts,
+  Spotify/last.fm/ListenBrainz, matching, library). New `/api/ui/shell` and `/api/ui/adjust/propose`; flags,
+  deload, adjustment effect, race bands, posture, track record, zone anchors and staleness are worded once in
+  `sh_ui_api.py`. `det/ui-parity`, mutation-tested.
+- **Fixed:** the dev proxy rewrote `Host`, so the CSRF guard refused every POST from the new UI (check-in,
+  coach, every action); it now keeps the browser's Host — the guard itself is unchanged. Calendar dates in the
+  new UI no longer shift a day east of UTC.
+- **New UI: every page.** Plan (the road coloured by phase; Week with days, sessions, the limits that size it
+  and paces; Month; Race day; History, each day opening in a drawer), Runs (calendar with totals; a run's
+  numbers, read-back, verdict and map), Body (markers grouped with their state against the reference range;
+  injury history), Coach (full-page chat) and Settings (typed pickers and switches through the server's own
+  validation; calibration). New endpoints `/api/ui/{plan,run/<id>,body,settings}` (private) build on
+  `block_log`, the plan's limits, `training_zones`, the activity tile, `MARKERS` and `SETTINGS_SPEC`;
+  existing backend-decided endpoints (plan calendar, race plan, plan drift, coach, calibration) are read as
+  they are. Shared tabs, drawer, one month grid (plan and run calendars), road and session components.
+  Pages load on demand. Installable (manifest, the server's icons). `ui/Dockerfile` (Node build → nginx) and a
+  `sparinghorse-ui` compose service on 5180. `det/ui-pages`, mutation-tested.
+- **New UI: the Fitness page** — Classic's dashboard numbers on one page: VO₂max, fitness, fatigue and form
+  tiles with 6-month sparklines and the 4-week change; fitness & fatigue over 6 months; the load ratio on a
+  gauge with its meaning and the 7-day ramp; 26 weeks of distance; zones; the easy-run check per run;
+  durability, aerobic efficiency and the prediction track record. `/api/ui/fitness` (private) reuses
+  `reconstruct_history`, `vo2max_trend`, `training_zones`, `effort_discipline`, `durability_signal`,
+  `efficiency_signal`, `track_record`; the gauge band, ramp word and form word Classic's browser computed are
+  decided server-side (`load_state`, `ramp_word`, `FORM_WORDS`). One charts module (sparkline, lines, bars,
+  gauge) from one scale helper. `det/ui-fitness`, mutation-tested.
+- **New UI, step 1: the shell and Today** (`ui/`, React + Vite + TypeScript, its own port 5180). A sidebar on
+  desktop and a tab bar with a More sheet on phones, both built from one page list; a 12-column grid; 16px body
+  type with a 13px floor; one token file for colour, type and space, light and dark. Today puts the readiness
+  verdict, the session with its target and steps, a three-tap check-in, the week strip with what holds the
+  week, and the latest run on the first screen. Its data comes from one new endpoint, `/api/ui/today`
+  (`sh_ui_api.py`, private), assembled from the engine's own readers; the plain names of the plan's limits
+  live there once and the coach uses them too. Other pages link to Classic until built.
+  `det/ui-today` (mutation-tested), unit tests for the formatter.
 - **Coach chat.** A Coach button on every page opens a chat about the athlete's own training, answered by the
   existing AI layer (API key or the local Claude Code CLI). New module `sh_coach.py` builds the context from
   what the engine already computed — the race, target, prediction and race-day pacing; readiness and today's

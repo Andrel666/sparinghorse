@@ -7043,7 +7043,21 @@ def llm_readiness(hrv, energy, sleep, note, session=None):
         "for cardiac/exertional signs. Never diagnose; you flag and defer to their doctor. Keep action "
         "to one sentence."
     )
-    return llm_json(system, user, READINESS_SCHEMA, effort="low")
+    # The same signals give the same call: memoised per day on the exact prompt, so every page load is not a
+    # fresh model round-trip (6–11 s on the CLI). A new check-in, note or session changes the prompt → a new call.
+    key = hashlib.sha256(f"{datetime.now().date().isoformat()}\0{system}\0{user}".encode()).hexdigest()
+    hit = _READINESS_MEMO.get(key)
+    if hit is not None:
+        return dict(hit)
+    out = llm_json(system, user, READINESS_SCHEMA, effort="low")
+    if out.get("ok"):                      # failures are not remembered — the next load tries again
+        if len(_READINESS_MEMO) >= 64:
+            _READINESS_MEMO.clear()
+        _READINESS_MEMO[key] = dict(out)
+    return out
+
+
+_READINESS_MEMO = {}
 
 
 # Plan explanation (§6c) — narrate the already-computed plan and the *why* behind each change,
@@ -7952,6 +7966,7 @@ def _private_only_path(p):
                   "/api/coach/messages", "/api/coach/chat", "/api/coach/clear",       # §COACH
                   "/api/system")                          # 0.56.1 — the household's timestamps
             or p.startswith("/api/suunto")                # §SG — OAuth + watch push are owner-only
+            or p.startswith("/api/ui/")                   # fork §UI — the new UI's pages carry HR
             or p.startswith("/api/coros")                 # §CG — same for the COROS plan push
             or p.startswith("/api/music")                 # §BEAT — listening history + Spotify OAuth
             or p.startswith("/api/backup") or p.startswith("/api/export")   # §BX — the user's data
@@ -11251,6 +11266,11 @@ def api_coach_clear():
         return jsonify(ok=False, error="not available on the public view"), 403
     sh_coach.clear(db)
     return jsonify(ok=True, messages=[])
+
+
+# ── Fork §UI — the new UI's page endpoints (sh_ui_api.py) ───────────────────────────────────────
+import sh_ui_api
+sh_ui_api.register(app, sys.modules[__name__])
 
 
 @app.get("/api/plan/calendar")

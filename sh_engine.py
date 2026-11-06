@@ -1393,7 +1393,16 @@ def _derive_run_days(n, long_day, rest_rank):
         return list(range(7))
     quota = 7 - n
     ceiling = _rest_clump_ceiling(n)
-    house_rests = _rest_days(RUN_DAY_LAYOUTS.get(n) or [])
+    house = RUN_DAY_LAYOUTS.get(n) or []
+    # The house layout is laid around a long run on its LAST slot (Sunday on a Monday week). When the long
+    # run sits elsewhere, turn the layout with it, so the easy days keep their place around the long run:
+    # on a Sunday week with a Sunday long run the long run is slot 0, and the unturned table would put the
+    # week's last easy run on Saturday, the day before the next long run. With no long day, or a long day
+    # already on the last slot, the shift is 0 and the layout is the table's own.
+    if house and long_day is not None:
+        shift = (long_day - house[-1]) % 7
+        house = sorted((d + shift) % 7 for d in house)
+    house_rests = _rest_days(house)
     order = (list(rest_rank)
              + [d for d in house_rests if d not in rest_rank]
              + [d for d in range(7) if d not in rest_rank and d not in house_rests])
