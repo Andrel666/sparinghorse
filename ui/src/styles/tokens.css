@@ -16,7 +16,7 @@
   --accent-soft: var(--signal-soft);
   --on-accent: #ffffff;
   --ok: #0d7a3d;   --ok-soft: #e4f2ea;
-  --warn: #a86400; --warn-soft: #f8ecd8;
+  --warn: #9a5b00; --warn-soft: #f8ecd8;   /* 5.2:1 on --bg (AA) */
   --bad: #cf1f1f;  --bad-soft: #fae3e3;
   /* training phases: a grey ramp, peak darkest; the current week is signal */
   --ph-rebase: #d4d4cf;

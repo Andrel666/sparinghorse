@@ -100,9 +100,9 @@ export function Runs() {
         <div className={`grid runs-split${picked ? " has-run" : ""}`}>
           <div className="span-5 runs-left list" style={{ gap: "var(--gap-group)" }}>
             <Strip items={[
-              { k: range ? `Last ${range.replace("d", " days")}` : new Date(`${m.month}-01T00:00:00Z`).toLocaleDateString(undefined, { month: "long", timeZone: "UTC" }), v: `${m.stats.runs ?? 0} runs`, s: km(m.stats.km as number),
+              { k: range ? `Last ${range.replace("d", " days")}` : new Date(`${m.month}-01T00:00:00Z`).toLocaleDateString(undefined, { month: "long", timeZone: "UTC" }), v: `${m.stats.runs ?? 0} run${m.stats.runs === 1 ? "" : "s"}`, s: km(m.stats.km as number),
                 onClick: () => document.getElementById("totals")?.scrollIntoView({ behavior: "smooth" }) },
-              { k: "12 months", v: `${m.stats12.runs ?? 0} runs`, s: km(m.stats12.km as number),
+              { k: "12 months", v: `${m.stats12.runs ?? 0} run${m.stats12.runs === 1 ? "" : "s"}`, s: km(m.stats12.km as number),
                 onClick: () => document.getElementById("totals")?.scrollIntoView({ behavior: "smooth" }) }]} />
             {view === "log" ? <Log month={month} range={range} picked={run} onPick={id => pick(id)} onMonth={setMonth} /> : <>
             <Calendar month={m.month} onMonth={setMonth} selected={choose}
