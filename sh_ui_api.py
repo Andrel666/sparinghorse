@@ -495,6 +495,9 @@ def today_recovery(S, db, hrv):
     cut = (today - timedelta(days=30)).isoformat()
     fresh = (today - timedelta(days=2)).isoformat()
     out = []
+    rd = today_rest_days(S, db, today)
+    if rd:
+        out.append(rd)
     h = hrv or {}
     if h.get("baseline") is not None:
         pts = [{"date": r["snapshot_date"], "v": round(r["hrv_baseline"], 1)} for r in db.execute(
@@ -525,6 +528,45 @@ def today_recovery(S, db, hrv):
                                                   None if last["date"] >= fresh else f"last read {age} days ago"] if x),
                     "state": marker_state(last["value"], m.get("ref"), m.get("good")), "series": series})
     return out
+
+
+# Runalyze's "rest days": how many days of COMPLETE rest bring form (TSB = CTL − ATL) back to 0, a
+# balanced load (Runalyze's calculations panel, "rest days needed to reach TSB = 0"). Read off the
+# app's own de-duplicated reconstruction (the same EWMA Runalyze uses, validated against its
+# snapshots), so it counts today's run and ignores duplicate uploads. Informational: the plan owns
+# what to run; this says how deep the fatigue is.
+REST_DAYS_MAX = 60
+
+
+def rest_days(S, ctl, atl, start):
+    """Days of zero load from `start` until CTL − ATL ≥ 0 (0 when it already is; capped)."""
+    if ctl - atl >= 0:
+        return 0
+    for i, p in enumerate(S.roll({}, start, start + timedelta(days=REST_DAYS_MAX - 1), ctl0=ctl, atl0=atl), start=1):
+        if p["ctl"] - p["atl"] >= 0:
+            return i
+    return REST_DAYS_MAX
+
+
+def today_rest_days(S, db, today):
+    """The Recovery card's rest-days row, or None without a history."""
+    hist = S.reconstruct_history(db, end=today.isoformat()) or []
+    if not hist:
+        return None
+    last = hist[-1]
+    ctl, atl = last["ctl"], last["atl"]
+    tsb = ctl - atl
+    n = rest_days(S, ctl, atl, today + timedelta(days=1))
+    cut = (today - timedelta(days=30)).isoformat()
+    r = round(tsb)
+    tsb_txt = f"{'+' if r > 0 else '−' if r < 0 else ''}{abs(r):.0f}"
+    by = f" ({(today + timedelta(days=n)).strftime('%a')})" if n <= 6 else ""
+    sub = f"form is balanced · TSB {tsb_txt}" if n == 0 else f"full rest to TSB 0{by} · now {tsb_txt}"
+    return {"key": "rest_days", "label": "Rest days", "value": f"{n}{'+' if n >= REST_DAYS_MAX else ''}",
+            "unit": "day" if n == 1 else "days", "sub": sub,
+            "state": "watch" if tsb <= FORM_TIRED else None,
+            "series": [{"date": p["date"], "v": round(p["ctl"] - p["atl"], 1)} for p in hist if p["date"] >= cut],
+            "link": "/fitness#fitness-fatigue"}
 
 
 # ── Fitness ───────────────────────────────────────────────────────────────────────────────────

@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rest days on Today (Runalyze's).** The new UI's Recovery card opens with **rest days**: how many days of
+  full rest bring form (TSB = CTL − ATL) back to 0, as Runalyze's calculations panel defines it, with the day
+  it gets there, today's TSB and a 30-day TSB sparkline; amber at the "tired" line (TSB ≤ −20). Read off the
+  app's own de-duplicated reconstruction (the same EWMA as Runalyze, matching its snapshots), so today's run
+  counts and duplicate uploads don't. It links to the fitness chart. Informational: the plan still decides
+  what to run. `sh_ui_api.today_rest_days`; `det/ui-rest-days`, mutation-tested.
 - **New UI: full parity with Classic.** Every Classic feature was inventoried (`ui/PARITY.md`) and carried
   over: the frame (Sync now, auto-sync, freshness, theme, units, first-run guide, data-quality banner with
   delete/restore, toasts, confirm dialog, help bubbles, offline shell); Today (HRV and AI lines, halt banner,
