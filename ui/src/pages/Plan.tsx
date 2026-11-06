@@ -3,11 +3,12 @@
 import { Icon } from "../components/Icon";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { usePlan, usePlanCalendar, useRacePlan, useShell, type PlanPage, type SessionDetail } from "../lib/api";
+import { usePlan, useRacePlan, useShell, type PlanPage, type SessionDetail } from "../lib/api";
 import { useAction } from "../lib/actions";
 import { dateLong, dateShort, dayName, km, pace } from "../lib/format";
 import { Card, ListItem, PageHead, Pill, Row, Strip } from "../components/ui";
-import { Drawer, MonthGrid, Tabs } from "../components/layout";
+import { Drawer, Tabs } from "../components/layout";
+import { Calendar } from "../components/Calendar";
 import { Road } from "../components/Road";
 import { DayDetail } from "../components/Session";
 import { ComponentChip } from "../components/Component";
@@ -114,22 +115,8 @@ function PostureAndPaces({ p, onSource }: { p: PlanPage; onSource: (k: string) =
     </Card>);
 }
 
-function MonthView({ onDay }: { onDay: (date: string) => void }) {
-  const [month, setMonth] = useState<string>();
-  return <Query q={usePlanCalendar(month)}>{c => (
-    <Card label="Plan calendar">
-      <MonthGrid month={c.month} weekStart={c.week_start} first={c.first} last={c.last} onMonth={setMonth} today={c.today}
-        cell={date => {
-          const xs = (c.days[date] || []).filter(x => x.kind !== "moved_in"), inPlan = date >= c.start && date <= c.end;
-          return { pickable: xs.length > 0, className: [inPlan ? "" : "out", c.race?.date === date ? "race" : ""].join(" "),
-                   style: undefined,
-                   body: xs.length ? xs.map((x, i) => (
-                     <span key={i} className={`lbl ${x.status === "done" || x.status === "moved" ? "done" : x.status === "missed" ? "missed" : ""}`}>
-                       {x.race ? "Race" : x.kind === "unplanned" ? `+${x.actual?.km ?? ""}` : `${x.kind[0].toUpperCase()}${x.kind.slice(1).replace("_mp", "+")} ${x.km ?? ""}`}</span>))
-                     : inPlan ? <span className="lbl rest">Rest</span> : null };
-        }}
-        onPick={onDay} />
-    </Card>)}</Query>;
+function MonthView({ month, onMonth, onDay }: { month?: string; onMonth: (m: string) => void; onDay: (date: string) => void }) {
+  return <Card label="Month"><Calendar month={month} onMonth={onMonth} onDay={onDay} /></Card>;
 }
 
 function RaceView() {
@@ -230,7 +217,7 @@ export function Plan() {
       <div className="list" style={{ gap: "var(--sp-5)" }}>
         <Tabs label="Plan views" value={view} options={VIEWS} onChange={setView} />
         {view === "week" && <WeekView p={p} onWeek={w => { setDaySel(undefined); setParam("week", w); }} onDay={openDay} onLimit={setLimit} onDiff={setDiff} />}
-        {view === "month" && <MonthView onDay={openDay} />}
+        {view === "month" && <MonthView month={params.get("month") || undefined} onMonth={m => setParam("month", m)} onDay={openDay} />}
         {view === "race" && <RaceView />}
         {view === "history" && <DriftView race={viewRace} />}
       </div>

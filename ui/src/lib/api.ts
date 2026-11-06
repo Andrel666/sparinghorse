@@ -178,6 +178,13 @@ const q = <T,>(key: unknown[], path: string, enabled = true) =>
 export const usePlan = (sel: { week?: string; day?: string }) =>
   q<PlanPage>(["ui", "plan", sel.week, sel.day], `/api/ui/plan?${new URLSearchParams(Object.entries(sel).filter(([, v]) => v) as [string, string][])}`);
 export const useRun = (id?: number) => q<RunPage>(["ui", "run", id], `/api/ui/run/${id}`, !!id);
+export interface CalendarMonth { ok: true; month: string; week_start: number; today: string; first: string; last: string;
+  race: { date: string; label: string } | null; stats: Record<string, unknown>;
+  days: Record<string, { planned: { kind: string; title: string; km: number | null; status: string; race: boolean; moved_to: string | null }[];
+                         runs: { id: number; km: number; z: number | null; pace: string | null; t: string | null }[];
+                         other: boolean; in_plan: boolean }>;
+  weeks: { start: string; planned_km: number; ran_km: number }[] }
+export const useCalendar = (month?: string) => q<CalendarMonth>(["ui", "calendar", month], `/api/ui/calendar${month ? `?month=${month}` : ""}`);
 export const usePlanCalendar = (month?: string) => q<PlanCalendar>(["ui", "plancal", month], `/api/plan/calendar${month ? `?month=${month}` : ""}`);
 export interface RunsLog { ok: true; month: string; range: string | null; km: number;
   runs: { id: number; date: string; dow: string; time: string | null; km: number; pace: string | null; z: number | null; hr: number | null;

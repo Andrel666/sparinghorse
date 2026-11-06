@@ -1073,6 +1073,62 @@ def runs_log(S, db, month=None, last_days=None):
             "km": round(sum(r["km"] or 0 for r in out), 1)}
 
 
+CAL_SHORT = {"easy": "Easy", "long": "Long", "recovery": "Recovery", "threshold": "Threshold", "intervals": "Intervals",
+             "interval": "Intervals", "tempo": "Tempo", "long_mp": "Long+", "mp": "Race pace", "strides": "Strides"}
+
+
+def _cal_day(S, pc, rm, iso):
+    planned = []
+    for x in (pc.get("days") or {}).get(iso) or []:
+        if x.get("kind") in ("moved_in", "unplanned"):    # a moved-in or unplanned day's run is listed under runs
+            continue
+        planned.append({"kind": x.get("kind"), "km": x.get("km"), "status": x.get("status"), "race": bool(x.get("race")),
+                        "title": "Race" if x.get("race") else CAL_SHORT.get(x.get("kind"), (x.get("kind") or "").capitalize()),
+                        "moved_to": _dow(S, x["moved_to"]) if x.get("moved_to") else None})
+    runs = [{"id": r["id"], "km": r.get("km"), "z": r.get("z"), "pace": r.get("pace"), "t": r.get("t")}
+            for r in (rm.get("days") or {}).get(iso) or []]
+    return {"planned": planned, "runs": runs, "other": iso in set(rm.get("other") or []),
+            "in_plan": bool(pc.get("start") and pc["start"] <= iso <= (pc.get("end") or ""))}
+
+
+def calendar_month(S, db, month):
+    """One calendar for Plan and Runs: per day what was planned (with its status) and what was run,
+    plus each week's planned and run km (whole weeks, across the month edge). Built from the plan
+    calendar (§PCAL) and the run browser's month (§RB), so both pages read the same cells."""
+    import sh_engine as E
+    src = {}
+    def get(mo):
+        if mo not in src:
+            src[mo] = (S.plan_calendar(db, mo) or {}, S._runs_month(db, mo) or {})
+        return src[mo]
+    pc, rm = get(month)
+    y, m = (int(x) for x in month.split("-"))
+    first = datetime(y, m, 1).date()
+    nxt = (first.replace(day=28) + timedelta(days=4)).replace(day=1)
+    dim = (nxt - first).days
+    days = {}
+    for i in range(dim):
+        iso = (first + timedelta(days=i)).isoformat()
+        c = _cal_day(S, pc, rm, iso)
+        if c["planned"] or c["runs"] or c["other"] or c["in_plan"]:
+            days[iso] = c
+    weeks, ws = [], E.week_start_of(first)
+    while ws < nxt:
+        planned = ran = 0.0
+        for k in range(7):
+            d = ws + timedelta(days=k)
+            c = _cal_day(S, *get(d.strftime("%Y-%m")), d.isoformat())
+            planned += sum(p["km"] or 0 for p in c["planned"])
+            ran += sum(r["km"] or 0 for r in c["runs"])
+        weeks.append({"start": ws.isoformat(), "planned_km": round(planned, 1), "ran_km": round(ran, 1)})
+        ws += timedelta(days=7)
+    firsts = [x for x in (pc.get("first"), rm.get("first")) if x]
+    lasts = [x for x in (pc.get("last"), rm.get("last")) if x]
+    return {"ok": True, "month": month, "week_start": E.WEEK_START, "today": datetime.now().date().isoformat(),
+            "first": min(firsts) if firsts else month, "last": max(lasts) if lasts else month,
+            "race": pc.get("race"), "days": days, "weeks": weeks, "stats": rm.get("stats") or {}}
+
+
 # (the calendar month itself stays /api/runs, shared with Classic)
 def activity_dict(db, aid):
     """The stored activity as the REST shape (its raw copy, or its columns when there is none)."""
@@ -1286,6 +1342,14 @@ def register(app, S):
             return jsonify(ok=False, error="month must be YYYY-MM"), 400
         days = int(rng[:-1]) if rng and re.fullmatch(r"\d{1,3}d", rng) else None
         return private() or jsonify(runs_log(S, S.get_db(), m, days))
+
+    @app.get("/api/ui/calendar")
+    def api_ui_calendar():
+        from flask import request
+        m = request.args.get("month") or datetime.now().strftime("%Y-%m")
+        if not re.fullmatch(r"\d{4}-\d{2}", m):
+            return jsonify(ok=False, error="month must be YYYY-MM"), 400
+        return private() or jsonify(calendar_month(S, S.get_db(), m))
 
     @app.get("/api/ui/run/<int:aid>")
     def api_ui_run(aid):

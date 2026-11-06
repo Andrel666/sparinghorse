@@ -519,3 +519,26 @@ a.marker-row:hover { background: var(--surface-2); }
 .why-list li + li { border-top: 1px solid var(--line); }
 .why-list a { display: block; padding: 10px 0; color: inherit; text-decoration: none; line-height: 1.45; }
 .why-list a:hover { color: var(--signal-ink); }
+
+/* the one calendar (Plan → Month, Runs → Calendar): planned muted, run solid with its zone dot, week column */
+.month-grid.with-total { grid-template-columns: repeat(7, minmax(0, 1fr)) minmax(9ch, auto); }
+.month-day.blank { background: transparent; }
+.month-day.off-plan .cal-p { display: none; }
+.month-wk { display: flex; align-items: flex-start; justify-content: flex-end; padding: 6px; font-size: var(--fs-small);
+  border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.month-dow.wk { text-align: right; }
+.cal-p { font-size: var(--fs-small); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-p.missed { color: var(--bad); text-decoration: line-through; }
+.cal-p.moved { text-decoration: line-through; }
+.cal-p.done .cal-t::before { content: "✓ "; color: var(--ok); }
+.cal-r { display: flex; align-items: center; gap: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cal-o { color: var(--muted); }
+.cal-key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: var(--sp-3); font-size: var(--fs-label); color: var(--muted); }
+.cal-key > span { display: inline-flex; align-items: center; gap: 4px; }
+@media (max-width: 760px) {
+  .cal-t { display: none; }
+  .month-grid.with-total { grid-template-columns: repeat(7, minmax(0, 1fr)) 6ch; }
+  .month-wk { padding: 4px 2px; font-size: var(--fs-label); }
+  .month-wk .muted { display: none; }
+}
+.cal-ahead { color: var(--muted); }

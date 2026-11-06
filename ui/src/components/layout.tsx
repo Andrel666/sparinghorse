@@ -1,5 +1,5 @@
 // Shared layout pieces: tabs, the detail drawer, and one month grid (plan calendar and run calendar).
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, type ReactNode } from "react";
 import { Icon } from "./Icon";
 
 export function Tabs<T extends string>({ value, options, onChange, label }:
@@ -56,32 +56,41 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export const addMonth = (m: string, k: number) => { const [y, mo] = m.split("-").map(Number); const t = new Date(y, mo - 1 + k, 1);
   return `${t.getFullYear()}-${pad(t.getMonth() + 1)}`; };
 
-/** One month, opening on the athlete's week start (Python weekday: 0 = Monday). */
-export function MonthGrid({ month, weekStart, first, last, onMonth, cell, onPick, selected, today }:
+/** One month, opening on the athlete's week start (Python weekday: 0 = Monday). With `weekTotal`, an
+ *  eighth column closes each week row (given that week's first day, which may sit in the month before). */
+export function MonthGrid({ month, weekStart, first, last, onMonth, cell, onPick, selected, today, weekTotal }:
   { month: string; weekStart: number; first?: string; last?: string; onMonth: (m: string) => void;
-    cell: (date: string) => { body: ReactNode; className?: string; pickable?: boolean; style?: React.CSSProperties };
-    onPick?: (date: string) => void; selected?: string | null; today?: string }) {
+    cell: (date: string) => { body: ReactNode; className?: string; pickable?: boolean; label?: string };
+    onPick?: (date: string) => void; selected?: string | null; today?: string; weekTotal?: (weekStart: string) => ReactNode }) {
   const [y, m] = month.split("-").map(Number);
   const dim = new Date(y, m, 0).getDate();
   const lead = ((new Date(y, m - 1, 1).getDay() + 6) % 7 - weekStart + 7) % 7;
   const title = new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const slots: (number | null)[] = [...Array.from({ length: lead }, () => null), ...Array.from({ length: dim }, (_, i) => i + 1)];
+  while (slots.length % 7) slots.push(null);
+  const rows = Array.from({ length: slots.length / 7 }, (_, r) => slots.slice(r * 7, r * 7 + 7));
   return (
     <div className="month">
-      <div className="row" style={{ justifyContent: "space-between" }}>
+      <div className="month-nav">
         <button type="button" className="btn" disabled={!!first && month <= first} onClick={() => onMonth(addMonth(month, -1))} aria-label="Previous month">‹</button>
         <b>{title}</b>
         <button type="button" className="btn" disabled={!!last && month >= last} onClick={() => onMonth(addMonth(month, 1))} aria-label="Next month">›</button>
       </div>
-      <div className="month-grid">
+      <div className={`month-grid${weekTotal ? " with-total" : ""}`}>
         {DOW.slice(weekStart).concat(DOW.slice(0, weekStart)).map(d => <div key={d} className="month-dow">{d}</div>)}
-        {Array.from({ length: lead }, (_, i) => <div key={`b${i}`} />)}
-        {Array.from({ length: dim }, (_, i) => {
-          const date = `${month}-${pad(i + 1)}`, c = cell(date);
-          const cls = ["month-day", c.className, date === selected ? "sel" : "", date === today ? "today" : ""].filter(Boolean).join(" ");
-          return c.pickable && onPick
-            ? <button key={date} type="button" className={cls} style={c.style} onClick={() => onPick(date)}><span className="n">{i + 1}</span>{c.body}</button>
-            : <div key={date} className={cls} style={c.style}><span className="n">{i + 1}</span>{c.body}</div>;
-        })}
+        {weekTotal && <div className="month-dow wk">Week</div>}
+        {rows.map((row, r) => <Fragment key={r}>
+          {row.map((n, k) => {
+            if (n == null) return <div key={`b${r}-${k}`} className="month-day blank" />;
+            const date = `${month}-${pad(n)}`, c = cell(date);
+            const cls = ["month-day", c.className, date === selected ? "sel" : "", date === today ? "today" : ""].filter(Boolean).join(" ");
+            return c.pickable && onPick
+              ? <button key={date} type="button" className={cls} aria-label={c.label} onClick={() => onPick(date)}><span className="n">{n}</span>{c.body}</button>
+              : <div key={date} className={cls}><span className="n">{n}</span>{c.body}</div>;
+          })}
+          {weekTotal && <div className="month-wk">{weekTotal(iso(new Date(y, m - 1, 1 - lead + r * 7)))}</div>}
+        </Fragment>)}
       </div>
     </div>
   );

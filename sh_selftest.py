@@ -16367,8 +16367,29 @@ def _stc_ui_today():
         l7 = U.runs_log(S, fx, None, 7)
         if any(x["date"] < (today - __import__("datetime").timedelta(days=6)).isoformat() for x in l7["runs"]):
             fails.append("(d) the last-7-days list carries an older run")
+        # (e) the one calendar: its runs are the run browser's, its planned days the plan calendar's, and
+        # each week's run km is the sum of that week's runs (whole weeks, read across the month edge)
+        mo = today.strftime("%Y-%m")
+        cal = U.calendar_month(S, fx, mo)
+        rb = S._runs_month(fx, mo)
+        if sorted(r["id"] for d in cal["days"].values() for r in d["runs"]) != sorted(x["id"] for xs in (rb.get("days") or {}).values() for x in xs):
+            fails.append("(e) the calendar's runs are not the run browser's")
+        pc = S.plan_calendar(fx, mo)
+        want_planned = sum(1 for xs in (pc.get("days") or {}).values() for x in xs if x.get("kind") not in ("moved_in", "unplanned"))
+        if sum(len(d["planned"]) for d in cal["days"].values()) != want_planned:
+            fails.append("(e) the calendar dropped or invented planned days")
+        for w in cal["weeks"]:
+            got_ran = 0.0
+            for k in range(7):
+                d0 = (S._date(w["start"]) + __import__("datetime").timedelta(days=k))
+                dd = U.calendar_month(S, fx, d0.strftime("%Y-%m"))["days"].get(d0.isoformat()) if d0.strftime("%Y-%m") != mo else cal["days"].get(d0.isoformat())
+                got_ran += sum(r["km"] or 0 for r in (dd or {}).get("runs") or [])
+            if abs(got_ran - w["ran_km"]) > 0.15:
+                fails.append(f"(e) week {w['start']}: {w['ran_km']} km in the total, {round(got_ran, 1)} in its days")
         # private: refused on the public view
         S.READONLY, S._AUTH_ACTIVE = True, False
+        if S.app.test_client().get("/api/ui/calendar").status_code != 403:
+            fails.append("(a) the public view served /api/ui/calendar")
         r = S.app.test_client().get("/api/ui/today")
         if r.status_code != 403:
             fails.append(f"(a) the public view served /api/ui/today: {r.status_code}")

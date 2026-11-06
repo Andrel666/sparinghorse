@@ -8,7 +8,8 @@ import { useRun, useRunsLog, useRunsMonth } from "../lib/api";
 import { useAction } from "../lib/actions";
 import { dateLong, dateShort, km, pace, verdictTone } from "../lib/format";
 import { Card, PageHead, Pill, Row, Seg, Strip } from "../components/ui";
-import { MonthGrid, addMonth } from "../components/layout";
+import { addMonth } from "../components/layout";
+import { Calendar } from "../components/Calendar";
 import { RunMap } from "../components/RunMap";
 import { Profile } from "../components/Profile";
 import { Help } from "../components/feedback";
@@ -90,7 +91,6 @@ export function Runs() {
   const setMonth = (m: string) => { setChoose(null); set({ month: m, range: null }); };
   return <Query q={useRunsMonth(month)}>{m => {
     const run = picked ?? Object.values(m.days).flat().at(-1)?.id;
-    const other = new Set(m.other || []);
     return (
       <div className="page">
         <PageHead title="Runs">
@@ -105,22 +105,11 @@ export function Runs() {
               { k: "12 months", v: `${m.stats12.runs ?? 0} runs`, s: km(m.stats12.km as number),
                 onClick: () => document.getElementById("totals")?.scrollIntoView({ behavior: "smooth" }) }]} />
             {view === "log" ? <Log month={month} range={range} picked={run} onPick={id => pick(id)} onMonth={setMonth} /> : <>
-            <MonthGrid month={m.month} weekStart={m.week_start} first={m.first} last={m.last} onMonth={setMonth}
-              selected={choose || undefined}
-              cell={date => { const xs = m.days[date] || [];
-                return { pickable: xs.length > 0, body: <>
-                  {xs.slice(0, 2).map(x => (
-                    <span key={x.id} className="lbl row" style={{ gap: 4 }} title={`${km(x.km)} @ ${pace(x.pace)}${x.sj ? " (split recording)" : ""}`}>
-                      <span className="zdot" style={{ background: x.z != null ? ZONE[x.z] : "var(--line-strong)" }} />{x.km}</span>))}
-                  {xs.length > 2 && <span className="lbl">+{xs.length - 2}</span>}
-                  {other.has(date) && <span className="lbl muted" title="Another sport that day">·</span>}</> }; }}
-              onPick={date => { const xs = m.days[date] || []; if (xs.length > 1) setChoose(date); else pick(xs[0]?.id); }} />
+            <Calendar month={m.month} onMonth={setMonth} selected={choose}
+              onDay={(date, c) => { const xs = c.days[date]?.runs ?? []; if (xs.length > 1) setChoose(date); else if (xs[0]) pick(xs[0].id); }} />
             {choose && <div role="group" aria-label="Runs that day">{(m.days[choose] || []).map(x => (
               <Row key={x.id} onClick={() => pick(x.id)} lead={x.t} main={km(x.km)} cols={[{ v: pace(x.pace), w: 9, muted: true }]}
-                   trail={<span className="zdot" style={{ background: x.z != null ? ZONE[x.z] : "var(--line-strong)" }} />} />))}</div>}
-            <span className="row muted" style={{ fontSize: "var(--fs-label)", gap: 8 }}>{ZONE.map((c, i) => <span key={i} className="row" style={{ gap: 3 }}>
-              <span className="zdot" style={{ background: c }} />Z{i + 1}</span>)}<span>· grey no HR · dot = other sport</span>
-              <Help>The dot colour is the run's average-heart-rate zone.</Help></span></>}
+                   trail={<span className="zdot" style={{ background: x.z != null ? ZONE[x.z] : "var(--line-strong)" }} />} />))}</div>}</>}
             <div id="totals" className="table-wrap stack-off"><table className="steps">
               <thead><tr><th /><th className="num">Month</th><th className="num">12 mo</th><th className="num">All time</th></tr></thead>
               <tbody>{TOTALS.map(([k, t, f]) => <tr key={k}><td>{t}</td><td className="num">{f(m.stats[k])}</td><td className="num">{f(m.stats12[k])}</td>
