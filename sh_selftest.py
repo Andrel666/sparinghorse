@@ -15134,8 +15134,11 @@ def _stc_frequency_met():
     # §LRH (0.60.5) — a long run still AHEAD now holds its rung on an over-run assertive week instead of
     # falling to optional rest, so this limb puts the long run BEHIND today (long day = Saturday) — the
     # covered test then empties the remainder exactly as before, and the note it writes is what is judged.
+    # The rest days are named (Mon, Wed, Fri) so the week is laid Tue, Thu, Sat-long, Sun: a Saturday long
+    # run alone now turns the house layout with it (§DAYPREF long-day-turned) and rests Sunday, which
+    # would leave this limb no run day today to fall to optional rest.
     _prefs = E.day_preferences()
-    E.set_day_preferences("sat", None)
+    E.set_day_preferences("sat", "mon,wed,fri")
     try:
         a_wks, _ = S.generate_block(a_shape, bs, 55.0, 60.0, 428.0, today=today,
                                   regime="assertive", zones=S.pace_zones(34.8), week_actuals=(4, 60.0))
@@ -15927,6 +15930,34 @@ def _stc_race_correction_fitness():
                "the race correction follows race-day fitness: flat on small corpora, a shrunk trend on a "
                "wide one, clamped to the raced range, blind to distance mix and to one far-off race",
                passed=not fails, got={"failures": fails or "none"})
+
+
+def _stc_long_day_turned():
+    """§DAYPREF — the house layout turns WITH the long run. The table lays every frequency around a long
+    run on its last slot (Sunday on a Monday week), with the rest days placed around it. A long run on
+    another slot — a Sunday long run on a Sunday-start week is slot 0 — must keep that shape: at three
+    runs the table rests the day before the long run, so the turned layout must too (the unturned one
+    laid Sun, Wed, Sat: an easy run the day before every long run). With the long run on the last slot
+    the shift is zero and every frequency is the table's own, byte for byte."""
+    fails = []
+    for n, lay in E.RUN_DAY_LAYOUTS.items():
+        if n < 7 and E._derive_run_days(n, 6, ()) != lay:
+            fails.append(f"long run on the last slot changed the house layout at n={n}")
+    for long_day in range(7):
+        for n in (1, 2, 3):
+            days = E._derive_run_days(n, long_day, ())
+            if long_day not in days:
+                fails.append(f"n={n} long day {long_day}: not laid ({days})")
+            if (long_day - 1) % 7 in days:
+                fails.append(f"n={n} long day {long_day}: a run the day before the long run ({days})")
+    got = E._derive_run_days(3, 0, ())
+    if got != [0, 2, 4]:
+        fails.append(f"Sunday week, Sunday long run, 3 runs: {got}, expected Sun, Tue, Thu [0, 2, 4]")
+    return _st("det", "long-day-turned",
+               "§DAYPREF the house layout turns with the long run: the rest before it survives a long run "
+               "off the last slot (Sunday week + Sunday long run lays Sun, Tue, Thu, not Sun, Wed, Sat)",
+               passed=not fails, expect="no run the day before the long run at 1–3 runs; last slot = the table",
+               got=fails or "ok", output={"sun_week_3": got})
 
 
 def _stc_week_start():
@@ -25428,7 +25459,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),
