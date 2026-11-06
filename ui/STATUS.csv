@@ -23,6 +23,7 @@ Today,Pre-plan / road complete / no plan / rest / optional-week states,done,
 Today,"Why this session, binding-limit and deload lines",done,
 Today,"Race countdown to the gun time in the race's zone, priority, verdict",done,
 Today,"Latest run, cross-training note, open the run",done,
+Today,"Vs. the original plan: CTL, VO₂max, long run — you vs plan, gap and %",done,sh_ui_api.today_vs_plan
 Today,"Recovery: rest days to TSB 0 (Runalyze's), with TSB sparkline",done,sh_ui_api.today_rest_days
 Plan,"Generate plan, ""Re-planned — changes"" banner",done,
 Plan,Stale-plan / stale-seed banners with Generate,done,

@@ -316,7 +316,41 @@ def today_page(S, db):
             "glance": today_glance(S, db, week, json.loads(plan_row["plan"]) if plan_row else None, today),
             "where": today_where(S, db, log, week, json.loads(plan_row["plan"]) if plan_row else None, today),
             "why": today_why(S, week, log, json.loads(plan_row["plan"]) if plan_row else None, today),
-            "recovery": today_recovery(S, db, a.get("hrv"))}
+            "recovery": today_recovery(S, db, a.get("hrv")),
+            "vs_plan": today_vs_plan(S, db, today)}
+
+
+# §VSO — Today's "vs. the original plan": the engine's `vs_original`, worded for the card. Each figure
+# opens where its number is drawn; the long run opens the plan history, where the original road is.
+VSO_LABEL = {"ctl": "Fitness", "vo2": "VO₂max", "long": "Long run"}
+VSO_LINK = {"ctl": "/fitness#fitness-fatigue", "vo2": "/fitness", "long": "/plan?view=history"}
+VSO_TONE = {"ahead": "ok", "behind": "warn"}
+VSO_WORD = {"ahead": "ahead of plan", "behind": "behind plan", "level": "on plan", "upcoming": "still to come"}
+
+
+def today_vs_plan(S, db, today):
+    """This week against the race's ORIGINAL plan (the pinned founding road): per metric the athlete's
+    number, the plan's, the gap and the gap in percent, a tone and a word. None when there is no card to
+    show (no plan, the race is run). Distances stay in km here; the UI converts them."""
+    try:
+        r = S.vs_original(db, today=today)
+    except (ValueError, KeyError, TypeError) as e:
+        print(f"[ui] vs_plan skipped: {e}")
+        return None
+    if not r.get("ok") or not r.get("metrics"):
+        return None
+    b = r["baseline"]
+    fd = S._date(b["for_date"]) if b.get("for_date") else None
+    since = f"{fd.day} {fd.strftime('%b')}" if fd else None
+    lede = ("Original plan set today: the gaps open as the weeks land." if r.get("just_set") else
+            f"Where the plan saved {since} said you would be today." if since else None)
+    items = [{"key": m["key"], "label": VSO_LABEL.get(m["key"], m["label"]), "actual": m["actual"],
+              "planned": m["planned"], "diff": m["diff"], "pct": m["pct"], "unit": m["unit"] or None,
+              "state": m["state"], "tone": VSO_TONE.get(m["state"]), "word": VSO_WORD.get(m["state"]),
+              "when": m["when"], "note": m["note"], "link": VSO_LINK.get(m["key"], "/plan?view=history")}
+             for m in r["metrics"]]
+    return {"since": b.get("for_date"), "race": (b.get("race") or {}).get("label"), "pinned": b.get("pinned"),
+            "just_set": r.get("just_set"), "lede": lede, "items": items}
 
 
 HRV_WORD = {"ok": "inside the band", "low": "below the band", "high": "above the band"}
