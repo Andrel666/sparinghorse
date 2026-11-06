@@ -32,6 +32,7 @@ one by one against the new UI. ✅ in the new UI · — deliberately not carried
 | Why this session, binding-limit and deload lines | ✅ |
 | Race countdown to the gun time in the race's zone, priority, verdict | ✅ |
 | Latest run, cross-training note, open the run | ✅ |
+| Vs. the original plan: CTL, VO₂max, long run — you vs plan, gap and % | ✅ `sh_ui_api.today_vs_plan` (Classic: `#sec-vsplan`) |
 
 ## Plan
 | Generate plan, "Re-planned — changes" banner | ✅ |

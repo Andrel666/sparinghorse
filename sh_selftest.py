@@ -16740,9 +16740,22 @@ def _stc_vs_original():
         want_v = 50.0 + 2.0 * sum(t for d, t in load if d <= today.isoformat()) / sum(t for _, t in load)
         if (m.get("vo2") or {}).get("planned") != round(want_v, 1):
             fails.append(f"(d) planned VO₂max {m.get('vo2', {}).get('planned')}, want {round(want_v, 1)}")
-        # (e) after the race there is no card
+        # (f) the new UI's card is the same numbers, worded: tone/word per state, each figure a door
+        u = UIAPI.today_vs_plan(S, mem, today) or {}
+        ui = {x["key"]: x for x in u.get("items") or []}
+        if [x["key"] for x in u.get("items") or []] != ["ctl", "vo2", "long"]:
+            fails.append(f"(f) the UI card's figures: {list(ui)}")
+        lu = ui.get("long") or {}
+        if (lu.get("actual"), lu.get("planned"), lu.get("pct"), lu.get("unit"), lu.get("tone"), lu.get("word"),
+                lu.get("label")) != (14.0, 16.0, -12.5, "km", "warn", "behind plan", "Long run"):
+            fails.append(f"(f) the UI long-run figure is not the engine's, worded: {lu}")
+        if not all(x.get("link") for x in ui.values()):
+            fails.append("(f) a UI figure has no door")
+        # (e) after the race there is no card, in either UI
         if S.vs_original(mem, today=S._date(race) + _td(days=1)).get("ok"):
             fails.append("(e) a run race still returned a card")
+        if UIAPI.today_vs_plan(S, mem, S._date(race) + _td(days=1)) is not None:
+            fails.append("(e) the new UI still shows the card after the race")
     except Exception as e:
         fails.append(f"raised {type(e).__name__}: {e}")
     finally:
