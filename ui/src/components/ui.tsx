@@ -1,6 +1,6 @@
 // The shared building blocks. Pages compose these; none of them style themselves.
 import { useEffect, useRef, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import type { Tone } from "../lib/format";
 
 type Span = 3 | 4 | 5 | 6 | 7 | 8 | 12;
@@ -12,6 +12,7 @@ export function Card({ label, span = 12, tone, children, aside, id, lede, tier =
   { label?: string; span?: Span; tone?: Tone; children: ReactNode; aside?: ReactNode; id?: string; lede?: ReactNode;
     tier?: "zone" | "group"; className?: string }) {
   const ref = useRef<HTMLElement>(null);
+  const loc = useLocation();                 // a same-page door (to="#load") moves the hash without a hashchange
   useEffect(() => {
     if (!id) return;
     const go = () => {
@@ -22,7 +23,7 @@ export function Card({ label, span = 12, tone, children, aside, id, lede, tier =
     const t = setTimeout(go, 60);           // after the page has laid out
     window.addEventListener("hashchange", go);
     return () => { clearTimeout(t); window.removeEventListener("hashchange", go); };
-  }, [id]);
+  }, [id, loc.hash, loc.key]);
   return (
     <section ref={ref} id={id} className={cls("card", `span-${span}`, tone && `tone-${tone}`, tier === "group" && "group", className)} aria-label={label}>
       {(label || aside) && <div className="row" style={{ justifyContent: "space-between" }}>
@@ -85,13 +86,15 @@ export function Table<T>({ cols, rows, keyOf, phone = "stack" }: { cols: Col<T>[
 /** A page's headline numbers where every number is a door: each cell links (`to`) or acts (`onClick`).
  *  The sub line clamps to two lines; `hint` carries the rest as a tooltip. */
 type Door = { to: string; onClick?: never } | { onClick: () => void; to?: never };
-export type StripItem = { k: string; v: ReactNode; s?: string; hint?: string | null; tone?: Tone; signal?: boolean; active?: boolean } & Door;
+export type StripItem = { k: string; v: ReactNode; s?: string; hint?: string | null; tone?: Tone; signal?: boolean; active?: boolean;
+  spark?: ReactNode } & Door;
 export function Strip({ items }: { items: StripItem[] }) {
   return <div className="figures strip">{items.map((f, i) => {
     const c = cls("figure", "link", f.signal && "signal", f.tone && `tone-${f.tone}`, f.active && "active");
     const aria = `${f.k}: ${typeof f.v === "string" ? f.v : ""}${f.s ? `. ${f.s}` : ""}. Open`;
     const body = <><span className="k">{f.k}<span className="go" aria-hidden="true">›</span></span>
-      <span className={cls("v", f.tone && "toned")}>{f.v}</span>{f.s && <span className="s" title={f.hint || f.s}>{f.s}</span>}</>;
+      <span className={cls("v", f.tone && "toned")}>{f.v}</span>{f.s && <span className="s" title={f.hint || f.s}>{f.s}</span>}
+      {f.spark && <span className="spark">{f.spark}</span>}</>;
     return f.to ? <Link key={i} to={f.to} className={c} aria-label={aria}>{body}</Link>
       : <button key={i} type="button" className={c} aria-label={aria} onClick={f.onClick}>{body}</button>;
   })}</div>;

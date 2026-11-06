@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useBody, type Marker } from "../lib/api";
 import { useAction } from "../lib/actions";
 import { dateShort, localToday, reading } from "../lib/format";
-import { Card, ListItem, PageHead, Pill } from "../components/ui";
+import { Card, ListItem, Pill } from "../components/ui";
+import { Navigate, useLocation } from "react-router-dom";
 import { Lines } from "../components/charts";
 import { Banner } from "../components/feedback";
 import { Query } from "./Query";
@@ -55,12 +56,17 @@ function AddReading({ options }: { options: { key: string; label: string }[] }) 
     </Card>);
 }
 
+/** /body is now the Body tab of Fitness; the old address (and its #marker anchors) lands there. */
 export function Body() {
+  const loc = useLocation();
+  return <Navigate replace to={`/fitness?tab=body${loc.hash}`} />;
+}
+
+export function BodyView() {
   return <Query q={useBody()}>{d => (
-    <div className="page">
-      <PageHead title="Body" />
+    <>
       {d.stopped && <Banner tone="warn">{d.stopped}</Banner>}
-      {!d.markers.length && <Card><span className="muted">No health readings yet. Runalyze sync brings resting HR and sleep; lab values are added below.</span></Card>}
+      {!d.markers.length && <Card><span className="muted">No health readings yet.</span></Card>}
       {GROUPS.map(([g, title]) => {
         const ms = d.markers.filter(m => m.group === g);
         return ms.length ? (
@@ -75,6 +81,6 @@ export function Body() {
           <ListItem key={i.start} k={dateShort(i.start)}>{i.label || "injury"}{i.end ? ` · until ${dateShort(i.end)}` : ""}</ListItem>))}</div>
           : <span className="muted">None listed. Add past injuries in Settings → Athlete; calibration and the coach use them.</span>}
       </Card>
-    </div>
+    </>
   )}</Query>;
 }

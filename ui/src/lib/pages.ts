@@ -5,13 +5,14 @@ export interface PageDef {
   path: string; label: string; icon: IconName;
   tab: boolean;            // its own phone tab (the rest live under More)
   bottom?: boolean;        // pinned to the bottom of the sidebar
+  hidden?: boolean;        // a route only (an old address that redirects), not in the navigation
 }
 export const PAGES: PageDef[] = [
   { path: "/", label: "Today", icon: "today", tab: true },
   { path: "/plan", label: "Plan", icon: "plan", tab: true },
   { path: "/runs", label: "Runs", icon: "runs", tab: true },
   { path: "/fitness", label: "Fitness", icon: "fitness", tab: true },
-  { path: "/body", label: "Body", icon: "body", tab: false },
+  { path: "/body", label: "Body", icon: "body", tab: false, hidden: true },
   { path: "/coach", label: "Coach", icon: "coach", tab: false },
   { path: "/music", label: "Music", icon: "music", tab: false },
   { path: "/settings", label: "Settings", icon: "settings", tab: false, bottom: true },

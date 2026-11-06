@@ -15,6 +15,8 @@ export function Road({ road, phases, today, tuneUps = [], onPick }: { road: Plan
           .map(f => <span key={f.date + f.label} className={`flagpin${f.tune ? " tune" : ""}`} title={`${f.label} · ${dateShort(f.date)}${f.tune ? " (tune-up)" : ""}`}
                           style={{ left: `${((i + (f.day + 0.5) / 7) / road.length) * 100}%` }}>{f.label}</span>))}
       </div>
+      <div className="chart" style={{ position: "relative" }}>
+      <div className="yticks bars" aria-hidden="true" style={{ height: "100%" }}><span style={{ top: 0 }}>{Math.round(max)} km</span></div>
       <div className="road" role="list" aria-label="Weekly distance through the plan">
         {road.map(w => (
           <button key={w.start} type="button" role="listitem" data-phase={w.phase || undefined}
@@ -25,6 +27,7 @@ export function Road({ road, phases, today, tuneUps = [], onPick }: { road: Plan
             {w.ran > 0 && <span className="ran" style={{ height: `${(Math.min(w.ran, w.km || w.ran) / max) * 100}%` }} />}
           </button>
         ))}
+      </div>
       </div>
       <div className="road-phases">
         {phases.map(p => <span key={p.start} data-phase={p.key || undefined} style={{ flex: p.weeks }}>{p.name}</span>)}

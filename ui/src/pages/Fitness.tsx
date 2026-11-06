@@ -3,13 +3,14 @@
 // Every number, sentence and verdict arrives from /api/ui/fitness.
 import { useFitness, type FitnessPage } from "../lib/api";
 import { bpm, dateShort, dayNum, km, numDay, pace, verdictTone } from "../lib/format";
-import { Card, Figures, ListItem, PageHead, Pill, Table } from "../components/ui";
+import { Card, ListItem, PageHead, Pill, Seg, Strip, Table } from "../components/ui";
 import { Banner } from "../components/feedback";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
+import { BodyView } from "./Body";
 import { Bars, Gauge, Lines, Scatter, Spark, type Dot } from "../components/charts";
 import { Query } from "./Query";
 
-const signed = (v: number | null) => (v == null ? "" : `${v > 0 ? "+" : ""}${v.toFixed(1)} in 4 weeks`);
 const day = dayNum;
 
 type Run = FitnessPage["easy"]["runs"][number];
@@ -25,7 +26,17 @@ const EASY_COLS = [
   { head: "Verdict", cell: (r: Run) => <Pill tone={verdictTone(r.verdict)}>{r.verdict_text}</Pill> },
 ];
 
+/** Fitness and Body share one page: the tab is URL state (?tab=body), so /body and Today's markers link into it. */
 export function Fitness() {
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") === "body" ? "body" : "fitness";
+  const head = <PageHead title="Fitness">
+    <Seg label="Fitness view" value={tab} onChange={v => setParams(v === "body" ? { tab: "body" } : {})}
+         options={[{ v: "fitness", label: "Fitness" }, { v: "body", label: "Body" }]} /></PageHead>;
+  return tab === "body" ? <div className="page">{head}<BodyView /></div> : <FitnessView head={head} />;
+}
+
+function FitnessView({ head }: { head: ReactNode }) {
   return <Query q={useFitness()}>{d => {
     const ed = d.efficiency_detail;
     const t0 = ed.points[0] ? day(ed.points[0].date) : 0;
@@ -33,13 +44,11 @@ export function Fitness() {
       label: `${p.date}: ${p.v} · ${p.km} km at ${p.pace}/km, ${p.hr} bpm${p.temp != null ? `, ${p.temp} °C` : ""}` }));
     return (
       <div className="page">
-        <PageHead title="Fitness" />
+        {head}
         <div className="grid">
-          <div className="span-12"><Figures items={d.tiles.map(t => ({
-            k: <span title={t.hint}>{t.label}{t.unit ? ` · ${t.unit}` : ""}</span>,
-            v: t.value == null ? "—" : t.value.toFixed(1),
-            s: <>{t.word || signed(t.delta)}<Spark pts={t.series} /></> }))} /></div>
-          <Card id="fitness-fatigue" label="Fitness & fatigue · 6 months and the plan to race day" span={8}>
+          <div className="span-12"><Strip items={d.strip.map(t => ({ k: t.label, v: t.value ?? "—", s: t.sub, tone: t.tone ?? undefined, to: t.link,
+            spark: t.series.length > 1 ? <Spark pts={t.series} /> : undefined }))} /></div>
+          <Card id="fitness-fatigue" label="Fitness & fatigue" lede={d.ff_headline ?? undefined} span={8}>
             <Lines series={[{ pts: d.chart.ctl, color: "var(--text)", label: "Fitness" },
                             { pts: d.chart.atl, color: "var(--ph-base)", label: "Fatigue" },
                             { pts: d.chart.plan, color: "var(--signal)", label: "Planned fitness", dashed: true },
@@ -59,18 +68,6 @@ export function Fitness() {
             </>}
             {d.load.ramp != null && <ListItem k="Last 7 days">Fitness {d.load.ramp > 0 ? "+" : ""}{d.load.ramp} — {d.load.ramp_word}</ListItem>}
           </Card>
-          <Card id="weekly" label={`Weekly distance · all ${d.weekly.length} weeks (scroll back)`} span={8}>
-            <Bars scroll items={d.weekly.map(w => ({ label: w.week, v: w.km }))} unit="km" />
-            <span className="muted" style={{ fontSize: "var(--fs-small)" }}>Last week {km(d.weekly.at(-1)?.km)} · hover a bar for its week</span>
-          </Card>
-          <Card id="zones" label="Zones" span={4}>
-            <div className="list">{d.zones.map(z => (
-              <ListItem key={z.label} k={z.label.split(" /")[0]}>
-                <span className="num">{z.pace ? `${z.pace}/km` : "—"}</span>
-                <span className="muted num"> · {z.hr ? (z.hr.lo && z.hr.hi ? `${z.hr.lo}–${z.hr.hi}` : z.hr.hi ? `≤ ${z.hr.hi}` : `≥ ${z.hr.lo}`) + " bpm" : "—"}</span>
-              </ListItem>))}</div>
-            <span className="muted" style={{ fontSize: "var(--fs-label)" }}>{d.zones_note}</span>
-          </Card>
           <Card id="easy" label={`Easy runs · last ${d.easy.window_days} days`} span={12}
                 tone={verdictTone(d.easy.too_hard ? "too_hard" : d.easy.hot ? "hot" : d.easy.judged ? "on" : null)}>
             <div className="row" style={{ alignItems: "baseline" }}>
@@ -83,6 +80,17 @@ export function Fitness() {
             {d.easy.field_test && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{d.easy.field_test}</span>}
             <Table cols={EASY_COLS} rows={d.easy.runs} keyOf={r => r.date + r.km} />
           </Card>
+          <Card id="weekly" label="Weekly distance" lede={d.weekly_headline ?? undefined} span={8}>
+            <Bars scroll items={d.weekly.map(w => ({ label: w.week, v: w.km }))} unit="km" />
+          </Card>
+          <Card id="zones" label="Zones" span={4}>
+            <div className="list">{d.zones.map(z => (
+              <ListItem key={z.label} k={z.label.split(" /")[0]}>
+                <span className="num">{z.pace ? `${z.pace}/km` : "—"}</span>
+                <span className="muted num"> · {z.hr ? (z.hr.lo && z.hr.hi ? `${z.hr.lo}–${z.hr.hi}` : z.hr.hi ? `≤ ${z.hr.hi}` : `≥ ${z.hr.lo}`) + " bpm" : "—"}</span>
+              </ListItem>))}</div>
+            <span className="muted" style={{ fontSize: "var(--fs-label)" }}>{d.zones_note}</span>
+          </Card>
           <Durability d={d} />
           <Card id="efficiency" label="Aerobic efficiency · speed per heartbeat" span={6} tone={d.efficiency.verdict === "improving" ? "ok" : undefined}>
             <span>{d.efficiency.text}</span>
@@ -91,16 +99,16 @@ export function Fitness() {
             {ed.points.some(p => p.temp != null) && <Bars items={ed.points.map(p => ({ label: `${p.date} · ${p.temp ?? "?"} °C`, v: p.temp ?? 0 }))} height={40} unit="°C" />}
             {ed.temp_note && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{ed.temp_note}</span>}
           </Card>
-          <Card id="track" label="Prediction track record" span={12}>
-            {d.track_full.empty && <span className="muted">{d.track_full.empty}</span>}
+          {d.track_full.races.length === 0 && !d.track_full.lines.length
+            ? <Card id="track" label="Prediction track record" span={12}><span className="muted">{d.track_full.empty ?? "Nothing scored yet."}</span></Card>
+            : <Card id="track" label="Prediction track record" span={12}>
             {d.track_full.lines.map(l => <span key={l}>{l}</span>)}
             {d.track_full.races.length > 0 && <Table cols={[{ head: "Race", cell: (r: FitnessPage["track_full"]["races"][number]) => r.label },
               { head: "Date", cell: r => dateShort(r.date) }, { head: "Scored at", cell: r => r.at },
               { head: "Band", cell: r => r.band ? <Pill tone={r.band === "inside" ? "ok" : "bad"}>{r.band}</Pill> : "—" },
               { head: "Error", cell: r => (r.err_pct != null ? `${r.err_pct > 0 ? "+" : ""}${r.err_pct}%` : ""), num: true }]}
               rows={d.track_full.races} keyOf={r => r.date + r.at} />}
-            <span className="muted" style={{ fontSize: "var(--fs-small)" }}>Every row was written when the outcome settled and is never rewritten — a forecast that can be re-scored after the fact is not a forecast.</span>
-          </Card>
+          </Card>}
         </div>
       </div>
     );

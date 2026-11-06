@@ -8,8 +8,15 @@ import { dayNum as day, localToday, numDay } from "../lib/format";
 function yScale(vals: number[], h: number, pad = 0.08, from0 = false) {
   const lo = from0 ? Math.min(0, ...vals) : Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
   const a = from0 ? lo : lo - span * pad, b = hi + span * pad;
-  return (v: number) => h - ((v - a) / (b - a)) * h;
+  return Object.assign((v: number) => h - ((v - a) / (b - a)) * h, { a, b });
 }
+
+/** The y axis as three values at the left edge (top, middle, bottom of the plotted range). */
+function YTicks({ a, b, fmt }: { a: number; b: number; fmt: (v: number) => string }) {
+  return <div className="yticks" aria-hidden="true">
+    {[b, (a + b) / 2, a].map((v, i) => <span key={i} style={{ top: `${i * 50}%` }}>{fmt(v)}</span>)}</div>;
+}
+const tick = (v: number) => Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1);
 const xScale = (lo: number, hi: number, w: number) => (x: number) => ((x - lo) / (hi - lo || 1)) * w;
 const line = (pts: [number, number][]) => pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
 
@@ -43,7 +50,8 @@ export function Lines({ series, height = 220, fmt = (v: number) => v.toFixed(1),
   }).filter(Boolean) as { s: Series; p: Pt }[];
   const todayX = x(day(localToday()));
   return (
-    <figure style={{ margin: 0, position: "relative" }}>
+    <figure className="chart" style={{ margin: 0, position: "relative" }}>
+      <YTicks a={y.a} b={y.b} fmt={tick} />
       <svg viewBox={`0 0 ${w} ${height}`} width="100%" height={height} preserveAspectRatio="none" role="img"
            aria-label={series.map(s => `${s.label} ${s.pts.at(-1)?.v}`).join(", ")}
            onMouseMove={e => { const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
@@ -76,6 +84,8 @@ export function Bars({ items, height = 140, unit = "", scroll = false }:
   useEffect(() => { if (scroll && ref.current) ref.current.scrollLeft = ref.current.scrollWidth; }, [scroll, items.length]);
   if (!items.length) return null;
   const max = Math.max(...items.map(i => i.v), 1);
+  const ticks = <div className="yticks bars" aria-hidden="true" style={{ height }}>
+    <span style={{ top: 0 }}>{tick(max)}{unit ? ` ${unit}` : ""}</span><span style={{ top: "50%" }}>{tick(max / 2)}</span></div>;
   const grid = (
     <div style={{ display: "grid", gridTemplateColumns: `repeat(${items.length}, ${scroll ? "10px" : "minmax(0, 1fr)"})`, gap: 3,
                   alignItems: "end", height, minWidth: scroll ? items.length * 13 : undefined }}
@@ -86,7 +96,8 @@ export function Bars({ items, height = 140, unit = "", scroll = false }:
                       background: i === items.length - 1 ? "var(--signal)" : "var(--ph-base)" }} />
       ))}
     </div>);
-  return scroll ? <div ref={ref} style={{ overflowX: "auto", paddingBottom: 4 }}>{grid}</div> : grid;
+  return <div className="chart" style={{ position: "relative" }}>{ticks}
+    {scroll ? <div ref={ref} style={{ overflowX: "auto", paddingBottom: 4 }}>{grid}</div> : grid}</div>;
 }
 
 export interface Dot { x: number; y: number; color: string; label: string; ring?: boolean }

@@ -542,3 +542,13 @@ a.marker-row:hover { background: var(--surface-2); }
   .month-wk .muted { display: none; }
 }
 .cal-ahead { color: var(--muted); }
+.figure .spark { display: block; height: 28px; margin-top: 4px; }
+.figure .spark svg { height: 28px; }
+/* y-axis values, laid over the chart's left edge */
+.chart .yticks { position: absolute; left: 0; top: 0; height: calc(100% - 22px); pointer-events: none; z-index: 1; }
+.chart .yticks.bars { height: auto; }
+.chart .yticks span { position: absolute; left: 0; transform: translateY(-50%); font-size: 11px; line-height: 1; color: var(--muted);
+  background: var(--bg); padding: 1px 3px 1px 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chart .yticks span:first-child { transform: none; }
+.chart .yticks span:last-child:not(:first-child) { transform: translateY(-100%); }
+.chart .yticks.bars span:last-child { transform: translateY(-50%); }

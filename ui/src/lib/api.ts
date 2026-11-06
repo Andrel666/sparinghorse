@@ -71,7 +71,9 @@ export interface Where {
 export interface Tile { key: string; label: string; value: number | null; unit: string; delta: number | null;
   series: { date: string; v: number }[]; hint: string; word?: string | null }
 export interface FitnessPage {
-  ok: true; tiles: Tile[];
+  ok: true; tiles: Tile[]; ff_headline?: string | null; weekly_headline?: string | null;
+  strip: { key: string; label: string; value: string | null; sub: string; tone: "ok" | "warn" | "bad" | null; link: string;
+           series: { date: string; v: number }[] }[];
   load: { acwr: number | null; band: [number, number]; state: "high" | "low" | "in" | null; text: string | null;
           ramp: number | null; ramp_word: string | null };
   chart: { ctl: { date: string; v: number }[]; atl: { date: string; v: number }[]; plan: { date: string; v: number }[];

@@ -36,8 +36,9 @@ export function Shell({ children }: { children: ReactNode }) {
   const [more, setMore] = useState(false);
   const shell = useShell();
   const loc = useLocation();
-  const top = PAGES.filter(p => !p.bottom), bottom = PAGES.filter(p => p.bottom);
-  const tabs = PAGES.filter(p => p.tab), rest = PAGES.filter(p => !p.tab);
+  const nav = PAGES.filter(p => !p.hidden);
+  const top = nav.filter(p => !p.bottom), bottom = nav.filter(p => p.bottom);
+  const tabs = nav.filter(p => p.tab), rest = nav.filter(p => !p.tab);
   const inMore = rest.some(p => p.path === loc.pathname);
   const back = useTrail(loc), go = useNavigate();
   return (

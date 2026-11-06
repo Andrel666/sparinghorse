@@ -746,7 +746,37 @@ def fitness_page(S, db):
                            else f"{tr['summary']['races_scored']} races scored; "
                                 f"{tr['summary'].get('in_band', 0)} finished inside the predicted range.")},
     }
-    return {"ok": True, "tiles": tiles,
+    # the strip: the prediction first (a door to Race day), then the tiles, then the load ratio
+    plan_row = db.execute("SELECT plan FROM plans ORDER BY id DESC LIMIT 1").fetchone()
+    plan = json.loads(plan_row["plan"]) if plan_row else {}
+    obj, feas = plan.get("objective") or {}, plan.get("feasibility") or {}
+    ft = feas.get("finish_time") or {}
+    strip = []
+    if ft.get("hms"):
+        band = ft.get("band") or {}
+        tone, _w, short = race_call(ft.get("seconds") or _hms_s(ft["hms"]), band.get("lo_seconds"), band.get("hi_seconds"),
+                                    _hms_s(obj.get("target")))
+        strip.append({"key": "prediction", "label": "Predicted", "value": ft["hms"], "tone": tone,
+                      "sub": " · ".join(x for x in [f"goal {obj['target']}" if obj.get("target") else None, short] if x),
+                      "link": "/plan?view=race", "series": []})
+    for t in tiles:
+        strip.append({"key": t["key"], "label": t["label"], "tone": None,
+                      "value": None if t["value"] is None else f"{t['value']:.1f}" if t["key"] != "form" else f"{t['value']:+.1f}",
+                      "sub": t.get("word") or (f"{t['delta']:+.1f} in 4 weeks" if t.get("delta") is not None else t["unit"]),
+                      "link": "#fitness-fatigue", "series": t["series"][-60:]})
+    if acwr is not None:
+        strip.append({"key": "load", "label": "Load ratio", "value": f"{acwr:.2f}", "tone": "warn" if acwr_state == "high" else None,
+                      "sub": {"high": "above", "low": "below", "in": "inside"}[acwr_state] + f" {lo}–{hi}", "link": "#load",
+                      "series": _series(hist, "acwr")[-60:]})
+    ff_headline = None
+    if ctl:
+        ff_headline = f"Fitness {ctl[-1]['v']:.0f} now" + (f" → {proj[-1]['v']:.0f} planned on race day" if proj else "")
+    weekly_headline = None
+    if weekly:
+        pk = max(weekly, key=lambda w: w["km"] or 0)
+        weekly_headline = (f"This week {weekly[-1]['km']:g} km · peak {pk['km']:g} km"
+                           + (f" ({S._date(pk['week']).strftime('%b %Y')})" if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(pk["week"])) else ""))
+    return {"ok": True, "tiles": tiles, "strip": strip, "ff_headline": ff_headline, "weekly_headline": weekly_headline,
             "load": {"acwr": acwr, "band": list(ACWR_BAND), "state": acwr_state, "text": acwr_text,
                      "ramp": ramp, "ramp_word": rword},
             "chart": {"ctl": ctl, "atl": atl, "tsb": tsb, "acwr": _series(hist, "acwr"), "plan": proj, "check": check,
@@ -1209,6 +1239,18 @@ def body_page(S, db):
                     "stale": bool((stale.get(key) or {}).get("stale")), "delta": _delta(pts, 30),
                     "stale_days": (stale.get(key) or {}).get("days"), "n": len(pts), "first": pts[0]["date"],
                     "series": pts, "recent": [p for p in pts if p["date"] >= cut][-120:]})
+    # HRV lives in the shape snapshots (the readiness band's own series), not in health_markers: it leads
+    # the heart group, against the band the readiness check reads it by
+    hv = [{"date": r["snapshot_date"], "v": round(r["hrv_baseline"], 1)} for r in db.execute(
+        "SELECT snapshot_date, hrv_baseline FROM shape_snapshots WHERE hrv_baseline IS NOT NULL ORDER BY snapshot_date").fetchall()]
+    if hv and not any(x["key"] == "hrv" for x in out):
+        band = (((S.today_readiness(db) or {}).get("assessment") or {}).get("hrv") or {}).get("band") or []
+        ref = [round(band[0]), round(band[1])] if len(band) == 2 else None
+        st = None if not ref else "ok" if ref[0] <= hv[-1]["v"] <= ref[1] else "watch"
+        age = (datetime.now().date() - S._date(hv[-1]["date"])).days
+        out.insert(0, {"key": "hrv", "label": "HRV", "unit": "ms", "value": hv[-1]["v"], "date": hv[-1]["date"], "ref": ref,
+                       "good": None, "state": st, "stale": age > 3, "delta": _delta(hv, 30), "stale_days": age, "n": len(hv),
+                       "first": hv[0]["date"], "series": hv, "recent": [p for p in hv if p["date"] >= cut][-120:]})
     group = lambda k: "sleep" if k.startswith("sleep") else "heart" if k in ("hrv", "resting_hr", "night_hr", "systolic") \
         else "weight" if k == "weight" else "labs"
     inj = []
@@ -1220,7 +1262,7 @@ def body_page(S, db):
         except Exception:
             inj = []
     labels = {k: m["label"] for k, m in S.MARKERS.items()}
-    banner = (f"⚠ Nightly data has stopped. Nothing since {sm.get('last')} — {sm.get('days')} days ago — for: "
+    banner = (f"Nightly data has stopped. Nothing since {sm.get('last')} — {sm.get('days')} days ago — for: "
               + ", ".join(labels.get(k, k) for k in sm.get("markers") or [])
               + ". The lab values below are unaffected. Check that the watch has synced to Runalyze.") if sm.get("markers") else None
     return {"ok": True, "markers": [{**x, "group": group(x["key"])} for x in out], "stopped": banner,
