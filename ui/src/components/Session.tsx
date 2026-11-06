@@ -31,8 +31,16 @@ export function SessionBlock({ s }: { s: SessionDetail }) {
 /** Everything about one day, for the day drawer (Today, Plan): each session in full, how it went, and the run(s). */
 export type DaySession = Pick<SessionDetail, "date" | "kind" | "title" | "km" | "minutes" | "note" | "race" | "strides" | "target" |
   "steps" | "actual" | "moved_to" | "status"> & Partial<Pick<SessionDetail, "activity_id" | "reflection" | "runs">>;
-export function DayDetail({ sessions, onRun }: { sessions: DaySession[]; onRun?: () => void }) {
-  if (!sessions.length) return <p className="muted">Rest day — nothing planned. Recovery is part of the plan.</p>;
+export interface DayRun { activity_id: number | null; km: number | null; pace: string | null; hr: number | null; kind: string; unplanned: boolean }
+/** `ranHere`: runs dated this day that belong to another day's session (moved) or to no session (extra). */
+export function DayDetail({ sessions, onRun, ranHere = [], movedFrom }: { sessions: DaySession[]; onRun?: () => void; ranHere?: DayRun[];
+  movedFrom?: string | null }) {
+  const runsBlock = ranHere.length > 0 && <div className="list" style={{ gap: "var(--sp-2)" }}>
+    <b style={{ fontSize: "var(--fs-heading)" }}>Ran {ranHere.reduce((a, r) => a + (r.km ?? 0), 0).toFixed(1)} km
+      {movedFrom ? <span className="muted" style={{ fontWeight: 400 }}> · the {movedFrom} session, run here</span> : null}</b>
+    {ranHere.map((r, j) => r.activity_id && <Link key={j} to={`/runs?id=${r.activity_id}`} className="linkish" onClick={onRun}>
+      Open the run · {km(r.km)}{r.pace ? ` at ${pace(r.pace)}` : ""}{r.hr ? ` · ${r.hr} bpm` : ""} →</Link>)}</div>;
+  if (!sessions.length) return runsBlock || <p className="muted">Rest day. Nothing planned; recovery is part of the plan.</p>;
   return (
     <div className="list" style={{ gap: "var(--sp-5)" }}>
       {sessions.map((s, i) => {
@@ -47,5 +55,6 @@ export function DayDetail({ sessions, onRun }: { sessions: DaySession[]; onRun?:
                 Open the run{runs.length > 1 ? ` ${j + 1}` : ""}{r.km != null ? ` · ${km(r.km)}` : ""}{r.pace ? ` at ${pace(r.pace)}` : ""} →</Link>)}</div>}
           </div>);
       })}
+      {runsBlock}
     </div>);
 }

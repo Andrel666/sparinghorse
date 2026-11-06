@@ -1,14 +1,14 @@
 // Plan: the road to the race and why each week looks the way it does. Week, Month, Race day, History;
 // generate, races, adjustments. The server decides and words everything; this page lays it out.
-import { useEffect, useState } from "react";
+import { Icon } from "../components/Icon";
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePlan, usePlanCalendar, useRacePlan, useShell, type PlanPage, type SessionDetail } from "../lib/api";
 import { useAction } from "../lib/actions";
-import { dateLong, dateShort, km, pace } from "../lib/format";
-import { Card, Figures, ListItem, PageHead, Pill } from "../components/ui";
+import { dateLong, dateShort, dayName, km, pace } from "../lib/format";
+import { Card, ListItem, PageHead, Pill, Row, Strip } from "../components/ui";
 import { Drawer, MonthGrid, Tabs } from "../components/layout";
 import { Road } from "../components/Road";
-import { Week } from "../components/Week";
 import { DayDetail } from "../components/Session";
 import { ComponentChip } from "../components/Component";
 import { Banner, Help } from "../components/feedback";
@@ -25,24 +25,22 @@ const RACE_KEY = "sh-ui-race";
 // calendar dates in UTC arithmetic, so no local time zone can shift a day
 const DAYS = (start: string) => Array.from({ length: 7 }, (_, i) => new Date(Date.parse(start + "T00:00:00Z") + i * 864e5).toISOString().slice(0, 10));
 
+const MARK_LABEL = { extra: "extra run", done: "done", missed: "missed", today: "today", ahead: "ahead" } as const;
+
+/** One day of the week as the shared Row: mark + date · the session and what was run · its target. */
 function SessionLine({ s, onDay, onRun }: { s: SessionDetail; onDay: (d: string) => void; onRun: (id: number) => void }) {
-  const runId = (s.mark === "done" || s.mark === "extra") ? s.activity_id : null;
+  const runId = (s.mark === "done" || s.mark === "extra") && !s.moved_dow ? s.activity_id : null;
+  const sub = [
+    s.actual ? `${km(s.actual.km)}${s.actual.pace ? ` at ${pace(s.actual.pace)}` : ""}${s.actual.hr ? ` · ${s.actual.hr} bpm` : ""}${s.moved_dow ? ` · run ${s.moved_dow}` : ""}` : null,
+    s.runs.length > 1 ? `in ${s.runs.length} runs: ${s.runs.map(r => km(r.km)).join(" + ")}` : null,
+  ].filter(Boolean).join(" · ");
   return (
-    <button type="button" className={`sline${s.mark === "today" ? " today" : ""}`} onClick={() => (runId ? onRun(runId) : onDay(s.date))}
-            title={runId ? "Open this run" : "Show the session"}>
-      <span className={`mk ${s.mark}`} aria-label={s.mark}>{MARK[s.mark]}</span>
-      <span className="muted">{dateShort(s.date)}</span>
-      <span className="list" style={{ gap: 2 }}>
-        <span><b>{s.mark === "extra" ? "Unplanned run" : s.race ? "Race" : s.title}</b> {s.mark !== "extra" && km(s.km)}{s.strides ? ` + ${s.strides}× strides` : ""}
-          {s.target && s.mark !== "done" && s.mark !== "extra" && <span className="muted"> · {s.target.text}</span>} <ComponentChip k={s.component} /></span>
-        {s.actual && <span className="muted num">{km(s.actual.km)}{s.actual.pace ? ` @ ${pace(s.actual.pace)}` : ""}{s.actual.hr ? ` · ${s.actual.hr} bpm` : ""}
-          {s.moved_dow ? ` · ↷ run ${s.moved_dow}` : ""}</span>}
-        {s.runs.length > 1 && <span className="muted">↳ {s.runs.map((r, i) => <span key={i}>{i ? " · " : ""}
-          {r.activity_id ? <a href="#" onClick={e => { e.preventDefault(); e.stopPropagation(); onRun(r.activity_id!); }}>{km(r.km)}{r.pace ? ` @ ${pace(r.pace)}` : ""}</a> : km(r.km)}</span>)}</span>}
-        {s.reflection && <span>📓 {s.reflection}</span>}
-      </span>
-      <span className="muted">›</span>
-    </button>);
+    <Row onClick={() => (runId ? onRun(runId) : onDay(s.date))} active={s.mark === "today"}
+         label={`${dateShort(s.date)}: ${s.title} ${km(s.km)}, ${MARK_LABEL[s.mark]}. ${runId ? "Open the run" : "Show the session"}`}
+         lead={<><span className={`mk ${s.mark}`} aria-hidden="true">{MARK[s.mark]}</span> {dayName(s.date).slice(0, 3)} {s.date.slice(8).replace(/^0/, "")}</>}
+         main={<>{s.mark === "extra" ? "Unplanned run" : s.race ? "Race" : s.title}{s.mark !== "extra" ? ` ${km(s.km)}` : ""}{s.strides ? ` + ${s.strides}× strides` : ""} <ComponentChip k={s.component} /></>}
+         sub={<>{sub}{s.reflection && <span className="reflection"><Icon name="note" /> {s.reflection}</span>}</>}
+         cols={[{ v: s.target && s.mark !== "done" && s.mark !== "extra" ? s.target.text : "", w: 12, muted: true }]} />);
 }
 
 function WeekView({ p, onWeek, onDay, onLimit, onDiff }: { p: PlanPage; onWeek: (s: string) => void; onDay: (date: string) => void;
@@ -55,7 +53,7 @@ function WeekView({ p, onWeek, onDay, onLimit, onDiff }: { p: PlanPage; onWeek: 
     .sort((a, b) => a.d.localeCompare(b.d));
   return (
     <div className="grid">
-      <Card span={8} label={`${w.status} · ${w.phase_name ?? ""} week ${w.n ?? ""}${w.frozen ? " 🔒" : ""}`}
+      <Card span={8} label={`${w.status} · ${w.phase_name ?? ""} week ${w.n ?? ""}${w.frozen ? " · locked" : ""}`}
             aside={<span className="row">
               <button className="btn" disabled={!w.prev} onClick={() => w.prev && onWeek(w.prev)} aria-label="Previous week">‹</button>
               <button className="btn" disabled={!w.next} onClick={() => w.next && onWeek(w.next)} aria-label="Next week">›</button></span>}>
@@ -71,18 +69,23 @@ function WeekView({ p, onWeek, onDay, onLimit, onDiff }: { p: PlanPage; onWeek: 
             : <span className="flag" title={w.deload.why || undefined}>{w.deload.text}</span>)}
           {w.flags.map(f => <span key={f.text} className={`flag${f.tone ? ` tone-${f.tone}` : ""}`} title={f.hint || undefined}>{f.text}</span>)}
         </div>}
-        <Week days={w.days} phase={w.phase} onDay={onDay} today={p.today} />
-        <div className="list" style={{ gap: 0 }}>{lines.map(l => l.s
-          ? <SessionLine key={l.d + l.s.kind} s={l.s} onDay={onDay} onRun={id => nav(`/runs?id=${id}`)} />
-          : <div key={l.d} className="sline rest"><span /><span>{dateShort(l.d)}</span><span>Rest</span><span /></div>)}</div>
+        <div>{lines.map(l => {
+          if (l.s) return <SessionLine key={l.d + l.s.kind} s={l.s} onDay={onDay} onRun={id => nav(`/runs?id=${id}`)} />;
+          const ran = w.days.find(x => x.date === l.d)?.runs ?? [];     // a rest day can hold a run moved onto it
+          const lead = <><span className="mk" aria-hidden="true">{ran.length ? "↷" : ""}</span> {dayName(l.d).slice(0, 3)} {l.d.slice(8).replace(/^0/, "")}</>;
+          return ran.length
+            ? <Row key={l.d} lead={lead} main={<span className="muted">Rest · ran {ran.map(r => km(r.km)).join(" + ")} here</span>}
+                   onClick={() => onDay(l.d)} label={`${dateShort(l.d)}: rest day, a run moved here. Show it`} />
+            : <Row key={l.d} lead={lead} main={<span className="muted" style={{ fontWeight: 400 }}>Rest</span>} />;
+        })}</div>
         {w.intent && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{w.intent}</span>}
       </Card>
-      <Card span={4} label="Why this week looks like this">
+      <Card span={4} label="Why this week looks like this" id="limits">
         <span>{w.held ? `${w.held.text}.` : "No limit binds this week."}</span>
         <div className="list">{w.limits.map(l => (
           <button key={l.key} type="button" disabled={!hasSource(l.key)} onClick={() => onLimit(l.key)}
                   className={["limit", l.holds ? "holds" : "", l.over ? "over" : ""].join(" ")}
-                  style={{ background: "none", border: 0, padding: 0, textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer" }}
+                  style={{ background: "none", borderTop: 0, borderLeft: 0, borderRight: 0, textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer", width: "100%" }}
                   aria-label={`${l.name}: ${l.laid} of ${l.ceiling} ${l.unit}. Show the source`}>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <span>{l.name}{l.holds && <Pill tone="warn">holds the week</Pill>}{l.over && !l.holds && <Pill tone="bad">ran over</Pill>}</span>
@@ -93,24 +96,21 @@ function WeekView({ p, onWeek, onDay, onLimit, onDiff }: { p: PlanPage; onWeek: 
               {basisLabel(l.basis) ? ` · ${basisLabel(l.basis)}` : ""}{hasSource(l.key) ? " · why ›" : ""}</span>
           </button>))}</div>
       </Card>
-      <PlanStrip p={p} onSource={onLimit} />
     </div>
   );
 }
 
-function PlanStrip({ p, onSource }: { p: PlanPage; onSource: (k: string) => void }) {
+function PostureAndPaces({ p, onSource }: { p: PlanPage; onSource: (k: string) => void }) {
   const h = p.header;
   return (
-    <Card span={12} label="Posture and paces">
-      <div className="row" style={{ gap: "var(--sp-4)" }}>
-        <button type="button" className="btn" onClick={() => onSource("posture")}>{h.posture.mode === "assertive" ? "⟢" : "◇"} {h.posture.label}</button>
-        <span className="muted">{h.posture.ride}{h.posture.reason ? ` · ${h.posture.reason}` : ""}</span>
-      </div>
-      <div className="row" style={{ gap: "var(--sp-4)" }}>{p.paces.map(z => (
-        <span key={z.key}><span className="muted">{z.label}</span> <b className="num">{pace(z.pace)}</b></span>))}
-        <button type="button" className="linkish" onClick={() => onSource("paces")}>Where these come from →</button></div>
+    <Card span={4} label="Posture and paces" tier="group" id="posture">
+      <button type="button" className="kv-btn" onClick={() => onSource("posture")} aria-label={`${h.posture.label}: where this comes from`}>
+        <b>{h.posture.label}</b> <span className="muted">· {h.posture.ride} ›</span></button>
+      {h.posture.reason && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{h.posture.reason}</span>}
+      <button type="button" className="kv-btn paces" onClick={() => onSource("paces")} aria-label="The paces: where these come from">
+        {p.paces.map(z => <span key={z.key}><span className="muted">{z.label.replace(" (easy ceiling)", "")}</span> <b className="num">{z.pace}</b></span>)}
+        <span className="muted">/km ›</span></button>
       {h.pace_note && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{h.pace_note}</span>}
-      {h.generated_at && <span className="muted" style={{ fontSize: "var(--fs-label)" }}>↻ Plan rebuilt {new Date(h.generated_at).toLocaleString()}</span>}
     </Card>);
 }
 
@@ -167,64 +167,89 @@ function RaceView() {
 }
 
 export function Plan() {
+  // every view and drawer is URL state, so each door is linkable and back works: ?view= &week= &races=1 &tell=1
   const [params, setParams] = useSearchParams();
-  const [view, setView] = useState<View>("week");
-  const [sel, setSel] = useState<{ week?: string; day?: string }>({});
+  const view = (VIEWS.some(([v]) => v === params.get("view")) ? params.get("view") : "week") as View;
+  const setParam = (k: string, v: string | null) => setParams(p => { const n = new URLSearchParams(p); if (v) n.set(k, v); else n.delete(k); return n; });
+  const setView = (v: View) => setParam("view", v === "week" ? null : v);
+  const races = params.get("races") === "1", tell = params.get("tell") === "1";
+  const [daySel, setDaySel] = useState<string | undefined>();
+  const sel = { week: params.get("week") || undefined, day: daySel };
   const [day, setDay] = useState<string | null>(null);
   const [limit, setLimit] = useState<string | null>(null);
-  const [races, setRaces] = useState(params.get("races") === "1");
   const [diff, setDiff] = useState<Diff | undefined>();
   const [race, setRace] = useState<string | undefined>(() => { try { return localStorage.getItem(RACE_KEY) || undefined; } catch { return undefined; } });
-  useEffect(() => { if (params.get("races")) { params.delete("races"); setParams(params, { replace: true }); } }, [params, setParams]);
   const shell = useShell();
   const gen = useAction<{ ok: boolean; diff?: Diff; error?: string }>("/api/plan/generate", undefined,
-    { done: r => { setDiff(r.diff); return "Plan generated"; }, fail: "Plan failed" });
-  const openDay = (date: string) => { setSel({ day: date }); setDay(date); };   // the server picks the week holding that day
+    { done: r => { setDiff(r.diff); return "Plan rebuilt"; }, fail: "Rebuild failed" });
+  const openDay = (date: string) => { setDaySel(date); setDay(date); };   // the server picks the week holding that day
   const pickRace = (d: string) => { setRace(d); try { localStorage.setItem(RACE_KEY, d); } catch { /* private window */ } };
   return <Query q={usePlan(sel)}>{p => {
-    const genBtn = <button className="btn primary" disabled={gen.isPending} onClick={() => gen.mutate()}>{gen.isPending ? "Generating…" : "Generate plan"}</button>;
-    const racesDrawer = <Drawer title="Races" open={races} onClose={() => setRaces(false)}>
+    const genBtn = <button className="btn primary" disabled={gen.isPending} onClick={() => gen.mutate()}>{gen.isPending ? "Rebuilding…" : "Rebuild the plan"}</button>;
+    const racesDrawer = <Drawer title="Races" open={races} onClose={() => setParam("races", null)}>
       <RacesDrawer current={race || p.races?.[0]?.date} onDiff={d => { setDiff(d); }} /></Drawer>;
-    if (p.empty) return <div className="page"><PageHead title="Plan">{genBtn}<button className="btn" onClick={() => setRaces(true)}>Edit races</button></PageHead>
-      <Card><b>No plan yet.</b><span>Add a race, then generate a plan — it's built around the race and bounded by your fitness.</span></Card>{racesDrawer}</div>;
+    if (p.empty) return <div className="page"><PageHead title="Plan"><button className="btn" onClick={() => setParam("races", "1")}>Races</button></PageHead>
+      <Banner tone="warn" action={<button className="btn primary" onClick={() => setParam("races", "1")}>Add a race</button>}>
+        <b>No plan yet.</b> Add a race and the road is built around it, bounded by your fitness.</Banner>
+      <div className="row">{genBtn}</div>{racesDrawer}</div>;
     const viewRace = p.races.length > 1 ? (p.races.find(r => r.date === race) || p.races.find(r => r.date >= p.today))?.date : undefined;
+    const r0 = p.races[0];
+    const daysTo = p.race ? Math.max(0, Math.round((Date.parse(p.race.date) - Date.parse(p.today)) / 864e5)) : null;
+    const rebuilt = p.header.generated_at ? new Date(p.header.generated_at) : null;
+    const weekDay = day ? p.week.days.find(x => x.date === day) : undefined;
+    const daySessions = day ? p.week.sessions.filter(x => x.date === day) : [];
     return (
     <div className="page">
       <PageHead title="Plan">
-        <button className="btn" aria-expanded={races} onClick={() => setRaces(true)}>Edit races</button>
-        {genBtn}
-        <Tabs label="Plan views" value={view} options={VIEWS} onChange={setView} />
+        <div className="row">
+          <button className="btn" aria-expanded={races} onClick={() => setParam("races", "1")}>Races</button>
+          <button className="btn primary" aria-expanded={tell} onClick={() => setParam("tell", "1")}>Tell the horse</button>
+        </div>
       </PageHead>
       {p.header.stale && <Banner tone="warn" action={genBtn}>{p.header.stale}</Banner>}
       {p.header.seed && <Banner tone="warn" action={genBtn}>{p.header.seed}</Banner>}
-      {diff && !diff.first && diff.summary && <Banner tone="ok" action={<button className="btn" onClick={() => setDiff(undefined)}>✕</button>}>
-        <b>Re-planned — {diff.summary}</b>{diff.changes?.length ? <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{diff.changes.map((c, i) => <li key={i}>{c}</li>)}</ul> : null}</Banner>}
+      {diff && !diff.first && diff.summary && <Banner tone="ok" action={<button className="btn" aria-label="Dismiss" onClick={() => setDiff(undefined)}><Icon name="close" /></button>}>
+        <b>Re-planned: {diff.summary}</b>{diff.changes?.length ? <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{diff.changes.map((c, i) => <li key={i}>{c}</li>)}</ul> : null}</Banner>}
       {p.adjustment && <AdjustmentBanner a={p.adjustment} onDiff={setDiff} />}
-      <Figures items={[
-        ...(p.race ? [{ k: `${p.race.label} · ${dateShort(p.race.date)}`, v: `${Math.max(0, Math.round((Date.parse(p.race.date) - Date.parse(p.today)) / 864e5))} d`,
-                        s: `${p.races[0]?.weeks ?? "—"} weeks to go` }] : []),
-        ...(p.race ? [{ k: "Predicted finish", v: p.race.prediction ?? "—", signal: true, s: `${p.race.lo}–${p.race.hi} · goal ${p.race.target ?? "—"}` }] : []),
-        { k: "Fitness on race day", v: p.races[0]?.proj_ctl != null ? `${Math.round(p.races[0].proj_ctl)}` : "—", s: `CTL · verdict ${p.race?.verdict ?? "—"}` },
-        { k: `This week · ${p.week.phase_name ?? ""} ${p.week.n ?? ""}`, v: km(p.week.km, 1), s: p.week.km_done != null ? `${km(p.week.km_done)} run so far` : `${p.week.runs ?? p.week.sessions.length} runs` },
+      <Strip items={[
+        ...(p.race ? [{ k: `${p.race.label} · ${dateShort(p.race.date)}`, v: `${daysTo} days`, s: `${r0?.weeks ?? "?"} weeks to go`, onClick: () => setParam("races", "1") }] : []),
+        ...(p.race ? [{ k: "Predicted finish", v: p.race.prediction ?? "?", signal: true, s: `goal ${p.race.target ?? "none"} · range ${p.race.lo} to ${p.race.hi}`, onClick: () => setView("race") }] : []),
+        { k: "Fitness on race day", v: r0?.proj_ctl != null ? `${Math.round(r0.proj_ctl)} CTL` : "?", s: `verdict: ${p.race?.verdict ?? "none"}`, onClick: () => setView("history") },
+        { k: `This week · ${p.week.phase_name ?? ""} ${p.week.n ?? ""}`, v: km(p.week.km, 1), s: p.week.km_done != null ? `${km(p.week.km_done)} run so far` : `${p.week.runs ?? p.week.sessions.length} runs`,
+          onClick: () => { setParam("week", null); setView("week"); } },
       ]} />
       <div className="grid">
-        <Card span={8} label={p.race ? `The road to ${p.race.label} · ${dateShort(p.race.date)}` : "The road"}>
-          <Road road={p.road} phases={p.phases} today={p.today} tuneUps={p.tune_ups} onPick={s => { setSel({ week: s }); setView("week"); }} />
+        <Card span={8} id="road" label={p.race ? `The road to ${p.race.label} · ${dateShort(p.race.date)}` : "The road"} lede={p.road_headline ?? undefined}>
+          <Road road={p.road} phases={p.phases} today={p.today} tuneUps={p.tune_ups} onPick={s => { setDaySel(undefined); setParams(q => { const n = new URLSearchParams(q); n.set("week", s); n.delete("view"); return n; }); }} />
         </Card>
-        <RacesTile rows={p.races} selected={viewRace} onSelect={pickRace} onEdit={() => setRaces(true)} />
+        <div className="span-4 rail">
+          <RacesTile rows={p.races} selected={viewRace} onSelect={pickRace} onEdit={() => setParam("races", "1")} />
+          <PostureAndPaces p={p} onSource={setLimit} />
+        </div>
       </div>
-      {view === "week" && <WeekView p={p} onWeek={w => setSel({ week: w })} onDay={openDay} onLimit={setLimit} onDiff={setDiff} />}
-      {view === "month" && <MonthView onDay={openDay} />}
-      {view === "race" && <RaceView />}
-      {view === "history" && <DriftView race={viewRace} />}
-      <TellTheHorse enabled={!!shell.data?.llm && !!shell.data?.ai.judgment} onDiff={setDiff} />
+      <div className="list" style={{ gap: "var(--sp-5)" }}>
+        <Tabs label="Plan views" value={view} options={VIEWS} onChange={setView} />
+        {view === "week" && <WeekView p={p} onWeek={w => { setDaySel(undefined); setParam("week", w); }} onDay={openDay} onLimit={setLimit} onDiff={setDiff} />}
+        {view === "month" && <MonthView onDay={openDay} />}
+        {view === "race" && <RaceView />}
+        {view === "history" && <DriftView race={viewRace} />}
+      </div>
+      <p className="meta-line">
+        {rebuilt ? `Rebuilt ${rebuilt.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}, ${rebuilt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Not built yet"}
+        {" · "}<button type="button" className="linkish" disabled={gen.isPending} onClick={() => gen.mutate()}>{gen.isPending ? "Rebuilding…" : "Rebuild now"}</button>
+      </p>
       {racesDrawer}
+      <Drawer title="Tell the horse" open={tell} onClose={() => setParam("tell", null)}>
+        <TellTheHorse bare enabled={!!shell.data?.llm && !!shell.data?.ai.judgment} onDiff={d => { setDiff(d); }} />
+      </Drawer>
       <Drawer title={limit ? p.week.limits.find(l => l.key === limit)?.name ?? (limit === "posture" ? "Posture" : limit === "paces" ? "Paces" : "") : ""}
               open={!!limit} onClose={() => setLimit(null)}>
         {limit && <LimitSource k={limit} />}
       </Drawer>
       <Drawer title={day ? dateLong(day) : ""} open={!!day} onClose={() => setDay(null)}>
-        <DayDetail sessions={day ? p.week.sessions.filter(x => x.date === day) : []} onRun={() => setDay(null)} />
+        <DayDetail sessions={daySessions} onRun={() => setDay(null)} movedFrom={weekDay?.moved_from}
+                   ranHere={(weekDay?.runs ?? []).filter(r => !daySessions.some(s => s.activity_id === r.activity_id && !s.moved_to))} />
+        <button type="button" className="linkish" onClick={() => { setDay(null); setParam("tell", "1"); }}>Something off? Tell the horse ›</button>
       </Drawer>
     </div>);
   }}</Query>;

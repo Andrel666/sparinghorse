@@ -16219,6 +16219,20 @@ def _stc_ui_today():
             fails.append(f"(d) race_call{args} → {U.race_call(*args)} not {want}")
     if U.race_call(7123, 6547, 7750, 7140)[1] != "17 s under the goal":
         fails.append(f"(d) race_call words: {U.race_call(7123, 6547, 7750, 7140)[1]}")
+    # (d) a run sits on the day it was run: a session planned Sun and run Mon puts its run on Mon
+    wk = {"start": "2026-11-01", "sessions": [
+        {"date": "2026-11-01", "kind": "long", "km": 5.2, "done": True, "actual": {"km": 6.2, "pace": "6:37", "hr": 156},
+         "activity_id": 77, "moved_to": "2026-11-02"},
+        {"date": "2026-11-04", "kind": "easy", "km": 4.3, "missed": True},
+        {"date": "2026-11-05", "kind": "easy", "km": 3.0, "unplanned": True, "actual": {"km": 3.0, "hr": 140}, "activity_id": 78}]}
+    days = U._week_days(S, wk, "2026-11-05")
+    if [r["activity_id"] for r in days[1]["runs"]] != [77] or days[0]["runs"] or days[1]["moved_from"] != "Sun" \
+            or days[0]["moved_dow"] != "Mon" or days[0]["status"] != "moved":
+        fails.append(f"(d) a moved run is not on the day it ran: Sun {days[0]['runs']} / Mon {days[1]['runs']}, from {days[1]['moved_from']}")
+    if [r["activity_id"] for r in days[4]["runs"]] != [78] or not days[4]["runs"][0]["unplanned"] or days[3]["runs"]:
+        fails.append("(d) an extra run is not on its own day, or a missed day carries a run")
+    if (U.limit_held({"binding": "acwr", "acwr": {"laid": 1.2, "ceiling": 1.25}}) or {}).get("short") != "Held by the load ratio":
+        fails.append(f"(d) limit_held short line: {U.limit_held({'binding': 'acwr', 'acwr': {'laid': 1.2, 'ceiling': 1.25}})}")
     # (e) the readiness memo: same prompt → one model call; a failed call is retried
     calls = []
     saved_llm = S.llm_json
@@ -16302,6 +16316,10 @@ def _stc_ui_today():
             fails.append(f"(d) the glance's prediction is not the plan's finish: {race_g} vs {ft.get('hms')}")
         if not any(g["key"] == "week" for g in d.get("glance") or []):
             fails.append("(d) the glance lacks the week")
+        if any(not str(g.get("link") or "").startswith("/") or g["link"] in ("/fitness", "/plan") for g in d.get("glance") or []):
+            fails.append(f"(d) a glance figure is not a door to its own data: {[g.get('link') for g in d.get('glance') or []]}")
+        if ft.get("hms") and ((d.get("race") or {}).get("pred") or {}).get("hms") != ft["hms"]:
+            fails.append("(d) the race line's prediction is not the plan's finish")
         z = S.training_zones(fx)
         easy = next(r for r in z["rows"] if r["key"] == "easy")
         t = U.session_target(S, fx, "easy", z)
@@ -16309,11 +16327,22 @@ def _stc_ui_today():
                 else f"slower than {(easy.get('pace_slower_than') or {}).get('fmt')}/km")
         if (t or {}).get("text") != want:
             fails.append(f"(b) target {t} is not the zones table's easy ceiling {want!r}")
+        # (d) the run list: newest first, each week's subtotal is its runs, the total is the list's sum
+        lg = U.runs_log(S, fx, today.strftime("%Y-%m"))
+        ds = [(x["date"], x.get("time") or "") for x in lg["runs"]]
+        if ds != sorted(ds, reverse=True) or abs(sum(w["km"] for w in lg["weeks"]) - lg["km"]) > 0.15 \
+                or sum(w["runs"] for w in lg["weeks"]) != len(lg["runs"]):
+            fails.append(f"(d) the run list is not ordered or its week subtotals do not add up: {lg['km']} vs {[w['km'] for w in lg['weeks']]}")
+        l7 = U.runs_log(S, fx, None, 7)
+        if any(x["date"] < (today - __import__("datetime").timedelta(days=6)).isoformat() for x in l7["runs"]):
+            fails.append("(d) the last-7-days list carries an older run")
         # private: refused on the public view
         S.READONLY, S._AUTH_ACTIVE = True, False
         r = S.app.test_client().get("/api/ui/today")
         if r.status_code != 403:
             fails.append(f"(a) the public view served /api/ui/today: {r.status_code}")
+        if S.app.test_client().get("/api/ui/runs").status_code != 403:
+            fails.append("(a) the public view served /api/ui/runs")
     except Exception as e:
         fails.append(f"raised {type(e).__name__}: {e}")
     finally:

@@ -39,7 +39,7 @@ export function Fitness() {
             k: <span title={t.hint}>{t.label}{t.unit ? ` · ${t.unit}` : ""}</span>,
             v: t.value == null ? "—" : t.value.toFixed(1),
             s: <>{t.word || signed(t.delta)}<Spark pts={t.series} /></> }))} /></div>
-          <Card label="Fitness & fatigue · 6 months and the plan to race day" span={8}>
+          <Card id="fitness-fatigue" label="Fitness & fatigue · 6 months and the plan to race day" span={8}>
             <Lines series={[{ pts: d.chart.ctl, color: "var(--text)", label: "Fitness" },
                             { pts: d.chart.atl, color: "var(--ph-base)", label: "Fatigue" },
                             { pts: d.chart.plan, color: "var(--signal)", label: "Planned fitness", dashed: true },
@@ -51,7 +51,7 @@ export function Fitness() {
             {d.chart.duplicates > 0 && !d.chart.check?.close && <Banner tone="warn">Heads-up: {d.chart.duplicates} duplicate
               activities inflate Runalyze's numbers. Delete them on Runalyze, or delete the leftover copy here (banner at the top).</Banner>}
           </Card>
-          <Card label="Load" span={4} tone={d.load.state === "high" ? "warn" : undefined}>
+          <Card id="load" label="Load" span={4} tone={d.load.state === "high" ? "warn" : undefined}>
             {d.load.acwr != null && <>
               <div className="stat-value sm num">{d.load.acwr.toFixed(2)}×</div>
               <Gauge value={d.load.acwr} band={d.load.band} />
@@ -59,11 +59,11 @@ export function Fitness() {
             </>}
             {d.load.ramp != null && <ListItem k="Last 7 days">Fitness {d.load.ramp > 0 ? "+" : ""}{d.load.ramp} — {d.load.ramp_word}</ListItem>}
           </Card>
-          <Card label={`Weekly distance · all ${d.weekly.length} weeks (scroll back)`} span={8}>
+          <Card id="weekly" label={`Weekly distance · all ${d.weekly.length} weeks (scroll back)`} span={8}>
             <Bars scroll items={d.weekly.map(w => ({ label: w.week, v: w.km }))} unit="km" />
             <span className="muted" style={{ fontSize: "var(--fs-small)" }}>Last week {km(d.weekly.at(-1)?.km)} · hover a bar for its week</span>
           </Card>
-          <Card label="Zones" span={4}>
+          <Card id="zones" label="Zones" span={4}>
             <div className="list">{d.zones.map(z => (
               <ListItem key={z.label} k={z.label.split(" /")[0]}>
                 <span className="num">{z.pace ? `${z.pace}/km` : "—"}</span>
@@ -71,7 +71,7 @@ export function Fitness() {
               </ListItem>))}</div>
             <span className="muted" style={{ fontSize: "var(--fs-label)" }}>{d.zones_note}</span>
           </Card>
-          <Card label={`Easy runs · last ${d.easy.window_days} days`} span={12}
+          <Card id="easy" label={`Easy runs · last ${d.easy.window_days} days`} span={12}
                 tone={verdictTone(d.easy.too_hard ? "too_hard" : d.easy.hot ? "hot" : d.easy.judged ? "on" : null)}>
             <div className="row" style={{ alignItems: "baseline" }}>
               <span className="stat-value sm num toned">{d.easy.on ?? 0}/{d.easy.judged ?? 0}</span>
@@ -84,14 +84,14 @@ export function Fitness() {
             <Table cols={EASY_COLS} rows={d.easy.runs} keyOf={r => r.date + r.km} />
           </Card>
           <Durability d={d} />
-          <Card label="Aerobic efficiency · speed per heartbeat" span={6} tone={d.efficiency.verdict === "improving" ? "ok" : undefined}>
+          <Card id="efficiency" label="Aerobic efficiency · speed per heartbeat" span={6} tone={d.efficiency.verdict === "improving" ? "ok" : undefined}>
             <span>{d.efficiency.text}</span>
             <Scatter dots={efDots} xLabel="date" yLabel="efficiency" xFmt={v => numDay(t0 + v)}
                      fit={ed.fit ? ed.fit.map(p => [day(p.date) - t0, p.v] as [number, number]) : undefined} />
             {ed.points.some(p => p.temp != null) && <Bars items={ed.points.map(p => ({ label: `${p.date} · ${p.temp ?? "?"} °C`, v: p.temp ?? 0 }))} height={40} unit="°C" />}
             {ed.temp_note && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{ed.temp_note}</span>}
           </Card>
-          <Card label="Prediction track record" span={12}>
+          <Card id="track" label="Prediction track record" span={12}>
             {d.track_full.empty && <span className="muted">{d.track_full.empty}</span>}
             {d.track_full.lines.map(l => <span key={l}>{l}</span>)}
             {d.track_full.races.length > 0 && <Table cols={[{ head: "Race", cell: (r: FitnessPage["track_full"]["races"][number]) => r.label },
@@ -123,7 +123,7 @@ function Durability({ d }: { d: FitnessPage }) {
   const fitLine = (b?: typeof cur) => b?.fit ? [[m.min_km, b.fit.intercept + b.fit.slope * m.min_km], [42, b.fit.intercept + b.fit.slope * 42]] as [number, number][] : undefined;
   const tint = (v: number) => v < 5 ? "ok" : v <= 10 ? "warn" : "bad";
   return (
-    <Card label="Durability · fade on long runs" span={6} aside={<span className="seg" role="group" aria-label="View">
+    <Card id="durability" label="Durability · fade on long runs" span={6} aside={<span className="seg" role="group" aria-label="View">
       <button type="button" aria-pressed={view === "chart"} onClick={() => set("chart")}>Chart</button>
       <button type="button" aria-pressed={view === "table"} onClick={() => set("table")}>Table</button></span>}>
       <span>{m.headline || d.durability.text}</span>
@@ -135,7 +135,7 @@ function Durability({ d }: { d: FitnessPage }) {
         <div className="row">{[cur, other].filter(Boolean).map(b => <Pill key={b!.key}><span className="dot" style={{ background: color(b!) }} />
           {b!.label}: {b!.horizon} · {b!.current ? `${b!.n} runs so far` : b!.pb ? "best build" : `${b!.n} runs`}</Pill>)}</div>
         <span className="muted" style={{ fontSize: "var(--fs-label)" }}>Grey: long runs · rings: race day · lower is better</span>
-      </> : <Table cols={[{ head: "Build", cell: (b: FitnessPage["durability_more"]["builds"][number]) => `${b.label}${b.pb ? " · best" : ""}` },
+      </> : <Table phone="scroll" cols={[{ head: "Build", cell: (b: FitnessPage["durability_more"]["builds"][number]) => `${b.label}${b.pb ? " · best" : ""}` },
           ...m.bands.map((band, i) => ({ head: band, num: true, cell: (b: FitnessPage["durability_more"]["builds"][number]) => b.cells[i]
             ? <span className={`tone-${tint(b.cells[i]!.median)} toned`}>{b.cells[i]!.median}% <span className="muted">({b.cells[i]!.n})</span></span> : <span className="muted">—</span> })),
           { head: "Race", num: true, cell: b => b.race_pct != null ? <span className={`tone-${tint(b.race_pct)} toned`}>{b.race_pct}%</span> : b.current ? "race day" : "—" }]}

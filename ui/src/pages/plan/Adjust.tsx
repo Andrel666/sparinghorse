@@ -14,38 +14,41 @@ export function AdjustmentBanner({ a, onDiff }: { a: Adjustment; onDiff: (d?: Di
   const clear = useAction<{ ok: boolean; diff?: Diff }>("/api/adjustment/clear", undefined, { done: r => { onDiff(r.diff); return "Adjustment cleared"; } });
   return (
     <Banner tone={a.medical ? "bad" : "warn"} action={<button type="button" className="btn" onClick={() => clear.mutate()}>Clear adjustment</button>}>
-      <b>{a.medical ? "⚠ Medical flag" : "Active adjustment"} — {a.effect}</b>
+      <b>{a.medical ? "Medical flag" : "Active adjustment"} — {a.effect}</b>
       <div className="muted">“{a.note}” · {a.from} → {a.until}{a.summary ? ` · ${a.summary}` : ""}</div>
       {a.clamp && <div className="muted">Engine clamp: {a.clamp}</div>}
       {a.medical && <div className="muted">Sparing Horse tracks and flags — it never diagnoses. Clear this once your doctor signs off.</div>}
     </Banner>);
 }
 
-export function TellTheHorse({ enabled, onDiff }: { enabled: boolean; onDiff: (d?: Diff) => void }) {
+/** "Tell the horse": a note about a run is logged on it; something ahead proposes easing the plan. `bare` drops the
+ *  section frame (inside the Plan drawer). */
+export function TellTheHorse({ enabled, onDiff, bare }: { enabled: boolean; onDiff: (d?: Diff) => void; bare?: boolean }) {
   const [text, setText] = useState("");
   const [prop, setProp] = useState<Proposal | null>(null);
   const propose = useAction<Proposal, string>("/api/ui/adjust/propose", t => ({ text: t }), { refresh: false,
     done: r => { setProp(r); return null; }, fail: "Could not read that" });
-  const logNote = useAction<{ ok: boolean }, string>("/api/log/note", n => ({ note: n }), { done: () => "📓 Logged to today's run · plan unchanged" });
+  const logNote = useAction<{ ok: boolean }, string>("/api/log/note", n => ({ note: n }), { done: () => "Logged to today's run · plan unchanged" });
   const apply = useAction<{ ok: boolean; diff?: Diff }, Proposal>("/api/adjustment/apply", p => ({ note: p.note, directive: p.directive }),
     { done: r => { setProp(null); setText(""); onDiff(r.diff); return "Adjustment applied"; } });
   if (prop?.ok && prop.kind === "log" && !logNote.isPending && !logNote.isSuccess) logNote.mutate(prop.note || text);
-  return (
-    <Card label="Tell the horse">
+  const body = (
+    <>
       <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
         Something about a run you've done is logged on it. Something ahead (a niggle, a trip, a bad week) proposes easing the plan — it only ever eases.</span>
       <form className="row" onSubmit={e => { e.preventDefault(); if (text.trim()) { setProp(null); logNote.reset(); propose.mutate(text.trim()); } }}>
         <input className="input" style={{ flex: 1, maxWidth: "none" }} value={text} disabled={!enabled} onChange={e => setText(e.target.value)}
                placeholder={enabled ? "e.g. calf tight since Sunday, or: travelling Thursday to Sunday" : "Needs an AI connection and AI judgment switched on in Settings"} aria-label="Tell the horse" />
-        <button type="submit" className="btn primary" disabled={!enabled || propose.isPending || !text.trim()}>{propose.isPending ? "Thinking…" : "💬 Tell"}</button>
+        <button type="submit" className="btn primary" disabled={!enabled || propose.isPending || !text.trim()}>{propose.isPending ? "Thinking…" : "Tell"}</button>
       </form>
       {prop?.ok && prop.kind === "log" && <span>{prop.reply}</span>}
       {prop?.ok && prop.kind !== "log" && <div className="list" style={{ gap: 6 }}>
         <span>{prop.reply}</span>
-        {prop.effect && <b>{prop.medical_flag ? "⚠ " : ""}{prop.effect}</b>}
+        {prop.effect && <b>{prop.medical_flag ? "Medical flag: " : ""}{prop.effect}</b>}
         <span className="muted">{prop.applies_from} → {prop.applies_until}{prop.summary ? ` · ${prop.summary}` : ""}{prop.clamp ? ` · engine clamp: ${prop.clamp}` : ""}</span>
         <div className="row"><button type="button" className="btn primary" disabled={apply.isPending} onClick={() => apply.mutate(prop)}>Apply</button>
           <button type="button" className="btn" onClick={() => setProp(null)}>Dismiss</button></div>
       </div>}
-    </Card>);
+    </>);
+  return bare ? <div className="list" style={{ gap: "var(--sp-3)" }}>{body}</div> : <Card label="Tell the horse">{body}</Card>;
 }

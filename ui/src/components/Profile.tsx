@@ -1,8 +1,10 @@
 // A run's profile along its distance: one channel drawn as the shaded trace (pace by default), a
 // channel picker (hover previews, click locks), the HR-zone strip with its legend, a hover readout.
+import { ZONE_COLORS } from "../lib/format";
 import { useState } from "react";
 import { useProfile, type Profile as P } from "../lib/api";
 import { dist, unit } from "../lib/format";
+import { Seg } from "./ui";
 
 type Ch = "pace" | "hr" | "cadence" | "elevation" | "gct" | "vo";
 const CH: { k: Ch; label: string; has: keyof P; fmt: (v: number) => string; invert?: boolean }[] = [
@@ -13,7 +15,7 @@ const CH: { k: Ch; label: string; has: keyof P; fmt: (v: number) => string; inve
   { k: "gct", label: "Ground contact", has: "has_gct", fmt: v => `${Math.round(v)} ms` },
   { k: "vo", label: "Vert. oscillation", has: "has_vo", fmt: v => `${v.toFixed(1)} cm` },
 ];
-const ZC = ["var(--ph-rebase)", "var(--ph-base)", "var(--ok)", "var(--warn)", "var(--bad)"];
+const ZC = ZONE_COLORS;
 const zoneOf = (bpm: number, cut: number[]) => { let z = 0; for (const c of cut) if (bpm >= c) z++; return Math.min(z, 4); };
 
 export function Profile({ id }: { id: number }) {
@@ -36,9 +38,8 @@ export function Profile({ id }: { id: number }) {
   const hi_ = hx == null ? null : p.dist.reduce((b, d, i) => Math.abs(d - hx) < Math.abs(p.dist[b] - hx) ? i : b, 0);
   return (
     <div className="list" style={{ gap: 6 }}>
-      <div className="seg" role="group" aria-label="Profile channel">{avail.map(c => (
-        <button key={c.k} type="button" aria-pressed={ch.k === c.k} onMouseEnter={() => setPeek(c.k)} onMouseLeave={() => setPeek(null)}
-                onFocus={() => setPeek(c.k)} onBlur={() => setPeek(null)} onClick={() => setLocked(c.k)}>{c.label}{locked === c.k ? " 🔒" : ""}</button>))}</div>
+      <Seg label="Profile channel" wrap cols={3} value={ch.k} onChange={setLocked} onPeek={setPeek}
+           options={avail.map(c => ({ v: c.k, label: c.label }))} />
       <figure style={{ margin: 0, position: "relative" }}>
         {p.has_hr && cut.length > 0 && <svg viewBox={`0 0 ${W} 6`} width="100%" height={6} preserveAspectRatio="none" aria-hidden="true">
           {p.hr.map((v, i) => v == null || i === p.hr.length - 1 ? null :

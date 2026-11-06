@@ -61,7 +61,7 @@ def limit_held(limits):
     meta = LIMITS.get(key or "")
     if not (isinstance(v, dict) and meta):
         return None
-    return {"key": key, "name": meta["name"],
+    return {"key": key, "name": meta["name"], "short": "Held by the " + meta["name"].lower(),
             "text": "Held by " + meta["name"].lower() + ": " + meta["held"].format(laid=v.get("laid"), ceiling=v.get("ceiling"))}
 
 
@@ -126,7 +126,24 @@ def _week_days(S, w, today_iso):
                      "title": KIND_TITLE.get((main or {}).get("kind") or "rest", (main or {}).get("kind")),
                      "km": (main or {}).get("km"), "status": status, "race": bool((main or {}).get("race")),
                      "strides": strides_of(main), "actual": (main or {}).get("actual"),
-                     "moved_to": (main or {}).get("moved_to")})
+                     "moved_to": (main or {}).get("moved_to"),
+                     "moved_dow": S._date(main["moved_to"]).strftime("%a") if (main or {}).get("moved_to") else None,
+                     "runs": [], "moved_from": None})
+    # every run sits on the day it was RUN: a session run on another day puts its run there, not on the plan's day
+    at = {x["date"]: x for x in days}
+    for x in w["sessions"]:
+        if not x.get("actual"):
+            continue
+        ran = x.get("moved_to") or x["date"]
+        if ran not in at:
+            continue
+        rs = x.get("runs") or [{"km": x["actual"].get("km"), "pace": x["actual"].get("pace"), "activity_id": x.get("activity_id")}]
+        for r in rs:
+            at[ran]["runs"].append({"activity_id": r.get("activity_id"), "km": r.get("km"), "pace": r.get("pace"),
+                                    "hr": x["actual"].get("hr") if len(rs) == 1 else None,
+                                    "kind": x.get("kind"), "unplanned": bool(x.get("unplanned"))})
+        if x.get("moved_to") and ran != x["date"]:
+            at[ran]["moved_from"] = S._date(x["date"]).strftime("%a")
     return days
 
 
@@ -257,14 +274,48 @@ def today_page(S, db):
                 "start_tz": (orow["start_tz"] if orow and orow["start_tz"] else None) or S.config().sync_tz.key,
                 "priority": orow["priority"] if orow else None,
                 "verdict": (json.loads(plan_row["plan"]).get("feasibility") or {}).get("verdict")}
-    return {"ok": True, "today": tiso, "sync_minutes": sync_min, "race": race,
+    # the race line's prediction, and the dateline ("Thu 5 Nov · Base week 1 of 16")
+    if race and plan_row:
+        p = json.loads(plan_row["plan"])
+        ft = (p.get("feasibility") or {}).get("finish_time") or {}
+        if ft.get("hms"):
+            band = ft.get("band") or {}
+            tone, _w, short = race_call(ft.get("seconds") or _hms_s(ft["hms"]), band.get("lo_seconds"), band.get("hi_seconds"),
+                                        _hms_s(race.get("target")))
+            race["pred"] = {"hms": ft["hms"], "tone": tone,
+                            "words": " · ".join(x for x in [f"goal {race['target']}" if race.get("target") else None, short] if x)}
+    dateline = today.strftime("%a ") + str(today.day) + today.strftime(" %b")
+    if log and week and week.get("phase"):
+        same = [x for x in log["weeks"] if phase_key(x.get("pk")) == phase_key(week["phase"])]
+        n = next((i + 1 for i, x in enumerate(same) if x["start"] == week["start"]), None)
+        if n:
+            dateline += f" · {phase_name(week['phase'])} week {n} of {len(same)}"
+    # a rest day's verdict reads forward to the next run
+    for_label = None
+    if kind == "rest" and nxt and a.get("verdict") == "green":
+        day_name = S._date(nxt["date"]).strftime("%A")
+        for_label = f"Ready for {'tomorrow' + chr(39) + 's' if nxt['days'] == 1 else day_name + chr(39) + 's'} {nxt['title'].lower()}."
+    ck = db.execute("SELECT created_at FROM readiness WHERE date=?", (tiso,)).fetchone()
+    if latest:
+        ed2 = S.effort_discipline(db) or {}
+        ceil = ed2.get("easy_hr_ceiling")
+        v, hr = latest.get("verdict"), latest.get("hr")
+        if v and hr and ceil:
+            latest["verdict_line"] = (f"{VERDICT_TEXT[v][:1].upper()}{VERDICT_TEXT[v][1:]}: {hr} bpm against ≤ {ceil}"
+                                      if v in ("hot", "too_hard") else f"Easy, on target: {hr} bpm, under ≤ {ceil}"
+                                      if v in ("on", "easy") else None)
+    session["activity_id"] = sess.get("activity_id")
+    return {"ok": True, "today": tiso, "sync_minutes": sync_min, "race": race, "dateline": dateline,
             "readiness": {"verdict": a.get("verdict"), "halt": bool(a.get("halt")), "action": a.get("action"),
                           "headline": split_action(a.get("action"))[0], "detail": split_action(a.get("action"))[1],
                           "reasons": a.get("reasons") or [], "hrv": (a.get("hrv") or {}).get("state"),
                           "hrv_line": _hrv_line(a.get("hrv")), "ai_line": _ai_line(a),
-                          "checkin": _checkin(rd.get("checkin"))},
+                          "checkin": _checkin(rd.get("checkin")), "for_label": for_label,
+                          "saved_at": ck["created_at"] if ck and ck["created_at"] else None},
             "session": session, "next": nxt, "week": week, "latest_run": latest, "coming": coming,
             "glance": today_glance(S, db, week, json.loads(plan_row["plan"]) if plan_row else None, today),
+            "where": today_where(S, db, log, week, json.loads(plan_row["plan"]) if plan_row else None, today),
+            "why": today_why(S, week, log, json.loads(plan_row["plan"]) if plan_row else None, today),
             "recovery": today_recovery(S, db, a.get("hrv"))}
 
 
@@ -294,17 +345,17 @@ def _hm(hours):
 def race_call(pred_s, lo_s, hi_s, goal_s):
     """How the predicted finish reads against the goal → (tone, words)."""
     if not (pred_s and goal_s):
-        return None, None
+        return None, None, None
     gap = int(round(pred_s - goal_s))
     m, sec = divmod(abs(gap), 60)
     by = f"{m}:{sec:02d}" if m else f"{sec} s"
     if hi_s and hi_s <= goal_s:
-        return "ok", "inside the goal even at the slow end of the range"
+        return "ok", "inside the goal even at the slow end of the range", "inside, even the slow end"
     if gap <= 0:
-        return "ok", f"{by} under the goal"
+        return "ok", f"{by} under the goal", f"{by} under"
     if lo_s and lo_s > goal_s:
-        return "bad", f"{by} over the goal — even the fast end misses it"
-    return "warn", f"{by} over the goal"
+        return "bad", f"{by} over the goal — even the fast end misses it", f"{by} over, even the fast end"
+    return "warn", f"{by} over the goal", f"{by} over"
 
 
 def today_glance(S, db, week, plan, today):
@@ -312,7 +363,7 @@ def today_glance(S, db, week, plan, today):
     out = []
     if week:
         out.append({"key": "week", "label": "This week", "value": f"{week['km_done']:g} / {week['km'] or 0:g} km",
-                    "sub": f"{week['runs_done']} of {week['runs_planned']} runs done", "tone": None, "link": "/plan"})
+                    "sub": f"{week['runs_done']} of {week['runs_planned']} runs done", "tone": None, "link": "/plan?view=week"})
     hist = (S.reconstruct_history(db) or [])[-180:]
     ctl, tsb = _series(hist, "ctl"), _series(hist, "tsb")
     if ctl:
@@ -320,29 +371,29 @@ def today_glance(S, db, week, plan, today):
         ramp = round(ctl[-1]["v"] - ctl[-8]["v"], 1) if len(ctl) >= 8 else None
         out.append({"key": "fitness", "label": "Fitness", "value": f"{ctl[-1]['v']:.0f} CTL",
                     "sub": " · ".join(x for x in [f"{_sign(d)} in 4 weeks" if d is not None else None,
-                                                  ramp_word(ramp)] if x), "tone": None, "link": "/fitness"})
+                                                  ramp_word(ramp)] if x), "tone": None, "link": "/fitness#fitness-fatigue"})
     if tsb:
         f = tsb[-1]["v"]
         out.append({"key": "form", "label": "Form", "value": f"{_sign(round(f))} TSB",
                     "sub": next(w for t, w in FORM_WORDS if f > t), "tone": "warn" if f <= FORM_TIRED else None,
-                    "link": "/fitness"})
+                    "link": "/fitness#fitness-fatigue"})
     acwr = dict(S.latest_snapshot(db) or {}).get("acwr")
     if acwr is not None:
         st = load_state(acwr)
         lo, hi = ACWR_BAND
         out.append({"key": "load", "label": "Load ratio", "value": f"{acwr:.2f}",
                     "sub": {"high": "above", "low": "below", "in": "inside"}[st] + f" the steady band {lo}–{hi}",
-                    "tone": "warn" if st == "high" else None, "link": "/fitness"})
+                    "tone": "warn" if st == "high" else None, "link": "/fitness#load"})
     obj = (plan or {}).get("objective") or {}
     ft = ((plan or {}).get("feasibility") or {}).get("finish_time") or {}
     if ft.get("hms"):
         band = ft.get("band") or {}
-        tone, words = race_call(ft.get("seconds") or _hms_s(ft["hms"]), band.get("lo_seconds"), band.get("hi_seconds"),
-                                _hms_s(obj.get("target")))
+        tone, _words, short = race_call(ft.get("seconds") or _hms_s(ft["hms"]), band.get("lo_seconds"), band.get("hi_seconds"),
+                                        _hms_s(obj.get("target")))
         out.append({"key": "race", "label": f"{obj.get('label') or 'Race'} prediction", "value": ft["hms"],
-                    "sub": " · ".join(x for x in [f"goal {obj['target']}" if obj.get("target") else None, words,
-                                                  f"range {band['lo_hms']}–{band['hi_hms']}" if band.get("lo_hms") else None] if x),
-                    "tone": tone, "link": "/plan"})
+                    "sub": " · ".join(x for x in [f"goal {obj['target']}" if obj.get("target") else None, short] if x),
+                    "hint": f"range {band['lo_hms']} to {band['hi_hms']}" if band.get("lo_hms") else None,
+                    "tone": tone, "link": "/plan?view=race"})
     since, prev = (today - timedelta(days=6)).isoformat(), (today - timedelta(days=13)).isoformat()
     rows = db.execute("SELECT date, distance, duration FROM activities WHERE " + S.RUN_FAMILY_SQL +
                       " AND distance>0 AND date>=? AND id NOT IN (SELECT id FROM ignored_activities)", (prev,)).fetchall()
@@ -352,8 +403,89 @@ def today_glance(S, db, week, plan, today):
     out.append({"key": "last7", "label": "Last 7 days", "value": f"{km7:.1f} km",
                 "sub": " · ".join(x for x in [f"{len(now7)} run{'s' if len(now7) != 1 else ''}",
                                               f"{int(mins // 60)}h {int(mins % 60):02d}m" if mins else None,
-                                              f"{_sign(round(km7 - km_before, 1))} km on the 7 before"] if x),
-                "tone": None, "link": "/runs"})
+                                              f"{_sign(round(km7 - km_before, 1))} km"] if x),
+                "hint": "the change is against the 7 days before", "tone": None, "link": "/runs?view=log&range=7d"})
+    return out
+
+
+PHASE_PURPOSE = {"rebase": "easy running only, to rebuild the base",
+                 "base": "easy volume and a little speed, the base the race is built on",
+                 "build": "race-specific work on top of the volume",
+                 "peak": "the hardest weeks, closest to race pace",
+                 "taper": "less volume, same sharpness, so you arrive fresh",
+                 "bridge": "holding fitness between two races",
+                 "recovery": "easy days to absorb the last race"}
+
+
+def today_where(S, db, log, week, plan, today):
+    """Where the athlete is on the road: every week (its phase, past / current), the phase and week counts,
+    the race countdown, fitness now against what the plan projects for race day, and the predicted finish."""
+    if not (log and plan and log.get("weeks")):
+        return None
+    tiso = today.isoformat()
+    end = lambda w: (S._date(w["start"]) + timedelta(days=6)).isoformat()
+    weeks = [{"start": w["start"], "phase": phase_key(w.get("pk")), "km": w.get("km"),
+              "past": end(w) < tiso, "current": w["start"] <= tiso <= end(w),
+              "race": any(x.get("race") for x in w["sessions"])} for w in log["weeks"]]
+    phases = []
+    for w in weeks:
+        if phases and phases[-1]["key"] == w["phase"]:
+            phases[-1]["weeks"] += 1
+        else:
+            phases.append({"key": w["phase"], "name": phase_name(w["phase"]), "weeks": 1, "current": False})
+        phases[-1]["current"] = phases[-1]["current"] or w["current"]
+    n = next((i + 1 for i, w in enumerate(weeks) if w["current"]), None)
+    cur_ph = next((p for p in phases if p["current"]), None)
+    phase_n = None
+    if n and cur_ph:
+        first = next(i for i, w in enumerate(weeks) if w["phase"] == cur_ph["key"] and
+                     all(x["phase"] == cur_ph["key"] for x in weeks[i:n]))
+        phase_n = n - first
+    obj = plan.get("objective") or {}
+    feas = plan.get("feasibility") or {}
+    ft = feas.get("finish_time") or {}
+    hist = (S.reconstruct_history(db) or [])[-1:]
+    ctl_now = round(hist[-1]["ctl"]) if hist and hist[-1].get("ctl") is not None else None
+    pred = None
+    if ft.get("hms"):
+        band = ft.get("band") or {}
+        tone, _w, short = race_call(ft.get("seconds") or _hms_s(ft["hms"]), band.get("lo_seconds"), band.get("hi_seconds"),
+                                    _hms_s(obj.get("target")))
+        pred = {"hms": ft["hms"], "goal": obj.get("target"), "tone": tone, "short": short}
+    days = (S._date(obj["date"]) - today).days if obj.get("date") else None
+    return {"weeks": weeks, "phases": phases, "n": n, "of": len(weeks),
+            "phase": cur_ph["name"] if cur_ph else None, "phase_n": phase_n, "phase_of": cur_ph["weeks"] if cur_ph else None,
+            "race": {"label": obj.get("label"), "date": obj.get("date"), "days": days} if obj.get("date") else None,
+            "fitness": {"now": ctl_now, "race": round(feas["projected_ctl"]) if feas.get("projected_ctl") is not None else None},
+            "pred": pred}
+
+
+def today_why(S, week, log, plan, today):
+    """Why this week looks the way it does, in at most four lines: the phase's job, what sized the volume,
+    the plan's posture, and any adjustment or deload in force. Each line opens where it is decided."""
+    if not (week and plan):
+        return []
+    out = []
+    ph = phase_key(week.get("phase"))
+    if PHASE_PURPOSE.get(ph):
+        out.append({"key": "phase", "text": f"{phase_name(ph)}: {PHASE_PURPOSE[ph]}.", "link": "/plan#road"})
+    km = week.get("km")
+    h = week.get("held")
+    if km is not None:
+        if h:
+            detail = h["text"].split(": ", 1)[-1]
+            out.append({"key": "volume", "text": f"{km:g} km, held by the {h['name'].lower()}.",
+                        "detail": f"{detail[:1].upper()}{detail[1:]}.", "link": "/plan?view=week#limits"})
+        else:
+            out.append({"key": "volume", "text": f"{km:g} km, inside every limit.", "link": "/plan?view=week#limits"})
+    a = _adjustment(plan.get("adjustment"))
+    if a and a["effect"] != "On plan — no load change":
+        out.append({"key": "adjust", "text": a["effect"] + (f": {a['note']}" if a.get("note") else "") + ".", "link": "/plan?tell=1"})
+    if week.get("deload"):
+        out.append({"key": "deload", "text": week["deload"], "link": "/plan?view=week"})
+    hd = _plan_header(S, plan)["posture"]
+    if hd.get("reason"):
+        out.append({"key": "posture", "text": f"{hd['label']}: {hd['reason'].replace(' — ', '; ')}.", "link": "/plan#posture"})
     return out
 
 
@@ -876,6 +1008,8 @@ def plan_page(S, db, week=None, day=None):
                      "lo": (ft.get("band") or {}).get("lo_hms"), "hi": (ft.get("band") or {}).get("hi_hms"),
                      "verdict": (plan.get("feasibility") or {}).get("verdict")} if obj else None,
             "road": road, "phases": phases,
+            "road_headline": (lambda pk: f"Peak {pk['km']:g} km · week of {S._date(pk['start']).strftime('%b')} {S._date(pk['start']).day}"
+                              if pk and pk.get("km") else None)(max(road, key=lambda r: r.get("km") or 0, default=None)),
             "week": {"start": sel["start"], "end": end(sel), "phase": phase_key(sel.get("pk")),
                      "phase_name": phase_name(sel.get("pk")), "n": sel.get("wk"), "km": sel.get("km"),
                      "intent": sel.get("intent"), "current": sel is cur,
@@ -898,6 +1032,48 @@ def plan_page(S, db, week=None, day=None):
 
 
 # ── Runs ──────────────────────────────────────────────────────────────────────────────────────
+def runs_log(S, db, month=None, last_days=None):
+    """The run list: every run of a month (or of the last N days), newest first, grouped into weeks with
+    subtotals. Built on the calendar's own month rows (_runs_month: id, km, pace, time, HR zone), plus the
+    heart rate, duration and the easy-run read the after-run question needs."""
+    import sh_engine as E
+    today = datetime.now().date()
+    months = [month or today.strftime("%Y-%m")]
+    if last_days:
+        cut = (today - timedelta(days=last_days - 1)).isoformat()
+        months = sorted({today.strftime("%Y-%m"), (today - timedelta(days=last_days - 1)).strftime("%Y-%m")})
+    rows = []
+    for m in months:
+        for d, xs in (S._runs_month(db, m).get("days") or {}).items():
+            for x in xs:
+                rows.append({**x, "date": d})
+    if last_days:
+        rows = [r for r in rows if r["date"] >= cut]
+    ids = [r["id"] for r in rows]
+    extra = {r["id"]: r for r in db.execute(
+        f"SELECT id, duration, hr_avg FROM activities WHERE id IN ({','.join('?' * len(ids))})", ids).fetchall()} if ids else {}
+    ed = {x.get("date"): x for x in (S.effort_discipline(db) or {}).get("runs") or []}
+    out = []
+    for r in sorted(rows, key=lambda r: (r["date"], r.get("t") or ""), reverse=True):
+        a, e = extra.get(r["id"]), ed.get(r["date"]) or {}
+        out.append({"id": r["id"], "date": r["date"], "dow": S._date(r["date"]).strftime("%a"), "time": r.get("t"),
+                    "km": r.get("km"), "pace": r.get("pace"), "z": r.get("z"),
+                    "hr": a["hr_avg"] if a else None, "min": round(a["duration"] / 60) if a and a["duration"] else None,
+                    "kind": KIND_TITLE.get(e.get("kind"), "Run") if e.get("kind") else "Run",
+                    "verdict": e.get("verdict"), "verdict_text": VERDICT_TEXT.get(e.get("verdict") or "")})
+    weeks = []
+    for r in out:
+        ws = E.week_start_of(S._date(r["date"])).isoformat()
+        if not weeks or weeks[-1]["start"] != ws:
+            weeks.append({"start": ws, "km": 0.0, "runs": 0, "ids": []})
+        weeks[-1]["km"] = round(weeks[-1]["km"] + (r["km"] or 0), 1)
+        weeks[-1]["runs"] += 1
+        weeks[-1]["ids"].append(r["id"])
+    return {"ok": True, "month": months[-1], "range": f"{last_days}d" if last_days else None, "runs": out, "weeks": weeks,
+            "km": round(sum(r["km"] or 0 for r in out), 1)}
+
+
+# (the calendar month itself stays /api/runs, shared with Classic)
 def activity_dict(db, aid):
     """The stored activity as the REST shape (its raw copy, or its columns when there is none)."""
     r = db.execute("SELECT id, date_time, date, sport, distance, duration, elapsed_time, hr_avg, hr_max, trimp, raw "
@@ -923,10 +1099,11 @@ def run_page(S, db, aid):
     er = next((x for x in ed.get("runs") or [] if x.get("date") == a.get("date")), {})
     dur = a.get("duration") or 0
     return {"ok": True, "id": aid, "date": a.get("date"), "title": a.get("title"), "sport": a.get("sport"),
-            "stats": [{"k": "Distance", "v": f"{a['distance']:.2f} km" if a.get("distance") else None},
-                      {"k": "Time", "v": f"{int(dur // 3600)}:{int(dur % 3600 // 60):02d}:{int(dur % 60):02d}" if dur else None},
-                      {"k": "Pace", "v": f"{_pace((a.get('pace_min_km') or 0) * 60)}/km" if a.get("pace_min_km") else None},
-                      {"k": "Avg HR", "v": f"{a['hr_avg']} bpm" if a.get("hr_avg") else None},
+            # the first four are the run's headline figures (primary); the rest sit under them, smaller
+            "stats": [{"k": "Distance", "v": f"{a['distance']:.2f} km" if a.get("distance") else None, "primary": True},
+                      {"k": "Time", "v": f"{int(dur // 3600)}:{int(dur % 3600 // 60):02d}:{int(dur % 60):02d}" if dur else None, "primary": True},
+                      {"k": "Pace", "v": f"{_pace((a.get('pace_min_km') or 0) * 60)}/km" if a.get("pace_min_km") else None, "primary": True},
+                      {"k": "Avg HR", "v": f"{a['hr_avg']} bpm" if a.get("hr_avg") else None, "primary": True},
                       {"k": "Max HR", "v": f"{a['hr_max']} bpm" if a.get("hr_max") else None},
                       {"k": "Cadence", "v": f"{a['cadence']} spm" if a.get("cadence") else None},
                       {"k": "Ground contact", "v": f"{a['gct_ms']} ms" if a.get("gct_ms") else None},
@@ -1100,6 +1277,15 @@ def register(app, S):
     def api_ui_plan():
         from flask import request
         return private() or jsonify(plan_page(S, S.get_db(), request.args.get("week"), request.args.get("day")))
+
+    @app.get("/api/ui/runs")
+    def api_ui_runs():
+        from flask import request
+        m, rng = request.args.get("month"), request.args.get("range")
+        if m and not re.fullmatch(r"\d{4}-\d{2}", m):
+            return jsonify(ok=False, error="month must be YYYY-MM"), 400
+        days = int(rng[:-1]) if rng and re.fullmatch(r"\d{1,3}d", rng) else None
+        return private() or jsonify(runs_log(S, S.get_db(), m, days))
 
     @app.get("/api/ui/run/<int:aid>")
     def api_ui_run(aid):

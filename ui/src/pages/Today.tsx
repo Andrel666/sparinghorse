@@ -1,151 +1,194 @@
-// Today: the day in one band (verdict | session | check-in), the headline numbers, then the week (each day opens),
-// the latest run, what's coming and the overnight signals — the first page, so most questions end here.
-import { useState } from "react";
-import { useToday, type TodayPage } from "../lib/api";
+// Today, top to bottom: what to do today and whether to do it, where you are on the road to the race,
+// this week and why it looks like that, the latest run, the overnight signals. Every number is a door.
+// The check-in and each day's detail open in a drawer (?checkin=1, ?day=), so back closes them.
+import { useSearchParams, Link } from "react-router-dom";
+import { useToday, type TodayPage, type Where } from "../lib/api";
 import { bpm, dateLong, dateShort, km, minutes, pace, verdictTone } from "../lib/format";
-import { Card, Figures, ListItem, PageHead, Pill } from "../components/ui";
+import { Card, PageHead, Pill, Strip } from "../components/ui";
+import { Week } from "../components/Week";
+import { Steps } from "../components/Steps";
+import { Checkin, checkinLine } from "../components/Checkin";
+import { Query } from "./Query";
+import { ComponentChip } from "../components/Component";
+import { Banner } from "../components/feedback";
 import { Drawer } from "../components/layout";
 import { DayDetail, type DaySession } from "../components/Session";
 import { Spark } from "../components/charts";
-import { Week } from "../components/Week";
-import { Steps } from "../components/Steps";
-import { Checkin } from "../components/Checkin";
-import { Query } from "./Query";
-import { Countdown } from "../components/Countdown";
-import { ComponentChip, componentFirst } from "../components/Component";
-import { Banner } from "../components/feedback";
-import { Link } from "react-router-dom";
 
 const VERDICT_WORD = { green: "Good to go", amber: "Go easier", red: "Hold off" } as const;
 const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+const MARKER_TONE = { ok: "ok", watch: "warn" } as const;
+const DOW_LONG: Record<string, string> = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
 
-function Session({ d }: { d: TodayPage }) {
-  const s = d.session, n = d.next;
-  if (s.kind === "pre") return (<div><span className="card-label">Training plan active</span>
-    <div className="stat-value sm" style={{ marginTop: 6 }}>Training starts {s.start ? dateLong(s.start) : "soon"}</div>
-    <span className="muted">Keep it easy until then — check-ins still count.</span></div>);
-  if (s.kind === "post") return (<div><span className="card-label">Today</span>
-    <div className="stat-value sm" style={{ marginTop: 6 }}>Road complete</div>
-    <span className="muted">Generate a new plan on the <Link to="/plan">Plan</Link> page to periodize the next phase.</span></div>);
-  if (s.kind === "none") return (<div><span className="card-label">Today</span>
-    <div className="stat-value sm" style={{ marginTop: 6 }}>No active plan</div>
-    <span className="muted">Add a race and generate a plan on the <Link to="/plan">Plan</Link> page.</span></div>);
+/** The left of the day band: whatever decides today's action, at hero size. */
+function Hero({ d, onDay }: { d: TodayPage; onDay: (date: string) => void }) {
+  const s = d.session, n = d.next, r = d.readiness;
+  const caution = r.halt || r.verdict === "amber" || r.verdict === "red";
+  if (s.kind === "pre" || s.kind === "post" || s.kind === "none") {
+    const t = s.kind === "pre" ? { h: `Training starts ${s.start ? dateShort(s.start) : "soon"}`, to: "/plan", a: "See the plan" }
+      : s.kind === "post" ? { h: "Road complete", to: "/plan", a: "Build the next plan" }
+      : { h: "No plan yet", to: "/plan?races=1", a: "Add a race" };
+    return <div><div className="hero-v">{t.h}</div>
+      <Link to={t.to} className="btn primary" style={{ alignSelf: "flex-start" }}>{t.a}</Link></div>;
+  }
   if (s.kind === "rest") return (
     <div>
-      <span className="card-label">Today · rest day</span>
-      <div className="stat-value sm" style={{ marginTop: 6 }}>{s.optional ? "Optional — week complete" : "Recovery"}</div>
-      {s.note && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{s.note}</span>}
-      {n && <div className="list" style={{ marginTop: "var(--sp-3)", gap: 6 }}>
-        <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
-          Next · {n.dow} {dateShort(n.date)}{n.days > 1 ? `, in ${n.days} days` : ", tomorrow"}</span>
-        <span style={{ fontSize: "var(--fs-heading)", fontWeight: 600 }}>{n.title} {km(n.km)}{n.strides ? " + strides" : ""}</span>
-        {n.target && <span className="target" title={n.target.hint}>{n.target.text}</span>}
-      </div>}
+      <span className="eyebrow">Rest day</span>
+      {n ? <>
+        <button type="button" className="hero-link" onClick={() => onDay(n.date)} aria-label={`${n.title} ${km(n.km)}: show the session`}>
+          <span className="hero-v">{n.race ? "Race" : n.title} {km(n.km)}</span></button>
+        <div className="meta">
+          <span>{n.days === 1 ? "Tomorrow" : `${DOW_LONG[n.dow] ?? n.dow} ${dateShort(n.date)}`}</span>
+          {n.target && <span className="target" title={n.target.hint}>{n.target.text}</span>}
+          {n.minutes ? <span className="muted">~{minutes(n.minutes)}</span> : null}
+          {n.strides ? <span className="muted">+ {n.strides}× strides</span> : null}
+        </div>
+      </> : <div className="hero-v">Recovery</div>}
     </div>);
+  const title = `${s.race ? "Race" : s.title} ${s.km != null ? km(s.km) : ""}`;
   return (
-    <div className="list" style={{ gap: "var(--sp-3)" }}>
-      <span className="card-label">{["Today", s.phase && `${cap(s.phase)}${s.week ? ` week ${s.week}` : ""}`].filter(Boolean).join(" · ")}</span>
-      <div className="stat-value sm">{s.title} {s.km != null ? km(s.km) : ""}</div>
-      <div className="row">
-        {s.target && <span className="target" title={s.target.hint}>{s.target.text}</span>}
-        {s.minutes && <span className="muted">about {minutes(s.minutes)}</span>}
-        {s.trimp && <span className="muted">target load {s.trimp} TRIMP</span>}
+    <div>
+      <span className="eyebrow">Today</span>
+      {caution
+        ? <span className={`second${r.verdict === "red" || r.halt ? " struck-hero" : ""}`}>{title}</span>
+        : <button type="button" className="hero-link" onClick={() => onDay(d.today)} aria-label={`${title}: show the session`}>
+            <span className="hero-v">{title}</span></button>}
+      <div className="meta">
+        {s.target && <Link to="/fitness#zones" className="target" title={s.target.hint} style={{ textDecoration: "none" }}>{s.target.text}</Link>}
+        {s.minutes ? <span className="muted">~{minutes(s.minutes)}</span> : null}
         <ComponentChip k={s.component} />
-        {s.done && <Pill tone="ok">done</Pill>}
       </div>
-      {s.done && s.actual && <span style={{ color: "var(--ok)" }}>✓ Ran {km(s.actual.km)}{s.actual.pace ? ` at ${pace(s.actual.pace)}` : ""} today — session complete.</span>}
-      {s.note && s.note.toLowerCase() !== s.title.toLowerCase() && !s.steps.length && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{s.note}</span>}
+      {s.done && s.actual && <span><span className="mk-ok">✓</span> Ran {km(s.actual.km)}{s.actual.pace ? ` at ${pace(s.actual.pace)}` : ""}{" "}
+        {s.activity_id ? <Link to={`/runs?id=${s.activity_id}`} className="linkish">Open ›</Link> : null}</span>}
       <Steps steps={s.steps} />
-      {s.why && <span className="muted" style={{ fontSize: "var(--fs-small)" }}><b>Why this session:</b> {s.why} {componentFirst(s.component) ?? ""}</span>}
     </div>);
 }
 
-const MARKER_TONE = { ok: "ok", watch: "warn" } as const;
+/** The right of the day band: the verdict (hero-sized when it asks for caution), and the check-in as one quiet line. */
+function Verdict({ d, onCheckin }: { d: TodayPage; onCheckin: () => void }) {
+  const r = d.readiness, s = d.session;
+  const caution = r.halt || r.verdict === "amber" || r.verdict === "red";
+  const word = r.headline || (r.verdict ? VERDICT_WORD[r.verdict] : "No read yet");
+  const line = checkinLine(r.checkin, r.saved_at);
+  return (
+    <div>
+      <span className="eyebrow">Readiness</span>
+      <span className={`${caution && !["rest", "pre", "post", "none"].includes(s.kind) ? "hero-v" : "second"} toned`}>{word}</span>
+      <span>{r.for_label || r.detail}</span>
+      <details className="why"><summary>Why</summary>
+        <ul>{r.reasons.map((x, i) => <li key={i}>{x}</li>)}<li>{r.hrv_line}</li>{r.ai_line && <li>{r.ai_line}</li>}</ul></details>
+      <button type="button" className="checkin-open" onClick={onCheckin}>
+        {line ? <><span className="mk-ok" aria-hidden="true">✓</span> {line}</> : "Check in"}</button>
+    </div>);
+}
 
-function Coming({ items, onDay }: { items: NonNullable<TodayPage["coming"]>; onDay: (d: string) => void }) {
-  if (!items.length) return <span className="muted">Nothing planned ahead.</span>;
-  return <div className="list" style={{ gap: 0 }}>{items.map(c => (
-    <button key={c.date + c.kind} type="button" className="sline coming" onClick={() => onDay(c.date)} title="Show the session">
-      <span className="muted">{c.dow} {Number(c.date.slice(8))}</span>
-      <span><b>{c.race ? "Race" : c.title}</b> {km(c.km)}{c.strides ? ` + ${c.strides}× strides` : ""}
-        {c.target && <span className="muted"> · {c.target.text}</span>}</span>
-      <span className="muted num">{c.minutes ? `~${minutes(c.minutes)}` : ""}</span>
-      <span className="muted">{c.days === 1 ? "tomorrow" : `in ${c.days} d`} ›</span>
-    </button>))}</div>;
+/** The whole road as one bar of weeks, grouped by phase: past weeks filled, this week in signal. Each week opens its plan. */
+function Journey({ w }: { w: Where }) {
+  let i = 0;
+  return (
+    <div className="journey" role="group" aria-label={`Week ${w.n} of ${w.of}: ${w.phase} week ${w.phase_n} of ${w.phase_of}`}>
+      {w.phases.map((p, k) => {
+        const cells = w.weeks.slice(i, i + p.weeks); i += p.weeks;
+        return <div key={k} className={`jp${p.current ? " now" : ""}`} style={{ flexGrow: p.weeks }}>
+          <span className="jp-name">{p.name}</span>
+          <div className="jp-cells">{cells.map(c => (
+            <Link key={c.start} to={`/plan?week=${c.start}`} aria-label={`Week of ${dateShort(c.start)}${c.km != null ? `, ${km(c.km)}` : ""}. Open the week`}
+                  className={`jc${c.past ? " past" : ""}${c.current ? " now" : ""}${c.race ? " race" : ""}`} />))}</div>
+        </div>;
+      })}
+    </div>);
+}
+
+function WhereYouAre({ w }: { w: Where }) {
+  const f = w.fitness;
+  return (
+    <Card label="Where you are" span={12}>
+      <Journey w={w} />
+      <Strip items={[
+        ...(w.n ? [{ k: "Week", v: `${w.n} of ${w.of}`, s: w.phase ? `${w.phase} ${w.phase_n} of ${w.phase_of}` : undefined, to: "/plan#road" }] : []),
+        ...(f.now != null ? [{ k: "Fitness", v: f.race != null ? `${f.now} → ${f.race}` : `${f.now}`, s: f.race != null ? "now → race day" : "CTL", to: "/fitness#fitness-fatigue" }] : []),
+        ...(w.pred ? [{ k: "Prediction", v: w.pred.hms, s: [w.pred.goal && `goal ${w.pred.goal}`, w.pred.short].filter(Boolean).join(" · "),
+                        tone: w.pred.tone ?? undefined, to: "/plan?view=race" }] : []),
+        ...(w.race?.days != null ? [{ k: w.race.label ?? "Race", v: `${w.race.days} days`, s: dateShort(w.race.date), to: "/plan?view=race" }] : []),
+      ]} />
+    </Card>);
+}
+
+function Why({ items }: { items: NonNullable<TodayPage["why"]> }) {
+  return <ul className="why-list">{items.map(x => (
+    <li key={x.key}><Link to={x.link} title={x.detail}>{x.text}<span className="muted"> ›</span></Link></li>))}</ul>;
 }
 
 function Recovery({ items }: { items: NonNullable<TodayPage["recovery"]> }) {
-  if (!items.length) return <span className="muted">No overnight data yet — HRV, resting HR and sleep arrive with the watch sync.</span>;
-  return <div className="list" style={{ gap: 0 }}>{items.map(m => (
-    <div key={m.key} className="marker-row">
+  if (!items.length) return <span className="muted">No overnight data yet.</span>;
+  return <div>{items.map(m => (
+    <Link key={m.key} to={m.key === "hrv" ? "/body" : `/body#${m.key}`} className="marker-row" aria-label={`${m.label} ${m.value} ${m.unit}. ${m.sub}. Open the marker`}>
       <div className="list" style={{ gap: 2 }}>
         <span className="muted" style={{ fontSize: "var(--fs-label)" }}>{m.label}</span>
         <span className={`num marker-v${m.state ? ` tone-${MARKER_TONE[m.state]} toned` : ""}`}>{m.value}<small> {m.unit}</small></span>
         <span className="muted" style={{ fontSize: "var(--fs-label)" }}>{m.sub}</span>
       </div>
-      <div className="marker-spark">{m.series.length > 1 && <Spark pts={m.series} />}</div>
-    </div>))}
-    <Link to="/body" className="linkish" style={{ marginTop: "var(--sp-2)" }}>All body markers →</Link>
+      <div className="marker-spark">{m.series.length > 1 ? <Spark pts={m.series} /> : null}</div>
+    </Link>))}
   </div>;
 }
 
+function LatestRun({ lr }: { lr: NonNullable<TodayPage["latest_run"]> }) {
+  return (
+    <Card label={`Latest run · ${dateShort(lr.date)}`} span={6} tone={verdictTone(lr.verdict)}>
+      <Strip items={[
+        { k: "Distance", v: km(lr.km), to: `/runs?id=${lr.id}` },
+        ...(lr.minutes != null ? [{ k: "Time", v: minutes(lr.minutes), to: `/runs?id=${lr.id}` }] : []),
+        { k: "Pace", v: pace(lr.pace), to: `/runs?id=${lr.id}` },
+        { k: "Heart rate", v: bpm(lr.hr), to: `/runs?id=${lr.id}` },
+      ]} />
+      {(lr.verdict_line || lr.verdict_text) && <Link to="/fitness#easy" style={{ textDecoration: "none", color: "inherit", alignSelf: "flex-start" }}>
+        <Pill tone={verdictTone(lr.verdict)} dot>{lr.verdict_line ?? cap(lr.verdict_text!)}</Pill></Link>}
+      {lr.cross_training && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{lr.cross_training}</span>}
+    </Card>);
+}
+
 export function Today() {
-  const [day, setDay] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
+  const day = params.get("day"), checkin = params.get("checkin") === "1";
+  const setParam = (k: string, v: string | null) => setParams(p => { const n = new URLSearchParams(p); if (v) n.set(k, v); else n.delete(k); return n; });
+  const setDay = (d: string | null) => setParam("day", d);
   return <Query q={useToday()}>{d => {
-    const r = d.readiness, tone = verdictTone(r.verdict), lr = d.latest_run, w = d.week;
-    // the day drawer reads this week's sessions, or a coming one further out
-    const daySessions: DaySession[] = !day ? [] : w && day >= w.start && day <= w.days[6].date
-      ? (w.sessions ?? []).filter(x => x.date === day) : (d.coming ?? []).filter(x => x.date === day);
-    const glance = d.glance ?? [];
+    const r = d.readiness, lr = d.latest_run, w = d.week;
+    const verdictTn = verdictTone(r.verdict);
+    const inWeek = !!(w && day && day >= w.start && day <= w.days[6].date);
+    const daySessions: DaySession[] = !day ? [] : inWeek ? (w!.sessions ?? []).filter(x => x.date === day) : (d.coming ?? []).filter(x => x.date === day);
+    const dayInfo = inWeek ? w!.days.find(x => x.date === day) : undefined;
+    const ranHere = (dayInfo?.runs ?? []).filter(run => !daySessions.some(s => s.activity_id === run.activity_id && !s.moved_to));
     return (
       <div className="page">
         <PageHead title="Today">
-          {d.race && <Pill>{d.race.priority ? `${d.race.priority}-race · ` : ""}{d.race.label} · <Countdown date={d.race.date} time={d.race.start_time} tz={d.race.start_tz} />
-            {d.race.verdict ? ` · ${d.race.verdict}` : ""}</Pill>}
+          <span className="aside">{(d.dateline ?? dateLong(d.today)).split(" · ")[0]}</span>
         </PageHead>
-        {r.halt && <Banner tone="bad"><b>⚠ Plan halted</b> — clear it with your doctor before resuming.</Banner>}
+        {r.halt && <Banner tone="bad"><b>Plan halted.</b> Clear it with your doctor before resuming.</Banner>}
+        <section className={`dayband${verdictTn ? ` tone-${verdictTn}` : ""}`} aria-label="Today">
+          <Hero d={d} onDay={setDay} />
+          <Verdict d={d} onCheckin={() => setParam("checkin", "1")} />
+        </section>
         <div className="grid">
-          <section className={`card hero span-12${tone ? ` tone-${tone}` : ""}`} aria-label="Today">
-            <div>
-              <span className="card-label">Readiness</span>
-              <div className="stat-value toned">{r.headline || (r.verdict ? VERDICT_WORD[r.verdict] : "No read yet")}</div>
-              <span>{r.detail}</span>
-              <details className="why"><summary>Why</summary>
-                <ul>{r.reasons.map((x, i) => <li key={i}>{x}</li>)}<li>{r.hrv_line}</li>{r.ai_line && <li>{r.ai_line}</li>}</ul></details>
-            </div>
-            <Session d={d} />
-            <div><span className="card-label">Check in</span><Checkin initial={r.checkin} /></div>
-          </section>
-          {glance.length > 0 && <div className="span-12"><Figures items={glance.map(g => ({
-            k: g.label, v: g.value, s: g.sub, tone: g.tone ?? undefined, to: g.link }))} /></div>}
+          {d.where && <WhereYouAre w={d.where} />}
           {w && <Card label="This week" span={8}
-                      aside={<Link to="/plan" className="linkish" style={{ fontSize: "var(--fs-small)" }}>Plan this week →</Link>}>
-            {w.km_done != null && <div className="meter" role="img" aria-label={`${w.km_done} of ${w.km} km run`}>
-              <span style={{ width: `${Math.min(100, w.km ? (100 * w.km_done) / w.km : 0)}%`, background: "var(--text)" }} /></div>}
+                      aside={<Link to="/plan" className="linkish" style={{ fontSize: "var(--fs-small)" }}>Plan ›</Link>}>
+            {w.km_done != null && <>
+              <span className="num">{w.km_done} of {w.km} km · {w.runs_done} of {w.runs_planned} runs</span>
+              <div className="meter" role="img" aria-label={`${w.km_done} of ${w.km} km run`}>
+                <span style={{ width: `${Math.min(100, w.km ? (100 * w.km_done) / w.km : 0)}%`, background: "var(--text)" }} /></div></>}
             <Week days={w.days} phase={w.phase} onDay={w.sessions ? setDay : undefined} selected={day} today={d.today} />
-            <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{w.sessions ? "Pick a day for its session, targets and the run. " : ""}
-              {w.held ? `${w.held.text}.` : "No limit binds this week."}{w.deload ? ` ${w.deload}` : ""}</span>
           </Card>}
-          {lr && <Card label={`Latest run · ${dateShort(lr.date)}`} span={4} tone={verdictTone(lr.verdict)}>
-            <div className="list">
-              <ListItem k="Distance"><span className="num">{km(lr.km)}</span></ListItem>
-              {lr.minutes != null && <ListItem k="Time"><span className="num">{minutes(lr.minutes)}</span></ListItem>}
-              <ListItem k="Pace"><span className="num">{pace(lr.pace)}</span></ListItem>
-              <ListItem k="Heart rate"><span className="num">{bpm(lr.hr)}{lr.hr_max ? ` · max ${lr.hr_max}` : ""}</span></ListItem>
-              {lr.trimp != null && <ListItem k="Load"><span className="num">{lr.trimp} TRIMP</span></ListItem>}
-              {lr.te != null && <ListItem k="Training effect"><span className="num">{lr.te}</span></ListItem>}
-              {lr.recovery_h != null && <ListItem k="Recovery"><span className="num">{lr.recovery_h} h</span></ListItem>}
-            </div>
-            {lr.verdict_text && <Pill tone={verdictTone(lr.verdict)} dot>{cap(lr.verdict_text)}</Pill>}
-            {lr.cross_training && <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{lr.cross_training}</span>}
-            <Link to={`/runs?id=${lr.id}`} className="linkish">Open the run →</Link>
-          </Card>}
-          {d.coming && <Card label="Coming up" span={8}><Coming items={d.coming} onDay={setDay} /></Card>}
-          {d.recovery && <Card label="Recovery" span={4}><Recovery items={d.recovery} /></Card>}
+          {!!d.why?.length && <Card label="Why this week" span={4}><Why items={d.why} /></Card>}
+          {lr && <LatestRun lr={lr} />}
+          {d.recovery && <Card label="Recovery" span={6}><Recovery items={d.recovery} /></Card>}
         </div>
         <Drawer title={day ? dateLong(day) : ""} open={!!day} onClose={() => setDay(null)}>
-          <DayDetail sessions={daySessions} onRun={() => setDay(null)} />
-          <Link to="/plan" className="linkish" onClick={() => setDay(null)}>See the week on the Plan page →</Link>
+          <DayDetail sessions={daySessions} ranHere={ranHere} movedFrom={dayInfo?.moved_from} onRun={() => setDay(null)} />
+        </Drawer>
+        <Drawer title="Check in" open={checkin} onClose={() => setParam("checkin", null)}>
+          <Checkin initial={r.checkin} onSaved={() => setParam("checkin", null)} />
         </Drawer>
       </div>
     );

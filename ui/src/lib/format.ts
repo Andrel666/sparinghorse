@@ -41,3 +41,6 @@ export function ago(mins: number | null | undefined) {
 export type Tone = "ok" | "warn" | "bad" | undefined;
 export const verdictTone = (v: string | null | undefined): Tone =>
   v === "green" || v === "on" ? "ok" : v === "amber" || v === "hot" ? "warn" : v === "red" || v === "too_hard" ? "bad" : undefined;
+
+/** Heart-rate zone colours, Z1..Z5: a grey ramp heating into signal (tokens --z1..--z5), never status colours. */
+export const ZONE_COLORS = ["var(--z1)", "var(--z2)", "var(--z3)", "var(--z4)", "var(--z5)"] as const;

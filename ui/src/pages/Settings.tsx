@@ -43,7 +43,7 @@ function Fields({ d, names }: { d: SettingsPage; names: string[] }) {
           <div key={f.key} className="field">
             <label htmlFor={`set-${f.key}`}>{f.label} {f.source && <Pill>{SRC[f.source] || f.source}</Pill>}</label>
             <Input f={f} value={edits[f.key] ?? f.value} onChange={v => setEdits(e => (v === f.value ? (({ [f.key]: _, ...r }) => r)(e) : { ...e, [f.key]: v }))} />
-            {errs[f.key] && <span style={{ color: "var(--bad)" }}>⚠ {errs[f.key]}</span>}
+            {errs[f.key] && <span style={{ color: "var(--bad)" }}>{errs[f.key]}</span>}
             <span className="help">{f.help}</span>
           </div>))}</div>
       </Card>))}

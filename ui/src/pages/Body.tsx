@@ -23,7 +23,7 @@ function MarkerCard({ m }: { m: Marker }) {
   let pts = ranged ? m.series.filter(p => anchor - new Date(p.date).getTime() <= DAYS[range] * 864e5) : m.series;
   if (pts.length < 2) pts = m.series;
   return (
-    <Card span={4} label={m.label} tone={m.state === "watch" ? "warn" : undefined}
+    <Card id={m.key} span={4} label={m.label} tone={m.state === "watch" ? "warn" : undefined}
           aside={ranged ? <span className="seg" role="group" aria-label="Range">{(["6m", "1y", "all"] as Range[]).map(r =>
             <button key={r} type="button" aria-pressed={range === r} onClick={() => pick(r)}>{r === "all" ? "All" : r}</button>)}</span> : undefined}>
       <div className="row" style={{ alignItems: "baseline" }}>

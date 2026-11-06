@@ -1,5 +1,6 @@
 // Shared layout pieces: tabs, the detail drawer, and one month grid (plan calendar and run calendar).
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
+import { Icon } from "./Icon";
 
 export function Tabs<T extends string>({ value, options, onChange, label }:
   { value: T; options: [T, string][]; onChange: (v: T) => void; label: string }) {
@@ -13,21 +14,36 @@ export function Tabs<T extends string>({ value, options, onChange, label }:
   );
 }
 
+/** The detail panel: a right-hand panel on desktop, a bottom sheet on the phone. Focus moves in, is trapped
+ *  (Tab cycles inside), and returns to whatever opened it; Escape or the scrim closes it. */
 export function Drawer({ title, open, onClose, children }: { title: ReactNode; open: boolean; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLElement>(null), id = useId();
   useEffect(() => {
     if (!open) return;
-    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const opener = document.activeElement as HTMLElement | null;
+    const focusables = () => [...(ref.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])') ?? [])];
+    focusables()[0]?.focus();
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key !== "Tab") return;
+      const f = focusables(); if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
     window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
+    return () => { window.removeEventListener("keydown", k); opener?.focus?.(); };
   }, [open, onClose]);
   if (!open) return null;
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : "Details"}>
+      <aside ref={ref} className="drawer" role="dialog" aria-modal="true" aria-labelledby={id}>
+        <span className="grab" aria-hidden="true" />
         <header className="row" style={{ justifyContent: "space-between" }}>
-          <h2 style={{ fontSize: "var(--fs-heading)" }}>{title}</h2>
-          <button type="button" className="btn" onClick={onClose} aria-label="Close">✕</button>
+          <h2 id={id} style={{ fontSize: "var(--fs-heading)" }}>{title}</h2>
+          <button type="button" className="btn" onClick={onClose} aria-label="Close"><Icon name="close" /></button>
         </header>
         {children}
       </aside>

@@ -53,7 +53,7 @@ export function Calibration() {
       <span className="muted">Re-fits the engine's load and safety numbers to your runs and injury history. Nothing changes until you approve.</span>
       {!p ? <span className="muted">{n ? "" : "No calibration — the engine runs on its defaults."}</span> : <>
         <span><b>{p.approved ? "In force" : "Proposed — not applied"}</b> · fitted {p.created_at.slice(0, 10)} on {p.history.runs} runs</span>
-        <Table cols={[{ head: "Number", cell: (x: NonNullable<Cal["proposal"]>["params"][number]) => CAL_NAMES[x.key] || x.key },
+        <Table phone="scroll" cols={[{ head: "Number", cell: (x: NonNullable<Cal["proposal"]>["params"][number]) => CAL_NAMES[x.key] || x.key },
           { head: "Default", cell: x => x.default, num: true }, { head: "Fitted", cell: x => x.value, num: true },
           { head: "Status", cell: x => x.status === "fitted" ? <Pill tone="warn">change</Pill> : x.status === "insufficient" ? "no data" : "keep" },
           { head: "Why", cell: x => <span className="muted">{x.basis}{x.effect ? ` · ${x.effect}` : ""}</span>, wide: true }]} rows={p.params} keyOf={x => x.key} />
@@ -87,7 +87,7 @@ export function Keys({ music = false }: { music?: boolean }) {
         const r = v.data?.results?.[s.key];
         return <div key={s.key} className="field">
           <label htmlFor={`sec-${s.key}`}>{s.label} {s.configured
-            ? <Pill tone={r === "invalid" ? "bad" : "ok"}>{r === "valid" ? "✓ in use · valid" : r === "invalid" ? "✗ key rejected" : s.source === "env" ? "✓ from environment" : "✓ configured"}{v.isFetching ? " · checking…" : ""}</Pill>
+            ? <Pill tone={r === "invalid" ? "bad" : "ok"}>{r === "valid" ? "✓ in use · valid" : r === "invalid" ? "✕ key rejected" : s.source === "env" ? "✓ from environment" : "✓ configured"}{v.isFetching ? " · checking…" : ""}</Pill>
             : <Pill>not set</Pill>}{s.fingerprint && <code className="muted" title="sha256 of the key, first 8 characters"> fp {s.fingerprint}</code>}</label>
           <div className="row">
             <input id={`sec-${s.key}`} type="password" autoComplete="off" className="input" style={{ maxWidth: 360 }} value={draft[s.key] || ""}
@@ -145,13 +145,13 @@ export function Access() {
     { done: () => { setF({ current: "", next: "", again: "" }); return "Changed ✓ — other devices are signed out"; }, fail: "Could not change the passphrase" });
   return <Query q={q}>{a => a.mode === "none" ? null : <Card label="Console access">
     <span>{a.mode === "proxy" ? `Signed in through the proxy as ${a.user}.` : `Signed in with the passphrase${a.passphrase_set_on ? ` (set ${dateShort(a.passphrase_set_on.slice(0, 10))})` : ""}. Sessions last ${a.session_days} days.`}</span>
-    {!a.cookie_secure && <span style={{ color: "var(--warn)" }}>⚠ The session cookie isn't marked secure — serve this over HTTPS.</span>}
+    {!a.cookie_secure && <span style={{ color: "var(--warn)" }}>The session cookie isn't marked secure — serve this over HTTPS.</span>}
     {a.mode === "passphrase" && <form className="row" onSubmit={e => { e.preventDefault(); if (f.next === f.again && f.next.length >= 12) change.mutate(); }}>
       <input type="password" className="input" style={{ width: "18ch" }} placeholder="current" value={f.current} onChange={e => setF({ ...f, current: e.target.value })} aria-label="Current passphrase" autoComplete="current-password" />
       <input type="password" className="input" style={{ width: "18ch" }} placeholder="new (12+ characters)" value={f.next} onChange={e => setF({ ...f, next: e.target.value })} aria-label="New passphrase" autoComplete="new-password" />
       <input type="password" className="input" style={{ width: "18ch" }} placeholder="once more" value={f.again} onChange={e => setF({ ...f, again: e.target.value })} aria-label="New passphrase again" autoComplete="new-password" />
       <button className="btn primary" type="submit" disabled={!f.current || f.next.length < 12 || f.next !== f.again}>Change</button>
-      {f.again && f.next !== f.again && <span style={{ color: "var(--bad)" }}>⚠ the two new entries differ</span>}
+      {f.again && f.next !== f.again && <span style={{ color: "var(--bad)" }}>The two new entries differ</span>}
     </form>}
     <form method="post" action="/logout"><button className="btn" type="submit">Log out</button></form>
   </Card>}</Query>;
@@ -165,12 +165,12 @@ export function System() {
   return <Query q={q}>{s => <Card label="System">
     <div className="list">
       <ListItem k="Engine">v{s.engine_version} · zone {s.tz}</ListItem>
-      <ListItem k="Database">{s.db_writable ? "writable" : <span style={{ color: "var(--bad)" }}>⚠ not writable ({s.db_unwritable.join(", ")}) — restart the container</span>}</ListItem>
+      <ListItem k="Database">{s.db_writable ? "writable" : <span style={{ color: "var(--bad)" }}>not writable ({s.db_unwritable.join(", ")}) — restart the container</span>}</ListItem>
       <ListItem k="Last sync"><span style={{ color: s.sync_stale ? "var(--warn)" : undefined }}>{t(s.last_sync)}{s.sync_stale ? " · stale" : ""}</span></ListItem>
       <ListItem k="Nightly"><span style={{ color: !s.sched.last_ok || s.sched.fail_count ? "var(--warn)" : undefined }}>{s.sched.last_ok ? `last ok ${t(s.sched.last_ok)}` : "no nightly run yet"}{s.sched.fail_count ? ` · ${s.sched.fail_count} failures in a row` : ""}</span></ListItem>
       <ListItem k="Watches">Suunto {s.suunto.connected ? `connected · last push ${t(s.suunto.last_push)}` : "off"} · COROS {s.coros.connected ? `connected · last push ${t(s.coros.last_push)}` : "off"}</ListItem>
       <ListItem k="Backups"><span style={{ color: !s.backup.latest || (s.backup.age_h ?? 0) > 48 ? "var(--warn)" : undefined }}>{s.backup.latest ? `latest ${t(s.backup.latest)} (${Math.round(s.backup.age_h ?? 0)} h ago)` : "no backup yet"} · {s.backup.dir}{s.backup.push ? " · pushed off-box" : ""}</span></ListItem>
-      {(s.access.team || s.access.bypass) && <ListItem k="Access"><span style={{ color: s.access.matches === false ? "var(--warn)" : undefined }}>{s.access.bypass ? "proxy bypass on" : `team ${s.access.team}`}{s.access.matches === false ? " · ⚠ the proxy's team doesn't match" : ""}</span></ListItem>}
+      {(s.access.team || s.access.bypass) && <ListItem k="Access"><span style={{ color: s.access.matches === false ? "var(--warn)" : undefined }}>{s.access.bypass ? "proxy bypass on" : `team ${s.access.team}`}{s.access.matches === false ? " · the proxy's team doesn't match" : ""}</span></ListItem>}
     </div>
   </Card>}</Query>;
 }

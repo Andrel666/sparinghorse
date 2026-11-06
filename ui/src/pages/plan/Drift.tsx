@@ -70,7 +70,7 @@ export function DriftView({ race }: { race?: string }) {
           <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
             {d.anchor && `Baseline: the plan of ${dateShort(d.anchor.for_date)}${d.anchor.is_current ? " (just sealed)" : ""} · ${d.anchor.versions} versions on record`}
             {d.race && ` · ${d.race.label}, ${d.race.weeks_away} weeks out`}
-            {d.duplicate_count ? ` · ⚠ ${d.duplicate_count} duplicate activities inflate the actuals` : ""}
+            {d.duplicate_count ? ` · ${d.duplicate_count} duplicate activities inflate the actuals` : ""}
             {(d.races?.length || 0) > 1 ? " · pick a race in the Races tile to switch" : ""}</span>
           <span className="seg" role="group" aria-label="Compare">
             <button type="button" aria-pressed={mode === "founding"} onClick={() => setMode("founding")} title="How the road moved since the plan was founded">Original → Now</button>

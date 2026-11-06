@@ -25,31 +25,47 @@ export interface Actual { km: number; pace: string | null; hr?: number | null }
 export interface Day {
   date: string; dow: string; kind: string; title: string; km: number | null; race: boolean; strides: number;
   status: "rest" | "planned" | "today" | "done" | "moved" | "missed" | "extra"; actual: Actual | null; moved_to: string | null;
+  // the runs dated this day (a moved run sits where it was run) — optional: older servers send none
+  runs?: { activity_id: number | null; km: number | null; pace: string | null; hr: number | null; kind: string; unplanned: boolean }[];
+  moved_from?: string | null; moved_dow?: string | null;
 }
-export interface Held { key: string; name: string; text: string }
+export interface Held { key: string; name: string; text: string; short?: string }
 export interface TodayPage {
-  ok: true; today: string; sync_minutes: number | null;
+  ok: true; today: string; sync_minutes: number | null; dateline?: string;
   race: { label: string; date: string; type: string; days: number; target: string | null; start_time: string | null;
-          start_tz: string; priority: string | null; verdict: string | null } | null;
+          start_tz: string; priority: string | null; verdict: string | null;
+          pred?: { hms: string; tone: "ok" | "warn" | "bad" | null; words: string } } | null;
   readiness: { verdict: Verdict; halt: boolean; action: string; headline: string | null; detail: string;
                reasons: string[]; hrv: string | null; hrv_line: string; ai_line: string | null;
-               checkin: Checkin | null };
+               checkin: Checkin | null; for_label?: string | null; saved_at?: string | null };
   session: { kind: string; title: string; km: number | null; minutes: number | null; note: string | null; done: boolean;
              actual: Actual | null; race: boolean; target: Target | null; steps: Step[]; phase: string | null;
              week: number | null; trimp: number | null; optional: boolean; start: string | null; component: string | null;
-             pace_zone: string | null; why: string | null };
+             pace_zone: string | null; why: string | null; activity_id?: number | null };
   next: { date: string; dow: string; kind: string; title: string; km: number | null; minutes: number | null;
           strides: number; race: boolean; target: Target | null; days: number } | null;
   week: { start: string; phase: string | null; km: number; runs: number; days: Day[]; deload: string | null;
           held: Held | null; sessions?: SessionDetail[]; km_done?: number; runs_done?: number; runs_planned?: number } | null;
   latest_run: { id: number; date: string; km: number; pace: string | null; hr: number | null;
                 verdict: string | null; verdict_text: string | null; cross_training?: string; minutes: number | null;
-                hr_max: number | null; trimp: number | null; te: number | null; recovery_h: number | null } | null;
+                hr_max: number | null; trimp: number | null; te: number | null; recovery_h: number | null; verdict_line?: string | null } | null;
   // added with the day drawer and the glance row — optional, so a backend that predates them still renders
   coming?: (Omit<SessionDetail, "mark" | "activity_id" | "reflection" | "component" | "moved_dow" | "runs"> & { dow: string; days: number })[];
-  glance?: { key: string; label: string; value: string; sub: string; tone: "ok" | "warn" | "bad" | null; link: string }[];
+  glance?: { key: string; label: string; value: string; sub: string; hint?: string | null; tone: "ok" | "warn" | "bad" | null; link: string }[];
   recovery?: { key: string; label: string; value: string; unit: string; sub: string; state: "ok" | "watch" | null;
               series: { date: string; v: number }[] }[];
+  where?: Where | null;
+  why?: { key: string; text: string; detail?: string; link: string }[];
+}
+
+/** Where the athlete is on the road (Today's "Where you are"). */
+export interface Where {
+  weeks: { start: string; phase: string | null; km: number | null; past: boolean; current: boolean; race: boolean }[];
+  phases: { key: string | null; name: string | null; weeks: number; current: boolean }[];
+  n: number | null; of: number; phase: string | null; phase_n: number | null; phase_of: number | null;
+  race: { label: string | null; date: string; days: number | null } | null;
+  fitness: { now: number | null; race: number | null };
+  pred: { hms: string; goal: string | null; tone: "ok" | "warn" | "bad" | null; short: string | null } | null;
 }
 
 export interface Tile { key: string; label: string; value: number | null; unit: string; delta: number | null;
@@ -102,7 +118,7 @@ export interface PlanPage {
           lo: string | null; hi: string | null; verdict: string | null } | null;
   road: { start: string; phase: string | null; km: number; ran: number; current: boolean; selected: boolean; race: boolean; frozen: boolean;
           flags: { label: string; date: string; day: number }[] }[];
-  phases: { key: string | null; name: string | null; start: string; weeks: number }[];
+  phases: { key: string | null; name: string | null; start: string; weeks: number }[]; road_headline?: string | null;
   week: { start: string; end: string; phase: string | null; phase_name: string | null; n: number | null; km: number;
           intent: string | null; current: boolean; days: Day[]; held: Held | null;
           limits: Limit[]; sessions: SessionDetail[]; prev: string | null; next: string | null; flags: Flag[];
@@ -112,7 +128,7 @@ export interface PlanPage {
   paces: { key: string; label: string; pace: string }[];
 }
 export interface RunPage { ok: true; id: number; date: string; title: string; sport: string;
-  stats: { k: string; v: string | null }[];
+  stats: { k: string; v: string | null; primary?: boolean }[];
   readback: { kind: string | null; summary: string | null; rough: boolean; composite: number | null; strides: string | null } | null;
   verdict: string | null; verdict_text: string | null; time: string | null; ignored: boolean;
   split: { index: number; parts: number; km: number; min: number } | null }
@@ -163,6 +179,12 @@ export const usePlan = (sel: { week?: string; day?: string }) =>
   q<PlanPage>(["ui", "plan", sel.week, sel.day], `/api/ui/plan?${new URLSearchParams(Object.entries(sel).filter(([, v]) => v) as [string, string][])}`);
 export const useRun = (id?: number) => q<RunPage>(["ui", "run", id], `/api/ui/run/${id}`, !!id);
 export const usePlanCalendar = (month?: string) => q<PlanCalendar>(["ui", "plancal", month], `/api/plan/calendar${month ? `?month=${month}` : ""}`);
+export interface RunsLog { ok: true; month: string; range: string | null; km: number;
+  runs: { id: number; date: string; dow: string; time: string | null; km: number; pace: string | null; z: number | null; hr: number | null;
+          min: number | null; kind: string; verdict: string | null; verdict_text: string | null }[];
+  weeks: { start: string; km: number; runs: number; ids: number[] }[] }
+export const useRunsLog = (month?: string, range?: string | null) =>
+  q<RunsLog>(["ui", "runslog", month, range], `/api/ui/runs?${new URLSearchParams(Object.entries({ month, range }).filter(([, v]) => v) as [string, string][])}`);
 export const useRunsMonth = (month?: string) => q<RunsMonth>(["ui", "runs", month], `/api/runs${month ? `?month=${month}` : ""}`);
 export const useRacePlan = (target?: string) => q<RacePlanT>(["ui", "race", target], `/api/race/plan${target ? `?target=${encodeURIComponent(target)}` : ""}`);
 export const useProfile = (id?: number) => q<Profile>(["ui", "profile", id], `/api/activity/${id}/profile`, !!id);

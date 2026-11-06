@@ -19,11 +19,24 @@ function Choice<T extends string>({ label, value, options, onChange }:
   );
 }
 
-export function Checkin({ initial }: { initial: C | null }) {
+const WORD = { energy: { good: "legs fresh", ok: "legs OK", heavy: "legs heavy" }, sleep: { good: "slept well", ok: "slept OK", poor: "slept poorly" } } as const;
+
+/** The saved check-in as one line ("✓ Checked in 07:12 · legs fresh"), or null when there is none. */
+export function checkinLine(c: C | null, savedAt?: string | null): string | null {
+  if (!c || !savedAt) return null;
+  const t = new Date(savedAt);
+  const at = Number.isNaN(t.getTime()) ? "" : ` ${t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  const bits = [c.energy && WORD.energy[c.energy], c.sleep && WORD.sleep[c.sleep], c.note && `“${c.note}”`,
+                c.stop_symptom && "had to stop"].filter(Boolean);
+  return `Checked in${at}${bits.length ? ` · ${bits.join(" · ")}` : ""}`;
+}
+
+/** The check-in form. It lives in a drawer opened from Today; `onSaved` closes it. */
+export function Checkin({ initial, onSaved }: { initial: C | null; onSaved?: () => void }) {
   const qc = useQueryClient();
   const [c, set] = useState<C>(initial || { energy: "", sleep: "", note: "", stop_symptom: false });
   const [note, showNote] = useState(!!c.note);
-  const m = useMutation({ mutationFn: postCheckin, onSuccess: () => qc.invalidateQueries({ queryKey: ["ui"] }) });
+  const m = useMutation({ mutationFn: postCheckin, onSuccess: () => { qc.invalidateQueries({ queryKey: ["ui"] }); onSaved?.(); } });
   return (
     <form className="list" style={{ gap: 10 }} onSubmit={e => { e.preventDefault(); m.mutate(c); }}>
       <Choice label="Legs" value={c.energy} options={LEGS} onChange={energy => set({ ...c, energy })} />
@@ -36,9 +49,8 @@ export function Checkin({ initial }: { initial: C | null }) {
         Had to stop, or chest pain, dizziness or faintness
       </label>
       <div className="row">
-        <button type="submit" className="btn primary" disabled={m.isPending}>{m.isPending ? "Saving…" : "Save check-in"}</button>
-        {m.isSuccess && <span className="muted">Saved</span>}
-        {m.isError && <span style={{ color: "var(--bad)" }}>{(m.error as Error).message}</span>}
+        <button type="submit" className="btn primary" disabled={m.isPending}>{m.isPending ? "Saving…" : "Save"}</button>
+        {m.isError && <span style={{ color: "var(--bad)" }}>Not saved: {(m.error as Error).message}. Try again.</span>}
       </div>
     </form>
   );

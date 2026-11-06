@@ -1,5 +1,6 @@
 // The one list of pages. The router, the sidebar and the phone tab bar are all built from it.
-export type IconName = "today" | "plan" | "runs" | "fitness" | "body" | "coach" | "music" | "settings" | "more";
+export type IconName = "today" | "plan" | "runs" | "fitness" | "body" | "coach" | "music" | "settings" | "more"
+  | "close" | "trash" | "hide" | "note" | "chat" | "theme" | "alert" | "chevron";
 export interface PageDef {
   path: string; label: string; icon: IconName;
   tab: boolean;            // its own phone tab (the rest live under More)

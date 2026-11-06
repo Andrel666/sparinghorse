@@ -1,5 +1,6 @@
 // What every page shares above and below its content: sync state + Sync now + theme, the first-run
 // guide, the data-quality banner, the footer. Auto-syncs once when the app opens.
+import { Icon } from "./Icon";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { postJSON, useShell, type ShellT } from "../lib/api";
@@ -59,13 +60,13 @@ function DataQuality({ s }: { s: ShellT }) {
   if (!s.duplicates.length && !s.ignored.length) return null;
   return <>
     {s.duplicates.length > 0 && <Banner tone="warn">
-      <b>⚠ {s.duplicates.length} likely duplicate {s.duplicates.length > 1 ? "activities" : "activity"}</b> (same time, distance and sport).
+      <b>{s.duplicates.length} likely duplicate {s.duplicates.length > 1 ? "activities" : "activity"}</b> (same time, distance and sport).
       They inflate fitness, fatigue and the load ratio on Runalyze too — delete them there and sync. The charts here already ignore them.
       <div className="row" style={{ marginTop: 6 }}>{s.duplicates.map(d => (
-        <button key={d.id} type="button" className="btn" onClick={() => del.mutate(d.id)}>🗑 {d.date ? dateShort(d.date) : `#${d.id}`} · {km(d.distance)}</button>))}</div>
+        <button key={d.id} type="button" className="btn" onClick={() => del.mutate(d.id)}><Icon name="trash" /> Delete {d.date ? dateShort(d.date) : `#${d.id}`} · {km(d.distance)}</button>))}</div>
     </Banner>}
     {s.ignored.length > 0 && <Banner>
-      ⊘ {s.ignored.length} {s.ignored.length > 1 ? "runs are" : "run is"} excluded from your stats.
+      {s.ignored.length} {s.ignored.length > 1 ? "runs are" : "run is"} excluded from your stats.
       <div className="row" style={{ marginTop: 6 }}>{s.ignored.map(i => (
         <button key={i.id} type="button" className="btn" onClick={() => restore.mutate(i.id)}>Restore {i.date ? dateShort(i.date) : `#${i.id}`}</button>))}</div>
     </Banner>}
