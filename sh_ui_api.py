@@ -1035,6 +1035,9 @@ def plan_page(S, db, week=None, day=None):
             "races": races, "tune_ups": tune,
             "race": {"label": obj.get("label"), "date": obj.get("date"), "type": obj.get("type"),
                      "target": obj.get("target"), "prediction": ft.get("hms"),
+                     # the prediction's tone and short call: the same words and colour as Today and Fitness
+                     **(lambda c: {"tone": c[0], "call": c[2]})(race_call(ft.get("seconds") or _hms_s(ft.get("hms")),
+                        (ft.get("band") or {}).get("lo_seconds"), (ft.get("band") or {}).get("hi_seconds"), _hms_s(obj.get("target")))),
                      "lo": (ft.get("band") or {}).get("lo_hms"), "hi": (ft.get("band") or {}).get("hi_hms"),
                      "verdict": (plan.get("feasibility") or {}).get("verdict")} if obj else None,
             "road": road, "phases": phases,

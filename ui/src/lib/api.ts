@@ -116,7 +116,7 @@ export interface PlanPage {
             posture: { mode: string | null; label: string; reason: string | null; ride: string } };
   adjustment: import("../pages/plan/Adjust").Adjustment | null;
   races: import("../pages/plan/Races").RaceRow[]; tune_ups: { label: string; date: string }[];
-  race: { label: string; date: string; type: string; target: string | null; prediction: string | null;
+  race: { label: string; date: string; type: string; target: string | null; tone?: "ok" | "warn" | "bad" | null; call?: string | null; prediction: string | null;
           lo: string | null; hi: string | null; verdict: string | null } | null;
   road: { start: string; phase: string | null; km: number; ran: number; current: boolean; selected: boolean; race: boolean; frozen: boolean;
           flags: { label: string; date: string; day: number }[] }[];

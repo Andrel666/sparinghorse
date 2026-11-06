@@ -199,11 +199,10 @@ export function Plan() {
         <b>Re-planned: {diff.summary}</b>{diff.changes?.length ? <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{diff.changes.map((c, i) => <li key={i}>{c}</li>)}</ul> : null}</Banner>}
       {p.adjustment && <AdjustmentBanner a={p.adjustment} onDiff={setDiff} />}
       <Strip items={[
-        ...(p.race ? [{ k: `${p.race.label} · ${dateShort(p.race.date)}`, v: `${daysTo} days`, s: `${r0?.weeks ?? "?"} weeks to go`, onClick: () => setParam("races", "1") }] : []),
-        ...(p.race ? [{ k: "Predicted finish", v: p.race.prediction ?? "?", signal: true, s: `goal ${p.race.target ?? "none"} · range ${p.race.lo} to ${p.race.hi}`, onClick: () => setView("race") }] : []),
-        { k: "Fitness on race day", v: r0?.proj_ctl != null ? `${Math.round(r0.proj_ctl)} CTL` : "?", s: `verdict: ${p.race?.verdict ?? "none"}`, onClick: () => setView("history") },
-        { k: `This week · ${p.week.phase_name ?? ""} ${p.week.n ?? ""}`, v: km(p.week.km, 1), s: p.week.km_done != null ? `${km(p.week.km_done)} run so far` : `${p.week.runs ?? p.week.sessions.length} runs`,
-          onClick: () => { setParam("week", null); setView("week"); } },
+        ...(p.race ? [{ k: `${p.race.label} · ${dateShort(p.race.date)}`, v: `${daysTo} days`, s: `${r0?.weeks ?? "?"} weeks`, onClick: () => setParam("races", "1") }] : []),
+        ...(p.race ? [{ k: "Predicted", v: p.race.prediction ?? "?", tone: p.race.tone ?? undefined,
+                        s: [p.race.target && `goal ${p.race.target}`, p.race.call].filter(Boolean).join(" · "), onClick: () => setView("race") }] : []),
+        { k: "Fitness on race day", v: r0?.proj_ctl != null ? `${Math.round(r0.proj_ctl)}` : "?", s: "CTL", onClick: () => setView("history") },
       ]} />
       <div className="grid">
         <Card span={8} id="road" label={p.race ? `The road to ${p.race.label} · ${dateShort(p.race.date)}` : "The road"} lede={p.road_headline ?? undefined}>

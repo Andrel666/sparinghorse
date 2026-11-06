@@ -1,17 +1,19 @@
-/* The design tokens — the ONE place colours, type, spacing and shape are defined (see ui/DESIGN.md).
-   Swiss / data-dense: black and white, one signal colour, hairline rules, type as hierarchy.
-   Light is the base; dark redefines the same names. Floor: no text below --fs-label (13px). */
+/* The design tokens: the ONE place colours, type, spacing, motion and shape are defined (ui/DESIGN.md, ui/BRAND.md).
+   Ink and paper do the work; one signal, ultramarine, means *now* (the current week, today, the selection, the
+   primary series). Warm colours mean *watch* (warn, bad). Light is the base; dark redefines the same names.
+   Floor: no text below --fs-label (13px). */
 :root {
   --bg: #fafaf9;
   --surface: #ffffff;          /* floating things only: drawer, dialog, toast, menu */
   --surface-2: #f1f1ee;        /* tracks, meters, hover */
   --line: #e2e2de;             /* hairlines */
-  --rule: #0b0b0b;             /* section rules */
+  --line-strong: #c9c9c4;      /* the held line: ceilings, goals, targets */
+  --rule: #0b0b0b;             /* zone rules */
   --text: #0b0b0b;
   --muted: #6a6a66;
-  --signal: #ff4f00;           /* now / selected / primary data — used sparingly */
-  --signal-soft: #ffe7dc;
-  --signal-ink: #c93a00;       /* signal for small text: 4.9:1 on --bg (AA) */
+  --signal: #2b3cff;           /* now / selected / primary data: 6.3:1 on --bg, carries white text 6.6:1 */
+  --signal-soft: #e8eaff;
+  --signal-ink: var(--signal); /* alias: ultramarine passes AA as text, so small text needs no darker copy */
   --accent: var(--signal);     /* charts and "current" read this name */
   --accent-soft: var(--signal-soft);
   --on-accent: #ffffff;
@@ -24,51 +26,46 @@
   --ph-build: #85857f;
   --ph-peak: #4a4a46;
   --ph-taper: #9c9c96;
+  /* heart-rate zones: a grey ramp into ink. Intensity is weight, not hue (never the status colours) */
+  --z1: #e2e2de; --z2: #b3b3ad; --z3: #85857f; --z4: #4a4a46; --z5: #0b0b0b;
+  --planned: var(--line); --focus: var(--signal);
+  --map-filter: grayscale(1) contrast(.92) brightness(1.04);
 
+  /* one family: Inter with its optical-size axis (opsz 32 = display, 14 = text) */
   --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --display: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --fs-display: 56px;
-  --fs-title: 30px;
+  --display: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --fs-hero: 64px; --fs-figure: 32px;
+  --fs-display: var(--fs-figure);   /* retired: a big number is a hero or a figure, nothing between */
+  --fs-title: 24px;
   --fs-heading: 17px;
   --fs-body: 15px;
   --fs-small: 14px;
   --fs-label: 13px;
 
-  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 40px;
-  --radius: 2px;
-  --radius-sm: 2px;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 40px; --sp-7: 56px;
+  /* rhythm: a page has zones (big gap, --rule) and groups inside a zone (small gap, --line) */
+  --gap-zone: 56px; --gap-group: 24px;
+  --radius: 2px; --radius-sm: 2px;
   --shadow: none;
   --float-shadow: 0 12px 40px rgb(0 0 0 / .14);
   --content-max: 1440px;
-  /* rhythm: a page has zones (big gap, --rule) and groups inside a zone (small gap, --line) */
-  --gap-zone: 56px; --gap-group: 24px; --sp-7: 56px;
-  --fs-hero: 64px; --fs-figure: 32px;
-  /* heart-rate zones: a grey ramp that heats into signal (never the ok/warn/bad status colours) */
-  --z1: #d4d4cf; --z2: #a3a39d; --z3: #6a6a66; --z4: #ff9a6b; --z5: var(--signal);
-  --planned: var(--line); --focus: var(--signal-ink); --line-strong: #c9c9c4;
-  --map-filter: grayscale(1) contrast(.92) brightness(1.04);
+  --hit: 44px;                 /* the smallest touch target on the phone */
+
+  /* motion: floating surfaces and the selection move; numbers, pages and charts never do */
+  --dur-1: 120ms; --dur-2: 180ms; --dur-3: 240ms;
+  --ease-out: cubic-bezier(.2, 0, 0, 1); --ease-in: cubic-bezier(.4, 0, 1, 1);
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0b0b0b; --surface: #161615; --surface-2: #1e1e1c; --line: #2a2a28; --rule: #f2f2ef;
-    --text: #f2f2ef; --muted: #9a9a94; --signal: #ff6a2b; --signal-soft: #3a1a0c; --signal-ink: #ff7a3d; --on-accent: #0b0b0b;
-    --ok: #4fcf86; --ok-soft: #10281a; --warn: #f0b04a; --warn-soft: #2f230d; --bad: #ff6b6b; --bad-soft: #351414;
-    --ph-rebase: #3a3a37; --ph-base: #55554f; --ph-build: #7e7e77; --ph-peak: #c8c8c1; --ph-taper: #66665f;
-    --float-shadow: 0 12px 40px rgb(0 0 0 / .5);
-    --z1: #3a3a37; --z2: #66665f; --z3: #9a9a94; --z4: #c2521f; --line-strong: #3a3a37;
-    --map-filter: grayscale(1) invert(.92) contrast(.9);
-    color-scheme: dark;
-  }
-}
+/* Dark: ONE block. index.html sets data-theme="dark" before first paint when the system is dark and the
+   athlete has not chosen light, so the media query never needs its own copy of these values. */
 :root[data-theme="dark"] {
-  --bg: #0b0b0b; --surface: #161615; --surface-2: #1e1e1c; --line: #2a2a28; --rule: #f2f2ef;
-  --text: #f2f2ef; --muted: #9a9a94; --signal: #ff6a2b; --signal-soft: #3a1a0c; --signal-ink: #ff7a3d; --on-accent: #0b0b0b;
+  --bg: #0b0b0b; --surface: #161615; --surface-2: #1e1e1c; --line: #2a2a28; --line-strong: #3a3a37; --rule: #f2f2ef;
+  --text: #f2f2ef; --muted: #9a9a94; --signal: #7f8cff; --signal-soft: #191d45; --on-accent: #0b0b0b;
   --ok: #4fcf86; --ok-soft: #10281a; --warn: #f0b04a; --warn-soft: #2f230d; --bad: #ff6b6b; --bad-soft: #351414;
   --ph-rebase: #3a3a37; --ph-base: #55554f; --ph-build: #7e7e77; --ph-peak: #c8c8c1; --ph-taper: #66665f;
+  --z1: #2a2a28; --z2: #55554f; --z3: #7e7e77; --z4: #b8b8b1; --z5: #f2f2ef;
   --float-shadow: 0 12px 40px rgb(0 0 0 / .5);
-  --z1: #3a3a37; --z2: #66665f; --z3: #9a9a94; --z4: #c2521f; --line-strong: #3a3a37;
   --map-filter: grayscale(1) invert(.92) contrast(.9);
   color-scheme: dark;
 }

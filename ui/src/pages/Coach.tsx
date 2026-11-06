@@ -12,7 +12,7 @@ function Sees() {
   return <Strip items={[
     { k: "Today", v: s.kind === "rest" ? "Rest" : `${s.title} ${s.km != null ? km(s.km) : ""}`, to: "/" },
     { k: "Readiness", v: r.headline || r.verdict || "No read", to: "/" },
-    ...(p ? [{ k: "Predicted", v: p.hms, s: p.goal ? `goal ${p.goal}` : undefined, to: "/plan?view=race" }] : []),
+    ...(p ? [{ k: "Predicted", v: p.hms, tone: p.tone ?? undefined, s: p.goal ? `goal ${p.goal}` : undefined, to: "/plan?view=race" }] : []),
     ...(lr ? [{ k: "Latest run", v: km(lr.km), s: lr.verdict_text ?? undefined, to: `/runs?id=${lr.id}` }] : []),
   ]} />;
 }

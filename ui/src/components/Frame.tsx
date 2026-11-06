@@ -12,11 +12,16 @@ import { Link } from "react-router-dom";
 type Theme = "auto" | "dark" | "light";
 const THEME_KEY = "sh-ui-theme";
 const readTheme = (): Theme => { try { const t = localStorage.getItem(THEME_KEY); return t === "dark" || t === "light" ? t : "auto"; } catch { return "auto"; } };
-function applyTheme(t: Theme) {
-  if (t === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+const dark = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+/** The tokens have one dark block under [data-theme="dark"], so Auto resolves the system setting here
+ *  (and index.html does the same before first paint). */
+export function applyTheme(t: Theme) {
+  document.documentElement.dataset.theme = t === "auto" ? (dark?.matches ? "dark" : "light") : t;
   try { if (t === "auto") localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, t); } catch { /* private window */ }
 }
 applyTheme(readTheme());
+dark?.addEventListener?.("change", () => { if (readTheme() === "auto") applyTheme("auto"); });
+export { readTheme, type Theme };
 
 const since = (h: number | null) => h == null ? "not synced yet" : h < 1 ? `synced ${Math.max(1, Math.round(h * 60))} min ago`
   : h < 48 ? `synced ${Math.round(h)} h ago` : `synced ${Math.round(h / 24)} days ago`;

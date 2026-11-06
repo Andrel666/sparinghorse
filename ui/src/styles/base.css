@@ -52,7 +52,7 @@ small { font-size: .6em; font-weight: 500; }
   border-top: 1px solid var(--rule); padding-top: var(--sp-3);
   display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0;
 }
-.card-label { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text); }
+.card-label { font-size: var(--fs-label); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .tone-ok { --tone: var(--ok); } .tone-warn { --tone: var(--warn); } .tone-bad { --tone: var(--bad); }
 .card.tone-ok > :first-child .card-label::before, .card.tone-warn > :first-child .card-label::before, .card.tone-bad > :first-child .card-label::before {
   content: ""; display: inline-block; width: 8px; height: 8px; background: var(--tone); margin-right: 8px; vertical-align: 1px; }
@@ -106,7 +106,7 @@ textarea.input { height: auto; padding: 8px 10px; }
 .day.today { border-top-color: var(--signal); }
 .day.today .dow { color: var(--signal); font-weight: 600; }
 .day.done .what, .day.moved .what { color: var(--ok); }
-.day.missed .what { color: var(--bad); text-decoration: line-through; }
+.day.missed .what { color: var(--muted); text-decoration: line-through; }
 
 /* ── tables ── */
 .steps { width: 100%; border-collapse: collapse; font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
@@ -191,7 +191,7 @@ button.month-day { cursor: pointer; } button.month-day:hover { background: var(-
 .month-day[data-phase="peak"] { --ph: var(--ph-peak); } .month-day[data-phase="taper"] { --ph: var(--ph-taper); }
 .month-day[data-phase="rebase"] { --ph: var(--ph-rebase); }
 .month-day .lbl { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.month-day .lbl.done { color: var(--ok); } .month-day .lbl.missed { color: var(--bad); text-decoration: line-through; }
+.month-day .lbl.done { color: var(--text); } .month-day .lbl.missed { color: var(--muted); text-decoration: line-through; }
 .month-day .lbl.rest { color: var(--muted); font-weight: 400; }
 .month-day.race { box-shadow: inset 0 0 0 2px var(--signal); }
 @media (max-width: 760px) { .month-day { min-height: 54px; padding: 4px; } .month-day .lbl { font-size: var(--fs-label); } }
@@ -289,7 +289,7 @@ dialog.confirm ul { margin: 0; padding-left: 18px; color: var(--muted); font-siz
 .figure { padding: var(--sp-3) var(--sp-4) var(--sp-3) 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .figure + .figure { border-left: 1px solid var(--line); padding-left: var(--sp-4); }
 .figure .k { font-size: var(--fs-label); color: var(--muted); }
-.figure .v { font-family: var(--display); font-size: 34px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.figure .v { font-family: var(--display); font-size: var(--fs-figure); font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .figure .s { font-size: var(--fs-label); color: var(--muted); }
 .figure.signal .v { color: var(--signal); }
 @media (max-width: 760px) { .figures { grid-template-columns: 1fr 1fr; } .figure:nth-child(odd) { border-left: 0; padding-left: 0; } .figure { border-bottom: 1px solid var(--line); } .figure .v { font-size: 28px; } }
@@ -365,7 +365,7 @@ a.figure.link:hover .k { color: var(--signal-ink); }
 .leaflet-tile-pane { filter: var(--map-filter); }
 /* week strip: a run sits on the day it was run */
 .day .struck { text-decoration: line-through; color: var(--muted); font-weight: 400; }
-.day.missed .what, .day.missed .struck { color: var(--bad); }
+.day.missed .what, .day.missed .struck { color: var(--muted); }
 .day .ran { color: var(--ok); font-weight: 600; }
 .day .ran b { font-weight: 600; }
 .day.moved .what { color: var(--muted); }
@@ -414,7 +414,7 @@ a.figure.link:hover .k { color: var(--signal-ink); }
 .dayband { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); border-top: 2px solid var(--rule); }
 .dayband > * { padding: var(--sp-4) var(--sp-6) var(--sp-2) 0; display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
 .dayband > * + * { border-left: 1px solid var(--line); padding-left: var(--sp-5); padding-right: 0; }
-.dayband .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.dayband .eyebrow { font-size: var(--fs-label); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .dayband .hero-v { font-family: var(--display); font-size: var(--fs-hero); font-weight: 700; letter-spacing: -0.035em; line-height: 1; }
 .dayband .hero-v.toned { color: var(--tone, var(--text)); }
 .dayband .second { font-family: var(--display); font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
@@ -452,7 +452,7 @@ a.marker-row:hover { background: var(--surface-2); }
 .kv-btn:hover b, .kv-btn:hover .muted:last-child { color: var(--signal-ink); }
 .kv-btn.paces { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
 .meta-line { font-size: var(--fs-label); color: var(--muted); }
-.r .mk.done { color: var(--ok); } .r .mk.missed { color: var(--bad); } .r .mk.extra, .r .mk.today { color: var(--signal-ink); }
+.r .mk.done { color: var(--text); } .r .mk.missed { color: var(--muted); } .r .mk.extra, .r .mk.today { color: var(--signal-ink); }
 .r .mk { display: inline-block; width: 1.4ch; }
 .r .reflection { display: block; margin-top: 2px; }
 /* Runs: list | run, the week heads, zone dots */
@@ -513,7 +513,7 @@ a.marker-row:hover { background: var(--surface-2); }
   border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .month-dow.wk { text-align: right; }
 .cal-p { font-size: var(--fs-small); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cal-p.missed { color: var(--bad); text-decoration: line-through; }
+.cal-p.missed { color: var(--muted); text-decoration: line-through; }
 .cal-p.moved { text-decoration: line-through; }
 .cal-p.done .cal-t::before { content: "✓ "; color: var(--ok); }
 .cal-r { display: flex; align-items: center; gap: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -532,7 +532,7 @@ a.marker-row:hover { background: var(--surface-2); }
 /* y-axis values, laid over the chart's left edge */
 .chart .yticks { position: absolute; left: 0; top: 0; height: calc(100% - 22px); pointer-events: none; z-index: 1; }
 .chart .yticks.bars { height: auto; }
-.chart .yticks span { position: absolute; left: 0; transform: translateY(-50%); font-size: 11px; line-height: 1; color: var(--muted);
+.chart .yticks span { position: absolute; left: 0; transform: translateY(-50%); font-size: var(--fs-label); line-height: 1; color: var(--muted);
   background: var(--bg); padding: 1px 3px 1px 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .chart .yticks span:first-child { transform: none; }
 .chart .yticks span:last-child:not(:first-child) { transform: translateY(-100%); }
@@ -575,3 +575,9 @@ details.help[open] .more { display: none; }
 .form-grid label .input, .form-grid label .seg { color: var(--text); font-size: var(--fs-body); width: 100%; max-width: none; }
 .form-grid .wide { grid-column: 1 / -1; }
 .linkish.danger { color: var(--bad); align-self: flex-start; }
+
+/* one family: display roles take Inter's optical size 32, text keeps 14 */
+h1, h2, h3, .stat-value, .figure .v, .marker-v, .dayband .hero-v, .dayband .second, .dayband .target, .nav-brand, .day .what.short {
+  font-variation-settings: "opsz" 32; }
+body { font-variation-settings: "opsz" 14; font-optical-sizing: auto; }
+.mk-ok { color: var(--text); }
