@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   weekly km and from long runs, and the curve against the 100 % line. Our number is checked against the
   `marathonShape` Runalyze reports daily (stored since day one, unused until now). Shown only: the plan is not
   built to reach it. `/api/ui/endurance` (private); `det/marathon-shape` holds Runalyze's own unit tests,
-  mutation-tested.
+  mutation-tested. Reference, assumptions and ideas to build on: `docs/MARATHON_SHAPE.md`.
 - **Fixed (new UI):** a line chart's y-axis values sat on its caption when the legend wrapped on a phone.
 - **New UI: full parity with Classic.** Every Classic feature was inventoried (`ui/PARITY.md`) and carried
   over: the frame (Sync now, auto-sync, freshness, theme, units, first-run guide, data-quality banner with

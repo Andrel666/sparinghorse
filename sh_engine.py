@@ -6548,7 +6548,7 @@ RACE_KM = {"marathon": 42.195, "half": 21.0975, "10k": 10.0, "5k": 5.0}
 #                (2 − 2/70 × days ago) × ((km − 13) / (12·ln(VO₂max/4) − 13))² × 7 / 70
 #   a race of d km needs d^1.23 % (100 % for the marathon, 42.5 % for the half); below it Runalyze's
 #   VO₂max prognosis scales VO₂max by min(1, 0.6 + 0.4 × max(0, 1 − (need − shape)/100)).
-# Locked against Runalyze's own unit tests by det/marathon-shape.
+# Locked against Runalyze's own unit tests by det/marathon-shape. Reference and design notes: docs/MARATHON_SHAPE.md.
 MS_MIN_VO2 = 25.0          # MINIMAL_EFFECTIVE_VO2MAX
 MS_LONG_MIN_KM = 13.0      # MIN_KM_FOR_LONGJOG (a Runalyze account setting; 13 is its default)
 MS_WEEK_DAYS = 182         # DAYS_FOR_WEEK_KM
