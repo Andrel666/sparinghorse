@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rest days on Today (Runalyze's).** The new UI's Recovery card opens with **rest days**: how many days of
+  full rest bring form (TSB = CTL − ATL) back to 0, as Runalyze's calculations panel defines it, with the day
+  it gets there, today's TSB and a 30-day TSB sparkline; amber at the "tired" line (TSB ≤ −20). Read off the
+  app's own de-duplicated reconstruction (the same EWMA as Runalyze, matching its snapshots), so today's run
+  counts and duplicate uploads don't. It links to the fitness chart. Informational: the plan still decides
+  what to run. `sh_ui_api.today_rest_days`; `det/ui-rest-days`, mutation-tested.
 - **You vs. the original plan, on Today.** A card under readiness compares the race's ORIGINAL plan with
   today on fitness (CTL), VO₂max and the week's long run. Each tile shows both numbers, the gap in its
   units and the gap as a % of the planned value. CTL is seam-corrected like the drift scorecard; the planned

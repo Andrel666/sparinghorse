@@ -16767,6 +16767,67 @@ def _stc_vs_original():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_ui_rest_days():
+    """Fork §UI — Today's Recovery card carries Runalyze's "rest days": the days of full rest until form
+    (TSB = CTL − ATL) is back to 0. (a) the count is exact on the engine's own EWMA: after n zero days
+    TSB ≥ 0 and after n − 1 it is still below; balanced form reads 0; (b) today's row is read off the
+    de-duplicated reconstruction INCLUDING today's run, comes first in Recovery, links to the fitness
+    chart, and turns 'watch' when form is at the tired line; (c) no history, no row."""
+    import sqlite3 as _sq
+    from datetime import date as _d, timedelta as _td
+    U = UIAPI
+    fails = []
+    start = _d(2026, 6, 4)
+    for ctl, atl in ((60, 90), (60, 62), (40, 80), (55, 55)):
+        n = U.rest_days(S, ctl, atl, start)
+        curve = S.roll({}, start, start + _td(days=max(n, 1)), ctl0=ctl, atl0=atl)
+        ok_n = n == 0 if ctl >= atl else (curve[n - 1]["ctl"] >= curve[n - 1]["atl"] and
+                                          (n == 1 or curve[n - 2]["ctl"] < curve[n - 2]["atl"]))
+        if not ok_n:
+            fails.append(f"(a) CTL {ctl} / ATL {atl}: {n} rest day(s) is not the first day TSB reaches 0")
+    mem = _sq.connect(":memory:"); mem.row_factory = _sq.Row
+    mem.executescript(S.SCHEMA)
+    try:
+        today = _d(2026, 6, 3)
+        if U.today_rest_days(S, mem, today) is not None:
+            fails.append("(c) a row with no history")
+        aid = 0
+        for k in range(120, 0, -1):                       # a steady base, then a hard last week
+            d = today - _td(days=k)
+            t = 160.0 if k <= 7 else 60.0
+            aid += 1
+            mem.execute("INSERT INTO activities (id, date_time, date, sport, distance, duration, trimp) "
+                        "VALUES (?,?,?,?,?,?,?)", (aid, d.isoformat() + "T07:00:00", d.isoformat(), "Running", 10.0, 3300, t))
+        aid += 1
+        mem.execute("INSERT INTO activities (id, date_time, date, sport, distance, duration, trimp) "
+                    "VALUES (?,?,?,?,?,?,?)", (aid, today.isoformat() + "T07:00:00", today.isoformat(), "Running", 30.0, 9900, 600.0))
+        mem.commit()
+        h = S.reconstruct_history(mem, end=today.isoformat())[-1]
+        want = U.rest_days(S, h["ctl"], h["atl"], today + _td(days=1))
+        y = S.reconstruct_history(mem, end=(today - _td(days=1)).isoformat())[-1]
+        if U.rest_days(S, y["ctl"], y["atl"], today) == want:
+            fails.append("(b) ANTI-VACUITY — today's run does not change the count, so (b) cannot see it")
+        r = U.today_rest_days(S, mem, today) or {}
+        if h["date"] != today.isoformat() or r.get("value") != str(want) or want < 1:
+            fails.append(f"(b) rest days {r.get('value')} vs the reconstruction's {want} (today's run counted?)")
+        if r.get("link") != "/fitness#fitness-fatigue" or not r.get("series"):
+            fails.append(f"(b) the row has no door or no TSB series: {r.get('link')}")
+        tsb = h["ctl"] - h["atl"]
+        if (r.get("state") == "watch") != (tsb <= U.FORM_TIRED):
+            fails.append(f"(b) state {r.get('state')} at TSB {tsb:.1f}")
+        rec = U.today_recovery(S, mem, None)
+        if not rec or rec[0].get("key") != "rest_days":
+            fails.append(f"(b) Recovery does not open with the rest-days row: {[x.get('key') for x in rec or []]}")
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        mem.close()
+    return _st("det", "ui-rest-days",
+               "Today's Recovery shows Runalyze's rest days — full-rest days until TSB is back to 0 — exact on the "
+               "engine's own EWMA, read off the de-duplicated history with today's run, first in the card",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -25612,7 +25673,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

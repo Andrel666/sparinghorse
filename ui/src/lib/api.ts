@@ -53,7 +53,7 @@ export interface TodayPage {
   coming?: (Omit<SessionDetail, "mark" | "activity_id" | "reflection" | "component" | "moved_dow" | "runs"> & { dow: string; days: number })[];
   glance?: { key: string; label: string; value: string; sub: string; hint?: string | null; tone: "ok" | "warn" | "bad" | null; link: string }[];
   recovery?: { key: string; label: string; value: string; unit: string; sub: string; state: "ok" | "watch" | null;
-              series: { date: string; v: number }[] }[];
+              series: { date: string; v: number }[]; link?: string }[];
   where?: Where | null;
   why?: { key: string; text: string; detail?: string; link: string }[];
   vs_plan?: VsPlan | null;

@@ -146,7 +146,7 @@ function Why({ items }: { items: NonNullable<TodayPage["why"]> }) {
 function Recovery({ items }: { items: NonNullable<TodayPage["recovery"]> }) {
   if (!items.length) return <span className="muted">No overnight data yet.</span>;
   return <div>{items.map(m => (
-    <Link key={m.key} to={`/fitness?tab=body#${m.key}`} className="marker-row" aria-label={`${m.label} ${m.value} ${m.unit}. ${m.sub}. Open the marker`}>
+    <Link key={m.key} to={m.link ?? `/fitness?tab=body#${m.key}`} className="marker-row" aria-label={`${m.label} ${m.value} ${m.unit}. ${m.sub}. Open the marker`}>
       <div className="list" style={{ gap: 2 }}>
         <span className="muted t-label">{m.label}</span>
         <span className={`num marker-v${m.state ? ` tone-${MARKER_TONE[m.state]} toned` : ""}`}>{m.value}<small> {m.unit}</small></span>
