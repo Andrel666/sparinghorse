@@ -99,7 +99,7 @@ function Journey({ w }: { w: Where }) {
     </div>);
 }
 
-function WhereYouAre({ w }: { w: Where }) {
+function WhereYouAre({ w, endu }: { w: Where; endu?: TodayPage["endurance"] }) {
   const f = w.fitness;
   return (
     <Card label="Where you are" span={12}>
@@ -110,6 +110,9 @@ function WhereYouAre({ w }: { w: Where }) {
         ...(w.pred ? [{ k: "Prediction", v: w.pred.hms, s: [w.pred.goal && `goal ${w.pred.goal}`, w.pred.short].filter(Boolean).join(" · "),
                         tone: w.pred.tone ?? undefined, to: "/plan?view=race" }] : []),
         ...(w.race?.days != null ? [{ k: w.race.label ?? "Race", v: `${w.race.days} days`, s: dateShort(w.race.date), to: "/plan?view=race" }] : []),
+        ...(endu ? [{ k: endu.label, v: `${endu.now}%`, tone: endu.tone ?? undefined, to: endu.link,
+                      s: endu.already ? "already there" : endu.reaches ? `100% by ${dateShort(endu.reaches)}`
+                        : endu.has_race ? `the plan reaches ${endu.race_morning}% by race day` : "no race set: the marathon's 100%" }] : []),
       ]} />
     </Card>);
 }
@@ -171,7 +174,7 @@ export function Today() {
           <Verdict d={d} onCheckin={() => setParam("checkin", "1")} />
         </section>
         <div className="grid">
-          {d.where && <WhereYouAre w={d.where} />}
+          {d.where && <WhereYouAre w={d.where} endu={d.endurance} />}
           {w && <Card label="This week" span={8}
                       aside={<Link to="/plan" className="linkish t-small">Plan ›</Link>}>
             {w.km_done != null && <>

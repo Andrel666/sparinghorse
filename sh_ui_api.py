@@ -316,8 +316,61 @@ def today_page(S, db):
             "glance": today_glance(S, db, week, json.loads(plan_row["plan"]) if plan_row else None, today),
             "where": today_where(S, db, log, week, json.loads(plan_row["plan"]) if plan_row else None, today),
             "why": today_why(S, week, log, json.loads(plan_row["plan"]) if plan_row else None, today),
-            "recovery": today_recovery(S, db, a.get("hrv"))}
+            "recovery": today_recovery(S, db, a.get("hrv")),
+            "endurance": today_endurance(S, db, today)}
 
+
+# §ENDU — Runalyze's marathon shape (or the race's share of it), now and along the plan. Shown only:
+# the plan is not built to reach it. One summary for Today, the whole road for Plan → Race day.
+ENDU_LINK = "/plan?view=race#endurance"
+
+
+def _endu_day(iso):
+    d = datetime.strptime(iso, "%Y-%m-%d").date()
+    return f"{d.day} {d.strftime('%b')}"
+
+
+def today_endurance(S, db, today):
+    """Today's one figure: the share of what the race needs, now, and where the plan takes it (the UI
+    words the date, in the viewer's locale like every other date)."""
+    try:
+        r = S.endurance_road(db, today)
+    except (ValueError, KeyError, TypeError) as e:
+        print(f"[ui] endurance skipped: {e}")
+        return None
+    if not r.get("ok"):
+        return None
+    rm = r.get("race_morning") or {}
+    return {"label": r["label"], "now": r["now"]["of_need"], "reaches": r.get("reaches"),
+            "already": r.get("reaches") == r["now"]["date"], "race_morning": rm.get("of_need"),
+            "has_race": bool(r.get("race")),
+            "tone": "ok" if r.get("reaches") else "warn" if r.get("race") else None, "link": ENDU_LINK}
+
+
+def endurance_page(S, db, today=None):
+    """Plan → Race day's card: the curve (measured, then the plan) as a share of what the race needs,
+    both parts, and the check against Runalyze's own number."""
+    r = S.endurance_road(db, today)
+    if not r.get("ok"):
+        return r
+    n, rm = r["now"], r.get("race_morning")
+    race = r["race"]["label"] if r.get("race") else "a marathon"
+    lede = (f"{n['of_need']}% of the marathon shape {race} needs ({n['pct']:g}% of {r['need']:g}%). "
+            f"{'Weekly km carries most of it' if n['week'] >= n['long'] else 'Long runs carry most of it'}.")
+    why = [f"Weekly km: {n['km_week']:g} km/week against Runalyze's target of {n['target_week_km']:g} — "
+           f"{n['week']:g} of the {n['pct']:g} shape points.",
+           f"Long runs: only the km past {r['long_min_km']:g} count, squared and fading over 70 days — "
+           f"{n['long']:g} points; a {n['target_long_km']:g} km run every week is Runalyze's full target."]
+    if rm:
+        why.append(f"Race morning: {rm['week']:g} from weekly km ({rm['km_week']:g} km/week) + {rm['long']:g} from long runs "
+                   f"= {rm['pct']:g}% shape.")
+    c = r.get("check")
+    if c:
+        why.append(f"Runalyze said {c['runalyze']:g}% on {_endu_day(c['date'])}; this app's number is within "
+                   f"{c['mean_abs']:g} points of Runalyze's over the last {c['n']} days.")
+    need = r["need"]
+    series = [{**p, "v": round(100.0 * p["v"] / need, 1)} for p in r["series"]]   # 100 = what the race needs
+    return {**r, "series": series, "lede": lede, "why": why}
 
 HRV_WORD = {"ok": "inside the band", "low": "below the band", "high": "above the band"}
 COMING_N = 5                    # sessions listed under "Coming up"
@@ -1380,6 +1433,10 @@ def register(app, S):
     @app.get("/api/ui/today")
     def api_ui_today():
         return private() or jsonify(today_page(S, S.get_db()))
+
+    @app.get("/api/ui/endurance")
+    def api_ui_endurance():
+        return private() or jsonify(endurance_page(S, S.get_db()))
 
     @app.get("/api/ui/fitness")
     def api_ui_fitness():

@@ -16635,6 +16635,122 @@ def _stc_ui_parity():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_marathon_shape():
+    """Fork §ENDU — Runalyze's marathon shape, ported and projected along the plan. (a) Runalyze's OWN unit
+    tests (tests/inc/core/Calculation/BasicEnduranceTest.php, Prognosis/VO2maxTest.php) hold on the port:
+    the VO₂max-30 case is 54 % (36 % on long runs alone, 240 % over 14 days), the targets table, the
+    prognosis factors, and a half needs 42.5 % / a marathon 100 %; (b) on a half-marathon road the measured
+    curve stops today and the plan's runs carry it to race MORNING, `reaches` is the first day at the need,
+    and the plan's long runs move it (anti-vacuity); (c) our number checks against a stored Runalyze value,
+    as a percent or as a fraction; (d) the UI: Today's figure and the Plan card's curve on the 100 = need scale."""
+    import sqlite3 as _sq
+    import sh_engine as E
+    from datetime import date as _d, timedelta as _td
+    fails = []
+    d0 = _d(2026, 6, 3)
+    runs = [(d0 - _td(days=1), 15.0), (d0 - _td(days=3), 15.0), (d0 - _td(days=8), 42.0)]
+    kw = dict(long_min=10, week_days=7, week_days_min=7, long_days=7)
+    r = E.marathon_shape(runs, d0, 30, **kw)
+    got = (round(r["km"]), round(r["points"], 2), round(r["week_pct"], 2), round(r["long_pct"], 2), round(r["pct"]))
+    if got != (30, 0.36, 0.63, 0.36, 54):
+        fails.append(f"(a) Runalyze's VO₂max-30 case: {got}, want (30, 0.36, 0.63, 0.36, 54)")
+    if round(E.marathon_shape(runs, d0, 30, w_long=1, **kw)["pct"]) != 36 or \
+            round(E.marathon_shape(runs, d0, 30, w_long=1, **{**kw, "long_days": 14})["pct"]) != 240:
+        fails.append("(a) Runalyze's long-runs-only cases are not 36 % / 240 %")
+    # the window's edge, as Runalyze's SQL draws it (time >= end of day − N days): N − 1 days back is in, N is out
+    edge = E.marathon_shape([(d0 - _td(days=6), 10.0), (d0 - _td(days=7), 20.0)], d0, 30, **kw)
+    if edge["km"] != 10.0:
+        fails.append(f"(a) the 7-day window counted {edge['km']} km; a run 7 days back is outside it")
+    for v, wk, lg in ((30, 47.5, 24), (40, 66, 27.5), (50, 85, 30), (60, 104, 32.5), (70, 124, 34.5), (80, 145, 36)):
+        tw, tl = E.ms_targets(v, 10)
+        if abs(tw - wk) > 1 or abs(tl - lg) > 1:
+            fails.append(f"(a) targets at VO₂max {v}: {tw:.1f} / {tl:.1f}, Runalyze {wk} / {lg}")
+    for shape, cases in ((0, ((10, .93), (20, .84), (40, .625), (50, .60))), (50, ((20, 1.0), (40, .825), (50, .71))),
+                         (100, ((40, 1.0), (50, .91))), (200, ((50, 1.0), (100, .65)))):
+        for km, want in cases:
+            if abs(E.ms_adjustment(km, shape) - want) > 0.01:
+                fails.append(f"(a) prognosis factor {km} km at {shape} %: {E.ms_adjustment(km, shape):.3f}, want {want}")
+    if round(E.ms_required(21.0975), 1) != 42.5 or round(E.ms_required(42.195)) != 100:
+        fails.append("(a) a half does not need 42.5 % / a marathon 100 %")
+
+    today = _d(2026, 6, 3)
+    race = today + _td(weeks=8)
+
+    def fixture(long_km):
+        mem = _sq.connect(":memory:"); mem.row_factory = _sq.Row
+        mem.executescript(S.SCHEMA)
+        aid = 0
+        for k in range(120, -1, -1):                      # 4 runs a week for four months, one of them 16 km
+            dd = today - _td(days=k)
+            if dd.weekday() in (1, 3, 5, 6):
+                aid += 1
+                km = 16.0 if dd.weekday() == 6 else 9.0
+                mem.execute("INSERT INTO activities (id, date_time, date, sport, distance, duration, trimp) VALUES (?,?,?,?,?,?,?)",
+                            (aid, dd.isoformat() + "T07:00:00", dd.isoformat(), "Running", km, km * 330, km * 7))
+        mem.execute("INSERT INTO shape_snapshots (snapshot_date, effective_vo2max) VALUES (?, ?)", ((today - _td(days=200)).isoformat(), 50.0))
+        wk, dd = [], S._monday(today)
+        while dd <= race:
+            wk.append({"start": dd.isoformat(), "km": 50.0, "sessions": [
+                {"date": (dd + _td(days=1)).isoformat(), "kind": "easy", "km": 12.0, "trimp": 80.0},
+                {"date": (dd + _td(days=3)).isoformat(), "kind": "easy", "km": 12.0, "trimp": 80.0},
+                {"date": (dd + _td(days=6)).isoformat(), "kind": "long", "km": long_km, "trimp": 140.0}]})
+            dd += _td(days=7)
+        plan = {"ok": True, "base": {"weeks": wk},
+                "objective": {"label": "Goal Half", "date": race.isoformat(), "type": "half", "priority": "A"},
+                "feasibility": {"finish_time": {"at_evo2": 52.0, "today": {"at_evo2": 50.0}}}}
+        mem.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)",
+                    (today.isoformat() + "T08:00:00", today.isoformat(), "{}", S.json.dumps(plan)))
+        mem.commit()
+        return mem
+
+    a, b = fixture(22.0), fixture(14.0)
+    try:
+        ra, rb = S.endurance_road(a, today), S.endurance_road(b, today)
+        if not ra.get("ok"):
+            fails.append(f"(b) no road: {ra}")
+        else:
+            if (ra["need"], ra["label"]) != (42.5, "Half endurance"):
+                fails.append(f"(b) a half needs {ra['need']} ({ra['label']})")
+            acts = [p for p in ra["series"] if p["kind"] == "actual"]
+            if acts[-1]["date"] != today.isoformat() or ra["series"][-1]["date"] != (race - _td(days=1)).isoformat():
+                fails.append("(b) the measured curve must stop today and the plan's end on race morning")
+            first = next((p["date"] for p in ra["series"] if p["kind"] == "plan" and p["v"] >= ra["need"]), None)
+            if ra["now"]["pct"] < ra["need"] and ra["reaches"] != first:
+                fails.append(f"(b) reaches {ra['reaches']} is not the first plan day at the need ({first})")
+            if not (ra["race_morning"]["long"] > rb["race_morning"]["long"] and ra["race_morning"]["pct"] > rb["race_morning"]["pct"]):
+                fails.append("(b) ANTI-VACUITY — the plan's longer long runs do not raise race-morning shape")
+            if ra["now"] != rb["now"]:
+                fails.append("(b) today's value moved with the plan; it must read the runs only")
+            # (c) Runalyze's stored value, as a percent and as a fraction
+            ours = round(ra["now"]["pct"], 1)
+            for stored in (ours, ours / 100.0):
+                a.execute("INSERT OR REPLACE INTO shape_snapshots (snapshot_date, effective_vo2max, marathon_shape) VALUES (?,?,?)",
+                          (today.isoformat(), 50.0, stored)); a.commit()
+                c = S.endurance_road(a, today).get("check") or {}
+                if c.get("mean_abs") is None or c["mean_abs"] > 0.2 or abs(c.get("runalyze", 0) - ours) > 0.2:
+                    fails.append(f"(c) the check against a stored {stored} reads {c}")
+            u = UIAPI.today_endurance(S, a, today) or {}
+            if u.get("now") != ra["now"]["of_need"] or u.get("link") != UIAPI.ENDU_LINK or u.get("label") != "Half endurance":
+                fails.append(f"(d) Today's figure: {u}")
+            undo = _patch_globals(get_db=(lambda: a))
+            try:
+                pg = UIAPI.endurance_page(S, a, today)
+            finally:
+                undo()
+            last = pg["series"][-1]["v"] if pg.get("series") else None
+            if last is None or abs(last - 100.0 * ra["series"][-1]["v"] / ra["need"]) > 0.2 or not pg.get("why"):
+                fails.append(f"(d) the Plan card's curve is not on the 100 = need scale: {last}")
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        a.close(); b.close()
+    return _st("det", "marathon-shape",
+               "Runalyze's marathon shape: the port holds Runalyze's own unit tests (54 %, targets, prognosis "
+               "factors, half 42.5 %), the plan carries it to race morning, the long runs move it, it checks "
+               "against Runalyze's stored value, and the UI reads it on the 100 = need scale",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -25480,7 +25596,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_marathon_shape(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),
