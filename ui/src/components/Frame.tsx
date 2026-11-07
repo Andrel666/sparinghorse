@@ -37,7 +37,7 @@ export function TopBar({ s }: { s: ShellT }) {
     <div className="topbar">
       <span className={`sync-state${s.stale ? " stale" : ""}`} title={s.last_sync ? `Last successful sync: ${new Date(s.last_sync).toLocaleString()}` : undefined}>
         {since(s.sync_hours)}</span>
-      <button type="button" className="btn primary" disabled={sync.isPending} onClick={() => sync.mutate()}>{sync.isPending ? "Syncing…" : "Sync"}</button>
+      <button type="button" className="btn" disabled={sync.isPending} onClick={() => sync.mutate()}>{sync.isPending ? "Syncing…" : "Sync"}</button>
       <button type="button" className="linkish" aria-label={`Theme: ${theme === "auto" ? "follows the system" : theme}. Change`}
               onClick={() => { const t = next[theme]; setTheme(t); applyTheme(t); }}>
         {theme === "auto" ? "Auto" : theme === "dark" ? "Dark" : "Light"}</button>

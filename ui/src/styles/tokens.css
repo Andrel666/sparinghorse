@@ -61,7 +61,9 @@
   --indent: 20px;              /* a bulleted list's indent */
   /* rhythm: a page has zones (big gap, --rule) and groups inside a zone (small gap, --line) */
   --gap-zone: 56px; --gap-group: 24px;
+  /* shape: 2px on controls and tracks, 0 on sections. Round is for marks only (a state dot, a zone dot) */
   --radius: 2px; --radius-sm: 2px;
+  --mark: 8px;                 /* the size of every mark: state dots, zone dots, the now square */
   --shadow: none;
   --float-shadow: 0 12px 40px rgb(0 0 0 / .14);
   --content-max: 1440px;

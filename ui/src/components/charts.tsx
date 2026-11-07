@@ -131,11 +131,11 @@ export function Scatter({ dots, height = 200, xLabel, yLabel, refs = [], fit, xF
 export function Gauge({ value, band, max = 2 }: { value: number; band: [number, number]; max?: number }) {
   const pct = (v: number) => `${Math.min(100, Math.max(0, (v / max) * 100))}%`;
   return (
-    <div style={{ position: "relative", height: 16, borderRadius: 8, background: "var(--surface-2)", border: "1px solid var(--line)" }}
+    <div style={{ position: "relative", height: 16, borderRadius: "var(--radius)", background: "var(--surface-2)", border: "1px solid var(--line)" }}
          role="img" aria-label={`${value.toFixed(2)} against a band of ${band[0]} to ${band[1]}`}>
       <div style={{ position: "absolute", top: 0, bottom: 0, left: pct(band[0]), width: `calc(${pct(band[1])} - ${pct(band[0])})`,
                     background: "var(--ok-soft)", borderLeft: "1px solid var(--ok)", borderRight: "1px solid var(--ok)" }} />
-      <div style={{ position: "absolute", top: -4, bottom: -4, width: 4, borderRadius: 2, left: `calc(${pct(value)} - 2px)`,
+      <div style={{ position: "absolute", top: -4, bottom: -4, width: 4, borderRadius: "var(--radius)", left: `calc(${pct(value)} - 2px)`,
                     background: value > band[1] ? "var(--bad)" : "var(--text)" }} />
     </div>
   );

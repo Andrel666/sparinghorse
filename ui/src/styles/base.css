@@ -61,7 +61,7 @@ small { font-size: .6em; font-weight: var(--w-medium); }
    Round is a state; the square is *now* (the signal). Today's day band is the one place a state colours the words. */
 .tone-ok .toned::before, .tone-warn .toned::before, .tone-bad .toned::before,
 .toned.tone-ok::before, .toned.tone-warn::before, .toned.tone-bad::before {
-  content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--tone);
+  content: ""; display: inline-block; width: var(--mark); height: var(--mark); border-radius: 50%; background: var(--tone);
   margin-right: var(--sp-2); vertical-align: middle; flex: none; }
 .dayband .toned::before { content: none; }
 /* a trend arrow (▲ above / ▼ below a reference) is itself the mark: it takes the tone, and no dot is added */
@@ -72,8 +72,8 @@ small { font-size: .6em; font-weight: var(--w-medium); }
   font-weight: var(--w-medium); color: var(--muted); padding: 0; background: none; border: 0;
 }
 .pill + .pill::before { content: "·"; margin-right: 8px; color: var(--line); }
-.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone, currentColor); }
-.pill.tone-ok, .pill.tone-warn, .pill.tone-bad { color: var(--text-2); font-weight: var(--w-medium); }
+.pill .dot { width: var(--mark); height: var(--mark); border-radius: 50%; background: var(--tone, currentColor); }
+.pill.tone-ok, .pill.tone-warn, .pill.tone-bad { color: var(--text-2); font-weight: var(--w-regular); }
 .pill.tone-ok::after, .pill.tone-warn::after, .pill.tone-bad::after { content: none; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: var(--radius); height: var(--ctl); padding: 0 16px;
@@ -263,7 +263,7 @@ dialog.confirm ul { margin: 0; padding-left: var(--indent); color: var(--muted);
   display: flex; gap: 12px; justify-content: space-between; align-items: start; box-shadow: var(--float-shadow); font-size: var(--fs-small); }
 .toast.tone-ok { border-left-color: var(--ok); } .toast.tone-bad { border-left-color: var(--bad); } .toast.tone-warn { border-left-color: var(--warn); }
 .help-wrap { position: relative; display: inline-block; margin-left: 4px; vertical-align: 1px; }
-.help-q { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--muted); background: transparent; color: var(--muted);
+.help-q { width: 16px; height: 16px; border-radius: var(--radius); border: 1px solid var(--muted); background: transparent; color: var(--muted);
   font-size: var(--fs-label); line-height: 14px; padding: 0; cursor: pointer; font-weight: var(--w-medium); }
 .help-q:hover, .help-q[aria-expanded="true"] { border-color: var(--signal); color: var(--signal); }
 .help-pop { position: absolute; z-index: 40; top: 24px; left: -8px; width: min(300px, 80vw); background: var(--surface); color: var(--text);
@@ -279,7 +279,7 @@ dialog.confirm ul { margin: 0; padding-left: var(--indent); color: var(--muted);
   border-top: 1px solid var(--line); margin-top: var(--sp-6); }
 .footer a { color: var(--muted); }
 .flag { font-size: var(--fs-label); color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
-.flag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
+.flag::before { content: ""; width: var(--mark); height: var(--mark); border-radius: 50%; background: var(--line); flex: none; }
 .flag.tone-warn { color: var(--text-2); } .flag.tone-warn::before { background: var(--warn); }
 .flag.tone-ok { color: var(--text-2); } .flag.tone-ok::before { background: var(--ok); }
 .frame-top { gap: var(--sp-3); display: flex; flex-direction: column; }
@@ -462,7 +462,7 @@ a.marker-row:hover { background: var(--surface-2); }
 .r .mk { display: inline-block; width: 1.4ch; }
 .r .reflection { display: block; margin-top: 2px; }
 /* Runs: list | run, the week heads, zone dots */
-.zdot { width: 8px; height: 8px; border-radius: 4px; display: inline-block; flex: none; }
+.zdot { width: var(--mark); height: var(--mark); border-radius: 50%; display: inline-block; flex: none; }
 .month-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
 .week-head { display: flex; justify-content: space-between; font-size: var(--fs-label); color: var(--muted); padding: var(--sp-3) 0 4px;
   border-bottom: 1px solid var(--rule); font-weight: var(--w-medium); }
@@ -595,3 +595,12 @@ h1, h2, h3, .stat-value, .figure .v, .marker-v, .dayband .hero-v, .dayband .seco
   font-variation-settings: "opsz" 32; }
 body { font-variation-settings: "opsz" 14; font-optical-sizing: auto; }
 .mk-ok { color: var(--text); }
+
+/* ── the signature: *now* is a small ultramarine square (the knight's eye in BRAND.md) ──
+   It marks today in the week strip and the month, beside the wordmark, and nowhere else; the date beside it
+   goes back to ink, so the square is the one cue. A state is never a square (see the tone mark). */
+.now-sq::before, .day.today .dow::before, .month-day.today .n::before {
+  content: ""; display: inline-block; width: var(--mark); height: var(--mark); background: var(--signal);
+  margin-right: var(--sp-1); vertical-align: 1px; flex: none; }
+.day.today .dow, .month-day.today .n { color: var(--text); }
+@media (max-width: 760px) { .day.today .dow { color: var(--text); } }
