@@ -1491,22 +1491,3 @@ details.section > summary:focus-visible{outline:2px solid var(--focus);outline-o
 .rday-try{font-size:12px;color:var(--muted);margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .rday-try input{font:inherit;font-family:var(--mono);padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text)}
 
-
-/* §VSO — you vs. the original plan (Today) */
-#vsplan .vso-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-#vsplan .vso-cell{border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;
-  padding:10px 12px;background:var(--surface)}
-#vsplan .vso-ahead{border-left-color:var(--ok)} #vsplan .vso-behind{border-left-color:var(--warn)}
-#vsplan .vso-level{border-left-color:var(--z2)}
-#vsplan .vso-label{font-size:13px;color:var(--muted);margin-bottom:4px}
-#vsplan .vso-nums{font-family:var(--mono);font-size:15px}
-#vsplan .vso-you{font-size:22px;font-weight:600;color:var(--text)}
-#vsplan .vso-arrow{font-size:.6em;vertical-align:.25em;margin-right:.2em;color:var(--muted)}
-#vsplan .vso-ahead .vso-arrow{color:var(--ok-ink)} #vsplan .vso-behind .vso-arrow{color:var(--warn-ink)}
-#vsplan .vso-vs{color:var(--muted);font-size:12px;margin:0 2px}
-#vsplan .vso-plan{color:var(--muted)}
-#vsplan .vso-gap{font-family:var(--mono);font-size:14px;margin-top:4px}
-#vsplan .vso-ahead .vso-gap{color:var(--ok-ink)} #vsplan .vso-behind .vso-gap{color:var(--warn-ink)}
-#vsplan .vso-pct{font-weight:600}
-#vsplan .vso-state{font-size:12px;margin-top:4px}
-#vsplan .vso-foot{font-size:12px;margin-top:10px}
