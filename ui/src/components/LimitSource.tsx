@@ -19,10 +19,10 @@ export function LimitSource({ k }: { k: string }) {
     <div className="list" style={{ gap: "var(--sp-3)" }}>
       {b && <div><Pill tone={s.basis === "A" ? "warn" : undefined}>{b.label}</Pill> <span className="muted t-small">{b.desc}</span></div>}
       {s.what && <p>{s.what}</p>}
-      {s.rule && <p><b>Rule.</b> {s.rule}</p>}
-      {s.use && <p><b>How the plan uses it.</b> {s.use}</p>}
-      {s.refs?.length ? <div><b>Evidence</b><ul className="bullets">{s.refs.map(r => (
-        <li key={r.cite} style={{ marginBottom: 8 }}><span>{r.finding}</span><br /><span className="muted t-small">{r.cite}</span></li>))}</ul></div> : null}
+      {s.rule && <p><b className="src-head">Rule</b>{s.rule}</p>}
+      {s.use && <p><b className="src-head">How the plan uses it</b>{s.use}</p>}
+      {s.refs?.length ? <div><b className="src-head">Evidence</b><ul className="bullets">{s.refs.map(r => (
+        <li key={r.cite} style={{ marginBottom: "var(--sp-2)" }}><span>{r.finding}</span><br /><span className="muted t-small">{r.cite}</span></li>))}</ul></div> : null}
       {s.caveat && <p className="muted t-small">Caveat: {s.caveat}</p>}
     </div>
   );

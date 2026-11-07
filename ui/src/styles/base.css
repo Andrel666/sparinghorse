@@ -153,7 +153,6 @@ textarea.input { height: auto; padding: 8px 12px; }
 
 /* ── hero: the day in one row — verdict | session | check-in ── */
 .why summary { cursor: pointer; color: var(--muted); font-size: var(--fs-small); list-style: none; }
-.why summary::before { content: "+ "; } .why[open] summary::before { content: "− "; }
 .why ul { margin: var(--sp-2) 0 0; padding-left: var(--indent); color: var(--text-2); font-size: var(--fs-small); }
 .target { display: inline-flex; gap: 8px; align-items: baseline; font-weight: 600; color: var(--signal); font-size: var(--fs-small); width: fit-content; }
 /* segmented choice */
@@ -571,6 +570,8 @@ details.help[open] .more { display: none; }
 /* a bulleted list inside a section: the one indent and top gap (pages never inline these) */
 .bullets { margin: var(--sp-2) 0 0; padding-left: var(--indent); }
 .bullets.flush { margin: 0; }
+/* a heading that sits on its own line above its text (a source drawer's Rule / How the plan uses it / Evidence) */
+.src-head { display: block; }
 .t-small { font-size: var(--fs-small); }
 .t-label { font-size: var(--fs-label); }
 

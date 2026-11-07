@@ -49,7 +49,7 @@ function FirstRun({ steps }: { steps: NonNullable<ShellT["first_run"]> }) {
   return (
     <Banner action={active && (active.key === "race" ? <Link className="btn primary" to="/plan?races=1">Add a race</Link>
                               : active.key === "token" ? <Link className="btn primary" to="/settings#connections">Open Settings</Link> : null)}>
-      <b>Welcome to Sparing Horse.</b> Three steps to your first plan.
+      <b>Set up Sparing Horse</b> Three steps to your first plan.
       <ol className="bullets">{steps.map(x => (
         <li key={x.key} style={{ opacity: x.done ? .6 : 1 }}>{x.done ? "✓ " : ""}<b>{x.title}</b>{x === active ? `: ${x.text}` : ""}</li>))}</ol>
     </Banner>);
