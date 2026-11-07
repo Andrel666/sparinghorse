@@ -70,6 +70,8 @@
   --hit: 44px;                 /* the smallest touch target on the phone */
 
   /* motion: floating surfaces and the selection move; numbers, pages and charts never do */
+  /* one curve, three durations: feedback --dur-1, things that enter --dur-2/3. Transition colour, opacity and
+     transform only, never `all`, never a loop (slop.test.ts) */
   --dur-1: 120ms; --dur-2: 180ms; --dur-3: 240ms;
   --ease-out: cubic-bezier(.2, 0, 0, 1); --ease-in: cubic-bezier(.4, 0, 1, 1);
   color-scheme: light;
