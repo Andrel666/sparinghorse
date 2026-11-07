@@ -11,7 +11,7 @@ const name = (d: Day) => d.race ? "Race" : SHORT[d.kind] ?? d.title.replace(" ru
 function describe(d: Day) {
   const ran = d.runs ?? [];
   const runKm = ran.reduce((a, r) => a + (r.km ?? 0), 0);
-  const plan = d.kind === "rest" ? null : `${name(d)}${d.km != null ? ` ${d.km} km` : ""}${d.strides ? " + strides" : ""}`;
+  const plan = d.kind === "rest" ? null : `${name(d)}${d.km != null ? ` ${d.km}\u00a0km` : ""}${d.strides ? " + strides" : ""}`;
   return { ran, runKm, plan };
 }
 
@@ -50,8 +50,8 @@ export function Week({ days, phase, onDay, selected, today }: { days: Day[]; pha
             {moved && <span className="muted detail full">moved to {d.moved_dow}</span>}
             {hasRun && !legacy && ran.map((r, i) => <span key={i} className="ran detail full num">
               {(d.kind === "rest" || moved || r.unplanned) && <b>{r.unplanned ? "+ " : "✓ "}{SHORT[r.kind] ?? "Run"} </b>}
-              {r.km} km{r.hr ? ` · ${r.hr} bpm` : ""}</span>)}
-            {legacy && d.actual && <span className="muted num detail full">{d.actual.km} km{d.actual.hr ? ` · ${d.actual.hr} bpm` : ""}</span>}
+              {r.km}{"\u00a0"}km{r.hr ? ` · ${r.hr}\u00a0bpm` : ""}</span>)}
+            {legacy && d.actual && <span className="muted num detail full">{d.actual.km}{"\u00a0"}km{d.actual.hr ? ` · ${d.actual.hr}\u00a0bpm` : ""}</span>}
             {d.moved_from && <span className="muted detail full">↷ from {d.moved_from}</span>}
             {/* phone: one number and a mark */}
             <span className="what short num">{big != null ? <>{mark ? `${mark} ` : ""}{Math.round(big * 10) / 10}</> : moved ? "↷" : "·"}</span>

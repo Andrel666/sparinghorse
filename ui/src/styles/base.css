@@ -107,6 +107,8 @@ textarea.input { height: auto; padding: 8px 12px; }
   border-top: 2px solid transparent; margin-top: -1px; }
 .day + .day { border-left: 1px solid var(--line); }
 .day .dow { font-size: var(--fs-label); color: var(--muted); }
+/* a narrow day cell breaks a line between words, not between a number and its unit ("12.5 / km") */
+.day .what, .day .ran, .day .detail { text-wrap: balance; }
 .day .what { font-weight: var(--w-medium); }
 .day .short { display: none; }
 .day.rest .what { font-weight: var(--w-regular); color: var(--muted); }
@@ -216,10 +218,11 @@ button.month-day { cursor: pointer; } button.month-day:hover { background: var(-
 .road-phases span { border-top: 3px solid var(--ph-rebase); padding-top: 4px; overflow: hidden; white-space: nowrap; }
 .road-phases [data-phase="base"] { border-top-color: var(--ph-base); } .road-phases [data-phase="build"] { border-top-color: var(--ph-build); }
 .road-phases [data-phase="peak"] { border-top-color: var(--ph-peak); } .road-phases [data-phase="taper"] { border-top-color: var(--ph-taper); }
-.road-flags { position: relative; height: 20px; }
+/* race flags on the first line, tune-ups on a second, so a tune-up near the race never sits on its label */
+.road-flags { position: relative; height: 40px; }
 .flagpin { position: absolute; transform: translateX(-100%); top: 0; font-size: var(--fs-label); font-weight: var(--w-medium); color: var(--signal);
   white-space: nowrap; padding-right: 8px; border-right: 2px solid var(--signal); line-height: 18px; }
-.flagpin.tune { color: var(--muted); border-right-color: var(--muted); font-weight: var(--w-regular); }
+.flagpin.tune { color: var(--muted); border-right-color: var(--muted); font-weight: var(--w-regular); top: 20px; }
 .road-today { position: relative; transform: translateX(-50%); width: max-content; font-size: var(--fs-label); color: var(--signal); font-weight: var(--w-medium); margin-top: 2px; }
 
 /* ── limits, map, forms, chat ── */
@@ -535,6 +538,8 @@ a.marker-row:hover { background: var(--surface-2); }
 /* y-axis values, laid over the chart's left edge */
 .chart .yticks { position: absolute; left: 0; top: 0; height: calc(100% - 24px); pointer-events: none; z-index: 1; }
 .chart .yticks.bars { height: auto; }
+/* a bar chart keeps its y values in a gutter at the left, not on the first bars */
+.bars-chart { padding-left: var(--sp-6); }
 .chart > div > .yticks { height: 100%; }   /* Lines: the ticks span the plot box alone, not its caption */
 .chart .yticks span { position: absolute; left: 0; transform: translateY(-50%); font-size: var(--fs-label); line-height: 1; color: var(--muted);
   background: var(--bg); padding: 1px 4px 1px 0; font-variant-numeric: tabular-nums; white-space: nowrap; }

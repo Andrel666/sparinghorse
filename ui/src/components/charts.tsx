@@ -90,8 +90,8 @@ export function Bars({ items, height = 140, unit = "", scroll = false }:
   const ticks = <div className="yticks bars" aria-hidden="true" style={{ height }}>
     <span style={{ top: 0 }}>{tick(max)}{unit ? ` ${unit}` : ""}</span><span style={{ top: "50%" }}>{tick(max / 2)}</span></div>;
   const grid = (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${items.length}, ${scroll ? "10px" : "minmax(0, 1fr)"})`, gap: 3,
-                  alignItems: "end", height, minWidth: scroll ? items.length * 13 : undefined }}
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${items.length}, ${scroll ? "10px" : "minmax(0, 1fr)"})`, gap: 4,
+                  alignItems: "end", height, minWidth: scroll ? items.length * 14 : undefined }}
          role="img" aria-label={`${items.length} weeks, latest ${items.at(-1)?.v} ${unit}`}>
       {items.map((it, i) => (
         <div key={it.label} title={`${it.label}: ${it.v} ${unit}`}
@@ -99,7 +99,7 @@ export function Bars({ items, height = 140, unit = "", scroll = false }:
                       background: i === items.length - 1 ? "var(--signal)" : "var(--ph-base)" }} />
       ))}
     </div>);
-  return <div className="chart" style={{ position: "relative" }}>{ticks}
+  return <div className="chart bars-chart" style={{ position: "relative" }}>{ticks}
     {scroll ? <div ref={ref} style={{ overflowX: "auto", paddingBottom: 4 }}>{grid}</div> : grid}</div>;
 }
 
