@@ -20,8 +20,7 @@ small { font-size: .6em; font-weight: 500; }
 .shell { min-height: 100dvh; display: flex; flex-direction: column; }
 .nav {
   position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: var(--sp-5);
-  padding: 0 var(--sp-6); height: 56px; background: color-mix(in oklab, var(--bg), transparent 6%);
-  backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+  padding: 0 var(--sp-6); height: 56px; background: var(--bg); border-bottom: 1px solid var(--line);
 }
 .nav-brand { font-family: var(--display); font-weight: 800; font-size: 16px; letter-spacing: -0.01em; white-space: nowrap; margin-right: var(--sp-3); }
 .nav-brand::before { content: ""; display: inline-block; width: 12px; height: 12px; background: var(--signal); margin-right: 8px; vertical-align: 1px; }
@@ -54,19 +53,26 @@ small { font-size: .6em; font-weight: 500; }
 }
 .card-label { font-size: var(--fs-label); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .tone-ok { --tone: var(--ok); } .tone-warn { --tone: var(--warn); } .tone-bad { --tone: var(--bad); }
-.card.tone-ok > :first-child .card-label::before, .card.tone-warn > :first-child .card-label::before, .card.tone-bad > :first-child .card-label::before {
-  content: ""; display: inline-block; width: 8px; height: 8px; background: var(--tone); margin-right: 8px; vertical-align: 1px; }
 .stat-value { font-family: var(--display); font-size: var(--fs-display); font-weight: 700; line-height: 1; letter-spacing: -0.035em; font-variant-numeric: tabular-nums; }
 .stat-value.sm { font-size: var(--fs-title); letter-spacing: -0.02em; }
 .stat-sub { font-size: var(--fs-small); color: var(--muted); }
-.tone-ok .toned, .tone-warn .toned, .tone-bad .toned { color: var(--tone); }   /* only the value that carries the state */
+/* the tone mark (primitive): a value that carries a state stays ink, with a round 8px dot in the state colour before it.
+   Round is a state; the square is *now* (the signal). Today's day band is the one place a state colours the words. */
+.tone-ok .toned::before, .tone-warn .toned::before, .tone-bad .toned::before,
+.toned.tone-ok::before, .toned.tone-warn::before, .toned.tone-bad::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--tone);
+  margin-right: var(--sp-2); vertical-align: middle; flex: none; }
+.dayband .toned::before { content: none; }
+/* a trend arrow (▲ above / ▼ below a reference) is itself the mark: it takes the tone, and no dot is added */
+.trend { font-size: .6em; vertical-align: .25em; margin-right: var(--sp-1); color: var(--tone, var(--muted)); }
+.toned:has(> .trend)::before, .toned:has(.trend)::before { content: none; }
 .pill {
   display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; font-size: var(--fs-label);
   font-weight: 500; color: var(--muted); padding: 0; background: none; border: 0;
 }
 .pill + .pill::before { content: "·"; margin-right: 8px; color: var(--line); }
-.pill .dot { width: 8px; height: 8px; border-radius: 0; background: currentColor; }
-.pill.tone-ok, .pill.tone-warn, .pill.tone-bad { color: var(--tone); font-weight: 600; }
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone, currentColor); }
+.pill.tone-ok, .pill.tone-warn, .pill.tone-bad { color: var(--text-2); font-weight: 600; }
 .pill.tone-ok::after, .pill.tone-warn::after, .pill.tone-bad::after { content: none; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: var(--radius); height: var(--ctl); padding: 0 16px;
@@ -75,12 +81,12 @@ small { font-size: .6em; font-weight: 500; }
 }
 .btn:hover { background: var(--surface-2); color: var(--text); }
 .btn.primary { background: var(--text); border-color: var(--text); color: var(--bg); }
-.btn.primary:hover { background: var(--signal); border-color: var(--signal); color: #fff; }
+.btn.primary:hover { background: var(--signal); border-color: var(--signal); color: var(--on-accent); }
 /* disabled is an outline in --line with muted text, never a grey fill (a grey fill reads as broken) */
 .btn:disabled, .btn[aria-disabled="true"], .btn.primary:disabled { background: transparent; border-color: var(--line); color: var(--muted); cursor: not-allowed; }
 .btn:disabled:hover { background: transparent; color: var(--muted); }
 .btn[aria-pressed="true"] { background: var(--text); color: var(--bg); }
-.btn.danger { background: var(--bad); color: #fff; border-color: var(--bad); }
+.btn.danger { background: var(--bad); color: var(--on-accent); border-color: var(--bad); }
 .input { font: inherit; font-size: var(--fs-small); height: var(--ctl); padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--surface); color: var(--text); min-width: 0; }
 .input:focus { border-color: var(--text); outline: none; }
@@ -105,7 +111,6 @@ textarea.input { height: auto; padding: 8px 12px; }
 .day.rest .what { font-weight: 400; color: var(--muted); }
 .day.today { border-top-color: var(--signal); }
 .day.today .dow { color: var(--signal); font-weight: 600; }
-.day.done .what, .day.moved .what { color: var(--ok); }
 .day.missed .what { color: var(--muted); text-decoration: line-through; }
 
 /* ── tables ── */
@@ -133,8 +138,7 @@ textarea.input { height: auto; padding: 8px 12px; }
   .day .full, .day .detail { display: none; } .day .short { display: inline; }
   .tabbar {
     display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-    background: color-mix(in oklab, var(--bg), transparent 4%); border-top: 1px solid var(--rule);
-    backdrop-filter: blur(10px); padding-bottom: env(safe-area-inset-bottom);
+    background: var(--bg); border-top: 1px solid var(--rule); padding-bottom: env(safe-area-inset-bottom);
   }
   .tab { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 8px; color: var(--muted);
          text-decoration: none; font-size: var(--fs-label); font-weight: 500; background: none; border: 0; cursor: pointer; border-top: 2px solid transparent; margin-top: -1px; }
@@ -150,7 +154,7 @@ textarea.input { height: auto; padding: 8px 12px; }
 /* ── hero: the day in one row — verdict | session | check-in ── */
 .why summary { cursor: pointer; color: var(--muted); font-size: var(--fs-small); list-style: none; }
 .why summary::before { content: "+ "; } .why[open] summary::before { content: "− "; }
-.why ul { margin: var(--sp-2) 0 0; padding-left: var(--indent); color: var(--muted); font-size: var(--fs-small); }
+.why ul { margin: var(--sp-2) 0 0; padding-left: var(--indent); color: var(--text-2); font-size: var(--fs-small); }
 .target { display: inline-flex; gap: 8px; align-items: baseline; font-weight: 600; color: var(--signal); font-size: var(--fs-small); width: fit-content; }
 /* segmented choice */
 .seg { display: inline-flex; border: 1px solid var(--text); border-radius: var(--radius); }
@@ -169,7 +173,7 @@ textarea.input { height: auto; padding: 8px 12px; }
 .tabs button.on { color: var(--text); border-bottom-color: var(--signal); font-weight: 600; }
 
 /* ── drawer ── */
-.scrim { position: fixed; inset: 0; background: rgb(0 0 0 / .3); z-index: 40; }
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 40; }
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 100vw); z-index: 41; background: var(--surface);
   border-left: 1px solid var(--rule); padding: var(--sp-5); overflow-y: auto; display: flex; flex-direction: column; gap: var(--sp-4);
   padding-bottom: calc(var(--sp-5) + env(safe-area-inset-bottom)); box-shadow: var(--float-shadow); }
@@ -248,7 +252,7 @@ pre.report { white-space: pre-wrap; font-family: var(--mono); font-size: var(--f
 /* ── feedback ── */
 dialog.confirm { border: 1px solid var(--rule); border-radius: 0; background: var(--surface); color: var(--text); box-shadow: var(--float-shadow);
   padding: var(--sp-5); width: min(480px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: var(--sp-3); }
-dialog.confirm::backdrop { background: rgb(0 0 0 / .3); }
+dialog.confirm::backdrop { background: var(--scrim); }
 dialog.confirm h2 { font-size: 20px; margin: 0; }
 dialog.confirm ul { margin: 0; padding-left: var(--indent); color: var(--muted); font-size: var(--fs-small); }
 .toasts { position: fixed; right: 24px; bottom: 24px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
@@ -273,9 +277,9 @@ dialog.confirm ul { margin: 0; padding-left: var(--indent); color: var(--muted);
   border-top: 1px solid var(--line); margin-top: var(--sp-6); }
 .footer a { color: var(--muted); }
 .flag { font-size: var(--fs-label); color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
-.flag::before { content: ""; width: 8px; height: 8px; background: var(--line); flex: none; }
-.flag.tone-warn { color: var(--warn); } .flag.tone-warn::before { background: var(--warn); }
-.flag.tone-ok { color: var(--ok); } .flag.tone-ok::before { background: var(--ok); }
+.flag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
+.flag.tone-warn { color: var(--text-2); } .flag.tone-warn::before { background: var(--warn); }
+.flag.tone-ok { color: var(--text-2); } .flag.tone-ok::before { background: var(--ok); }
 .frame-top { gap: var(--sp-3); display: flex; flex-direction: column; }
 .frame-top:empty { display: none; }
 .race-row { border-top: 1px solid var(--line); padding: 12px 0; display: flex; flex-direction: column; gap: 8px; }
@@ -366,10 +370,10 @@ a.figure.link:hover .k { color: var(--signal-ink); }
 /* week strip: a run sits on the day it was run */
 .day .struck { text-decoration: line-through; color: var(--muted); font-weight: 400; }
 .day.missed .what, .day.missed .struck { color: var(--muted); }
-.day .ran { color: var(--ok); font-weight: 600; }
+.day .ran { color: var(--text); font-weight: 600; }
 .day .ran b { font-weight: 600; }
 .day.moved .what { color: var(--muted); }
-.day.done .what, .day.moved .ran { color: var(--ok); }
+.day.done .what, .day.moved .ran { color: var(--text); }
 @media (max-width: 760px) {
   .day .what.short { font-family: var(--display); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .day.rest .what.short { color: var(--line-strong); }
@@ -407,7 +411,7 @@ a.figure.link:hover .k { color: var(--signal-ink); }
 }
 .raceline { color: inherit; text-decoration: none; font-size: var(--fs-small); }
 .raceline:hover b { color: var(--signal-ink); }
-.toned.tone-ok { color: var(--ok); } .toned.tone-warn { color: var(--warn); } .toned.tone-bad { color: var(--bad); }
+.dayband .toned.tone-ok { color: var(--ok); } .dayband .toned.tone-warn { color: var(--warn); } .dayband .toned.tone-bad { color: var(--bad); }
 .checked-in { font-size: var(--fs-small); }
 .mk-ok { color: var(--ok); font-weight: 700; }
 /* Today: the day band (hero | verdict + check-in) */
@@ -515,7 +519,7 @@ a.marker-row:hover { background: var(--surface-2); }
 .cal-p { font-size: var(--fs-small); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cal-p.missed { color: var(--muted); text-decoration: line-through; }
 .cal-p.moved { text-decoration: line-through; }
-.cal-p.done .cal-t::before { content: "✓ "; color: var(--ok); }
+.cal-p.done .cal-t::before { content: "✓ "; color: var(--text); }
 .cal-r { display: flex; align-items: center; gap: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .cal-o { color: var(--muted); }
 .cal-key { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: var(--sp-3); font-size: var(--fs-label); color: var(--muted); }

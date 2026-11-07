@@ -1,4 +1,7 @@
 /* The design tokens: the ONE place colours, type, spacing, motion and shape are defined (ui/DESIGN.md, ui/BRAND.md).
+   Colour: one warm-grey paper ramp, three text roles (--text, --text-2, --muted), one accent (--signal) for *now*
+   and the selection only. State colours (ok/warn/bad) mark a value with a small round dot; they never fill a
+   figure or a cell, except in Today's day band. No raw colour outside this file (slop.test.ts).
    Ink and paper do the work; one signal, ultramarine, means *now* (the current week, today, the selection, the
    primary series). Warm colours mean *watch* (warn, bad). Light is the base; dark redefines the same names.
    Floor: no text below --fs-label (13px). */
@@ -9,8 +12,9 @@
   --line: #e2e2de;             /* hairlines */
   --line-strong: #c9c9c4;      /* the held line: ceilings, goals, targets */
   --rule: #0b0b0b;             /* zone rules */
-  --text: #0b0b0b;
-  --muted: #6a6a66;
+  --text: #0b0b0b;             /* text role 1: primary */
+  --text-2: #3d3d3a;           /* text role 2: secondary prose, tone labels (11:1) */
+  --muted: #6a6a66;            /* text role 3: labels and meta (5.2:1) */
   --signal: #2b3cff;           /* now / selected / primary data: 6.3:1 on --bg, carries white text 6.6:1 */
   --signal-soft: #e8eaff;
   --signal-ink: var(--signal); /* alias: ultramarine passes AA as text, so small text needs no darker copy */
@@ -29,6 +33,7 @@
   /* heart-rate zones: a grey ramp into ink. Intensity is weight, not hue (never the status colours) */
   --z1: #e2e2de; --z2: #b3b3ad; --z3: #85857f; --z4: #4a4a46; --z5: #0b0b0b;
   --planned: var(--line); --focus: var(--signal);
+  --scrim: rgb(0 0 0 / .3);    /* behind a drawer or dialog */
   --map-filter: grayscale(1) contrast(.92) brightness(1.04);
 
   /* one family: Inter with its optical-size axis (opsz 32 = display, 14 = text) */
@@ -65,7 +70,7 @@
    athlete has not chosen light, so the media query never needs its own copy of these values. */
 :root[data-theme="dark"] {
   --bg: #0b0b0b; --surface: #161615; --surface-2: #1e1e1c; --line: #2a2a28; --line-strong: #3a3a37; --rule: #f2f2ef;
-  --text: #f2f2ef; --muted: #9a9a94; --signal: #7f8cff; --signal-soft: #191d45; --on-accent: #0b0b0b;
+  --text: #f2f2ef; --text-2: #c9c9c3; --muted: #9a9a94; --signal: #7f8cff; --signal-soft: #191d45; --on-accent: #0b0b0b;
   --ok: #4fcf86; --ok-soft: #10281a; --warn: #f0b04a; --warn-soft: #2f230d; --bad: #ff6b6b; --bad-soft: #351414;
   --ph-rebase: #3a3a37; --ph-base: #55554f; --ph-build: #7e7e77; --ph-peak: #c8c8c1; --ph-taper: #66665f;
   --z1: #2a2a28; --z2: #55554f; --z3: #7e7e77; --z4: #b8b8b1; --z5: #f2f2ef;
