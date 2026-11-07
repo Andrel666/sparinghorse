@@ -11,6 +11,7 @@
 !sh_calibrate.py
 !sh_coach.py
 !sh_ui_api.py
+!sh_ui_lenses.py
 !sh_selftest.py
 !sh_music.py
 !test/golden/

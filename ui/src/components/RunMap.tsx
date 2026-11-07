@@ -16,5 +16,6 @@ export function RunMap({ id }: { id: number }) {
     return () => { map.remove(); };
   }, [q.data]);
   if (q.data && !q.data.has_gps) return <span className="muted">No GPS for this run.</span>;
+  if (q.isError || (q.data && !q.data.path?.length)) return <span className="muted">No route for this run: its streams aren't available.</span>;
   return <div ref={el} className="map" aria-label="Route map" />;
 }

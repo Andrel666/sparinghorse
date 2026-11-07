@@ -196,11 +196,11 @@ export const useToday = page<TodayPage>("today");
 export const useFitness = page<FitnessPage>("fitness");
 export const useBody = page<BodyPage>("body");
 export const useSettings = page<SettingsPage>("settings");
-const q = <T,>(key: unknown[], path: string, enabled = true) =>
-  useQuery({ queryKey: key, queryFn: () => api<T>(path), enabled, placeholderData: prev => prev });   // keep the last view while the next loads
+const q = <T,>(key: unknown[], path: string, enabled = true, keep = true) =>
+  useQuery({ queryKey: key, queryFn: () => api<T>(path), enabled, placeholderData: keep ? prev => prev : undefined });   // keep the last view while the next loads
 export const usePlan = (sel: { week?: string; day?: string }) =>
   q<PlanPage>(["ui", "plan", sel.week, sel.day], `/api/ui/plan?${new URLSearchParams(Object.entries(sel).filter(([, v]) => v) as [string, string][])}`);
-export const useRun = (id?: number) => q<RunPage>(["ui", "run", id], `/api/ui/run/${id}`, !!id);
+export const useRun = (id?: number) => q<RunPage>(["ui", "run", id], `/api/ui/run/${id}`, !!id, false);   // never one run's numbers under another's debrief
 export interface CalendarMonth { ok: true; month: string; week_start: number; today: string; first: string; last: string;
   race: { date: string; label: string } | null; stats: Record<string, unknown>;
   days: Record<string, { planned: { kind: string; title: string; km: number | null; status: string; race: boolean; moved_to: string | null }[];
@@ -223,16 +223,17 @@ export interface Debrief {
   ok: true; id: number; date: string; headline: string; tone: "ok" | "warn" | "bad" | null;
   asked: { kind: string; title: string; km: number; minutes: number | null; date: string; target: Target | null; strides: number; moved: boolean } | null;
   did: { km: number; minutes: number | null; pace: string | null; hr: number | null; hr_max: number | null; trimp: number | null };
-  checks: DebriefCheck[];
+  checks: DebriefCheck[]; note: string | null;
   cost: { trimp: number | null; tsb: number; rest_days: number; fatigue_up: number | null } | null;
   goal: { race: string | null; target: string | null; settles: string | null;
           fitness: { before: number; after: number; delta: number } | null;
           endurance: { before: number; after: number; delta: number; label: string } | null;
-          prediction: { before: string; after: string; delta_s: number; delta: string } | null };
+          prediction: { before: string | null; after: string; delta_s: number | null; delta: string } | null;
+          contract?: { predicted: string; margin_s: number | null; tone: "ok" | "warn" | "bad" | null; words: string | null; days: number } };
   next: { date: string; dow: string; title: string; km: number | null; target: Target | null } | null;
   changed: string[]; plan_reacted: boolean;
 }
-export const useDebrief = (id: number | null | undefined) => q<Debrief>(["ui", "debrief", id], `/api/ui/debrief/${id}`, id != null);
+export const useDebrief = (id: number | null | undefined) => q<Debrief>(["ui", "debrief", id], `/api/ui/debrief/${id}`, id != null, false);
 
 /** Goal (sh_ui_lenses.goal_page): the contract line, ranked levers, what holds the next weeks, vs the original plan. */
 export interface Lever { key: string; rank: number; title: string; effect: string; gain: number | null; modelled: boolean; useful: boolean; link: string }

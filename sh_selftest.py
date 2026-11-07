@@ -16999,6 +16999,18 @@ def _stc_lenses():
             pd = d2["goal"].get("prediction") or {}
             if pd.get("delta_s") != -30 or not str(pd.get("delta", "")).startswith("−"):
                 fails.append(f"(c) the prediction did not settle -30 s from the morning's plan to the next: {pd}")
+            # a plan for ANOTHER race built after the run must not settle the prediction (the stale-objective trap)
+            other = json.loads(json.dumps(after)); other.setdefault("objective", {})["date"] = "2099-01-01"
+            other["feasibility"]["finish_time"]["seconds"] = sec + 3600
+            mem.execute("DELETE FROM plans WHERE for_date=?", ((day + _td(days=1)).isoformat(),))
+            mem.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)",
+                        ((day + _td(days=1)).isoformat() + "T05:00:00", (day + _td(days=1)).isoformat(), "{}", json.dumps(other)))
+            mem.execute("DELETE FROM plans WHERE for_date=? AND id=(SELECT MAX(id) FROM plans WHERE for_date=?)", (today.isoformat(), today.isoformat()))
+            mem.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)", (today.isoformat() + "T06:00:00", today.isoformat(), "{}", json.dumps(plan)))
+            mem.commit()
+            po = L.run_debrief(S, mem, x["activity_id"])["goal"].get("prediction") or {}
+            if po.get("after") == L._hms(sec + 3600):
+                fails.append(f"(c) a plan for another race settled the prediction: {po}")
             un = [i for i in acts if i not in {y["activity_id"] for y in paired}]
             if un and L.run_debrief(S, mem, un[0])["headline"] != "Unplanned run":
                 fails.append("(a) a run with no session is not 'Unplanned run'")

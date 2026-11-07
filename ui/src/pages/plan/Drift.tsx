@@ -96,9 +96,10 @@ export function DriftView({ race }: { race?: string }) {
                 : "No weekly fitness forecast has settled yet."}
               <Help>Each week the engine forecasts end-of-week fitness; once the week is lived, the forecast is scored against what happened.</Help></span>
           </Card>
-          <Block title="Projected race-day fitness" note="Each re-plan's projected fitness on race day." fmt={v => v.toFixed(0)}
+          {(d.outcome?.length || 0) > 1 ? <Block title="Projected race-day fitness" note="Each re-plan's projected fitness on race day." fmt={v => v.toFixed(0)}
             series={[{ pts: (d.outcome || []).map(o => ({ date: o.date, v: o.ctl })), color: "var(--text)", label: "Race-day CTL" }]} />
-          {(d.finish_drift?.length || 0) > 0 && <Block title="Predicted finish · the ledger" note="Each re-plan's predicted finish with its 80 % band." fmt={hmm}
+            : <Card span={6} label="The ledger"><span className="muted">Each re-plan's race-day fitness and predicted finish land here; one plan so far, so there is no line yet.</span></Card>}
+          {(d.finish_drift?.length || 0) > 1 && <Block title="Predicted finish · the ledger" note="Each re-plan's predicted finish with its 80 % band." fmt={hmm}
             series={[{ pts: (d.finish_drift || []).map(f => ({ date: f.date, v: f.p50 })), color: "var(--text)", label: "Median" },
                      { pts: (d.finish_drift || []).map(f => ({ date: f.date, v: f.lo })), color: "var(--muted)", label: "Fast end", dashed: true },
                      { pts: (d.finish_drift || []).map(f => ({ date: f.date, v: f.hi })), color: "var(--muted)", label: "Slow end", dashed: true }]} />}

@@ -6,7 +6,6 @@ import { Link } from "react-router-dom";
 import { useGoal, type GoalPage } from "../lib/api";
 import { dateLong, dateShort } from "../lib/format";
 import { Card, PageHead, State, Strip } from "../components/ui";
-import { VsOriginal } from "../components/VsOriginal";
 import { Endurance } from "./plan/Endurance";
 import { DriftView } from "./plan/Drift";
 import { Query } from "./Query";
@@ -32,7 +31,7 @@ function Contract({ c }: { c: NonNullable<GoalPage["contract"]> }) {
 function Levers({ g }: { g: GoalPage }) {
   return (
     <Card id="improve" label="What you can do to improve" span={7}
-          lede={g.levers.some(l => l.useful) ? "Ranked by what each one does for the race; the first one matters most." : "The plan already covers what the race needs; these hold it there."}>
+          lede={g.levers.some(l => l.useful) ? "What can still move the race comes first; a computed effect says so, the rest are habits the prediction assumes." : "The plan already covers what the race needs; these hold it there."}>
       {g.levers.length ? <ol className="levers">{g.levers.map(l => (
         <li key={l.key} className={l.useful ? undefined : "lever-off"}>
           <Link to={l.link} aria-label={`${l.rank}. ${l.title}: ${l.effect}. Open`}>
@@ -65,7 +64,6 @@ export function Goal() {
         {g.contract && <Levers g={g} />}
         {g.contract && <Holding g={g} />}
         <Endurance />
-        {g.vs_plan && <VsOriginal v={g.vs_plan} />}
         <div id="history" className="span-12" style={{ scrollMarginTop: 80 }}><DriftView /></div>
         <Card label="Deeper" span={12}>
           <Strip items={[

@@ -71,7 +71,7 @@ New primitives (compose existing ones; pages never re-roll them):
 |---|---|---|
 | **Contract line** (`ContractLine`) | Goal head, and the debrief's goal section | goal · predicted (band) · margin · days left; the margin is the one toned figure (state dot only when behind) |
 | **Debrief** (`Debrief`) | Now (latest run), Log (every run) | four numbered sections in the order of the questions: *Did I do it* (asked vs did, each check with its verdict), *What it cost* (load, form, rest days), *What it did to the goal* (fitness, endurance, prediction before → after), *What's next* (the next session, and what the plan changed). Phone: stacked; desktop: the 2×2 grid. A section without data says when it settles ("with tonight's plan") instead of a blank |
-| **Lever list** (`Levers`) | Goal | ranked by computed effect; each lever = what to change · its computed effect · a door to where it would change. A lever whose effect the model can't compute says "not modelled" and ranks after the computed ones |
+| **Lever list** (`Levers`) | Goal | each lever = what to change · its computed effect · a door to where it would change (the Road, or "Tell the horse"). Ranked: what can still move the race first; among those, the computed ones by their gain; a lever whose effect the model can't compute says "not modelled". The lede says this order, not "by effect" |
 | **Holding-you-back list** | Goal | the limits that bind the weeks ahead, most frequent first, each with its plain-words rule |
 
 States: no plan → Now and Road say how to start (unchanged); no race → Goal shows the marathon-shape and fitness
@@ -108,9 +108,21 @@ long_extra_km=…)` what-ifs, the easy-run check and the block's adherence.
 - Goal: the contract line, at least two computed levers with effects, the limits ahead, endurance, history.
 - The slop guard passes; no new Lighthouse failures; every control keeps a focus ring.
 
+**One settlement per run.** The distance verdict (±10 % of the km asked, `sh_ui_lenses.short_sessions`) is the
+debrief's, and the same rule marks the week strip (the warm dot instead of ✓), the Log row ("5.6 of 14.1 km
+asked") and the consistency lever ("3 shorter than asked"). The debrief's prediction only compares plans for the
+race the goal is now; with no plan before the run it shows the after figure and says so.
+
 ## 6. Decisions left to the owner
 
-1. Moving "vs the original plan" off Now (it now lives on Goal; Now keeps the door in its strip). *Built: moved.*
+1. Moving "vs the original plan" off Now. *Built: moved to Goal, where the history (the founding road vs the road
+   now) is its one home; the separate "vs the original plan" card is not repeated there.*
 2. A "% likely inside the goal" figure: not built; the band is shown instead, because the model's band is not a
    calibrated probability.
 3. Splits/laps in "asked vs did" for interval sessions: not built (the data the app stores has no laps).
+4. No lever is computed against the finishing time yet (the levers move endurance; the goal is a time). A
+   finish-time what-if in the engine would let "what can I do to improve" answer in minutes.
+5. The demo's half prediction (1:08:04 against a 1:40 goal) is faster than its own paces support (threshold
+   4:07/km suggests about 1:27); check `feasibility.finish_time` on a half before judging Goal on real data.
+6. History's "Volume behind" counts the rest of the current week as behind before it is run (the shared
+   `/api/plandrift` scorecard); a past-days-only count is an engine change, left for review.

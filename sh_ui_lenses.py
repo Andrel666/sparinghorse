@@ -123,12 +123,14 @@ def run_debrief(S, db, aid):
                 "fatigue_up": round(end["atl"] - prev["atl"], 1) if prev else None}
     # — goal: before → after, for fitness, endurance and the prediction —
     plans = _plans(db)
-    before = next((r for r in reversed(plans) if r["for_date"] <= act["date"]), None)
-    after = next((r for r in plans if r["for_date"] > act["date"]), None)
-    pb = json.loads(before["plan"]) if before else {}
-    pa = json.loads(after["plan"]) if after else {}
     cur = json.loads(plans[-1]["plan"]) if plans else {}
     obj = cur.get("objective") or {}
+    # only plans for the race the goal is now: a prediction for another race settles nothing against this one
+    race_key = (obj.get("date"), (obj.get("type") or "").lower())
+    same = [(r, p) for r, p in ((r, json.loads(r["plan"])) for r in plans)
+            if ((p.get("objective") or {}).get("date"), ((p.get("objective") or {}).get("type") or "").lower()) == race_key]
+    pb = next((p for r, p in reversed(same) if r["for_date"] <= act["date"]), {})
+    pa = next((p for r, p in same if r["for_date"] > act["date"]), {})
     import sh_engine as E
     dist = E.RACE_KM.get((obj.get("type") or "").lower())
     need = E.ms_required(dist) if dist else 100.0
@@ -143,8 +145,20 @@ def run_debrief(S, db, aid):
     sb, sa = _pred(pb) if pb else None, _pred(pa) if pa else None
     if sb and sa:
         goal["prediction"] = {"before": _hms(sb), "after": _hms(sa), "delta_s": round(sa - sb), "delta": _signed_time(sa - sb)}
-    elif sb:
+    elif sa:
+        goal["prediction"] = {"before": None, "after": _hms(sa), "delta_s": None, "delta": "no plan before this run to compare"}
+    else:
         goal["settles"] = "The prediction settles with the next plan (tonight's run of the engine)."
+    # the contract as it stands now: the line every screen settles against
+    ft = (cur.get("feasibility") or {}).get("finish_time") or {}
+    goal_s = U._hms_s(obj.get("target"))
+    if obj.get("date") and ft.get("seconds"):
+        from datetime import datetime
+        tone, words, _short = U.race_call(ft["seconds"], (ft.get("band") or {}).get("lo_seconds"),
+                                          (ft.get("band") or {}).get("hi_seconds"), goal_s)
+        goal["contract"] = {"predicted": ft.get("hms"), "margin_s": (goal_s - ft["seconds"]) if goal_s else None,
+                            "tone": tone, "words": words, "days": (S._date(obj["date"]) - datetime.now().date()).days}
+    note = db.execute("SELECT note FROM session_log WHERE date=?", (act["date"],)).fetchone()
     # — next: the next session, and what the plan changed after this run —
     ahead = sorted((x for x in sessions if x["date"] > act["date"] and not x.get("unplanned") and x.get("km")
                     and not x.get("done")), key=lambda x: x["date"])
@@ -154,7 +168,7 @@ def run_debrief(S, db, aid):
         d = S.diff_plans(pb, pa) or {}
         changed = [c for c in d.get("changes") or [] if not c.startswith("The plan already matched")][:3]
     return {"ok": True, "id": aid, "date": act["date"], "headline": headline, "tone": tone, "asked": asked, "did": did,
-            "checks": checks, "cost": cost, "goal": goal,
+            "checks": checks, "cost": cost, "goal": goal, "note": (note["note"] if note else None) or None,
             "next": ({"date": nxt["date"], "dow": U._dow(S, nxt["date"]), "title": U.KIND_TITLE.get(nxt.get("kind"), nxt.get("kind")),
                       "km": nxt.get("km"), "target": U.session_target(S, db, nxt.get("kind"), zones)} if nxt else None),
             "changed": changed, "plan_reacted": bool(changed)}
@@ -183,7 +197,7 @@ def _levers(S, db, plan):
             else:
                 effect = f"endurance on race morning {rm} → {nrm} %" + (f", 100 % {days} days sooner" if days else "")
             out.append({"key": key, "title": what, "effect": effect, "gain": gain, "modelled": True,
-                        "useful": rm < 100, "link": "/goal#endurance"})
+                        "useful": rm < 100, "link": "/road?tell=1"})
     ed = S.effort_discipline(db) or {}
     easy = ed.get("easy") if isinstance(ed.get("easy"), dict) else None
     on, judged = (easy or {}).get("on"), (easy or {}).get("judged")
@@ -198,10 +212,29 @@ def _levers(S, db, plan):
     log = S.block_log(db) or {}
     ad = log.get("adherence") or {}
     if ad.get("scheduled"):
-        out.append({"key": "consistency", "title": "run every planned session",
-                    "effect": f"{ad.get('done', 0)} of {ad['scheduled']} so far this block; the prediction assumes the laid build completes",
-                    "gain": None, "modelled": False, "useful": ad.get("done", 0) < ad["scheduled"], "link": "/road"})
+        short = len(short_sessions(S, db, log))
+        done = ad.get("done", 0)
+        effect = f"{done} of {ad['scheduled']} so far this block" + (f", {short} shorter than asked" if short else "") + \
+                 "; the prediction assumes the laid build completes"
+        out.append({"key": "consistency", "title": "run every planned session, at its distance", "effect": effect,
+                    "gain": None, "modelled": False, "useful": done < ad["scheduled"] or short > 0, "link": "/road"})
     return rank_levers(out)
+
+
+def short_sessions(S, db, log=None):
+    """The block's done sessions whose run fell short of the distance asked (outside KM_TOL): the debrief's
+    distance verdict, applied to every session, so the lever and the debrief count the same thing."""
+    log = log if log is not None else (S.block_log(db) or {})
+    out = []
+    for w in log.get("weeks") or []:
+        for x in w.get("sessions") or []:
+            aid, asked = x.get("activity_id"), x.get("km")
+            if not aid or not asked or x.get("unplanned"):
+                continue
+            r = db.execute("SELECT distance FROM activities WHERE id=?", (aid,)).fetchone()
+            if r and r["distance"] is not None and r["distance"] / asked < 1 - KM_TOL:
+                out.append({"date": x.get("date"), "activity_id": aid, "asked": asked, "did": round(r["distance"], 1)})
+    return out
 
 
 def rank_levers(levers):

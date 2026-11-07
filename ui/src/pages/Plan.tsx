@@ -174,7 +174,7 @@ export function Plan() {
     const genBtn = <button className="btn primary" disabled={gen.isPending} onClick={() => gen.mutate()}>{gen.isPending ? "Rebuilding…" : "Rebuild the plan"}</button>;
     const racesDrawer = <Drawer title="Races" open={races} onClose={() => setParam("races", null)}>
       <RacesDrawer current={race || p.races?.[0]?.date} onDiff={d => { setDiff(d); }} /></Drawer>;
-    if (p.empty) return <div className="page"><PageHead title="Plan"><button className="btn" onClick={() => setParam("races", "1")}>Races</button></PageHead>
+    if (p.empty) return <div className="page"><PageHead title="Road"><button className="btn" onClick={() => setParam("races", "1")}>Races</button></PageHead>
       <Banner tone="warn" action={<button className="btn primary" onClick={() => setParam("races", "1")}>Add a race</button>}>
         <b>No plan yet.</b> Add a race and the road is built around it, bounded by your fitness.</Banner>
       <div className="row">{genBtn}</div>{racesDrawer}</div>;
@@ -186,7 +186,7 @@ export function Plan() {
     const daySessions = day ? p.week.sessions.filter(x => x.date === day) : [];
     return (
     <div className="page">
-      <PageHead title="Plan">
+      <PageHead title="Road">
         <div className="row">
           <button className="btn" aria-expanded={races} onClick={() => setParam("races", "1")}>Races</button>
           <button className="btn primary" aria-expanded={tell} onClick={() => setParam("tell", "1")}>Tell the horse</button>

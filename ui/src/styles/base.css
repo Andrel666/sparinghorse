@@ -648,3 +648,6 @@ body { font-variation-settings: "opsz" 14; font-optical-sizing: auto; }
 .levers .lever-title { font-size: var(--fs-body); }
 .levers .lever-effect { font-size: var(--fs-small); color: var(--text-2); }
 .levers .lever-off .lever-n, .levers .lever-off .lever-title { color: var(--muted); }
+
+/* a run shorter than asked: the warm state mark in place of the tick (the debrief's distance verdict) */
+.short-mark { display: inline-block; width: var(--mark); height: var(--mark); border-radius: 50%; background: var(--warn); margin-right: 4px; vertical-align: middle; }

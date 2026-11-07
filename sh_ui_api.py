@@ -1215,6 +1215,8 @@ def runs_log(S, db, month=None, last_days=None):
     extra = {r["id"]: r for r in db.execute(
         f"SELECT id, duration, hr_avg FROM activities WHERE id IN ({','.join('?' * len(ids))})", ids).fetchall()} if ids else {}
     ed = {x.get("date"): x for x in (S.effort_discipline(db) or {}).get("runs") or []}
+    import sh_ui_lenses as LN
+    short = {x["activity_id"]: x for x in LN.short_sessions(S, db)}      # the debrief's distance verdict, per run
     out = []
     for r in sorted(rows, key=lambda r: (r["date"], r.get("t") or ""), reverse=True):
         a, e = extra.get(r["id"]), ed.get(r["date"]) or {}
@@ -1222,7 +1224,10 @@ def runs_log(S, db, month=None, last_days=None):
                     "km": r.get("km"), "pace": r.get("pace"), "z": r.get("z"),
                     "hr": a["hr_avg"] if a else None, "min": round(a["duration"] / 60) if a and a["duration"] else None,
                     "kind": KIND_TITLE.get(e.get("kind"), "Run") if e.get("kind") else "Run",
-                    "verdict": e.get("verdict"), "verdict_text": VERDICT_TEXT.get(e.get("verdict") or "")})
+                    "verdict": e.get("verdict"), "verdict_text": "; ".join(t for t in (
+                        f"{short[r['id']]['did']:g} of {short[r['id']]['asked']:g} km asked" if r["id"] in short else None,
+                        VERDICT_TEXT.get(e.get("verdict") or "")) if t) or None,
+                    "short": r["id"] in short})
     weeks = []
     for r in out:
         ws = E.week_start_of(S._date(r["date"])).isoformat()
