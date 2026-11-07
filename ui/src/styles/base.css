@@ -64,6 +64,8 @@ small { font-size: .6em; font-weight: var(--w-medium); }
   content: ""; display: inline-block; width: var(--mark); height: var(--mark); border-radius: 50%; background: var(--tone);
   margin-right: var(--sp-2); vertical-align: middle; flex: none; }
 .dayband .toned::before { content: none; }
+/* the open state of a Why disclosure keeps its dash (removing it is on the approval list) */
+.why[open] summary::before { content: "− "; }
 /* a trend arrow (▲ above / ▼ below a reference) is itself the mark: it takes the tone, and no dot is added */
 .trend { font-size: .6em; vertical-align: .25em; margin-right: var(--sp-1); color: var(--tone, var(--muted)); }
 .toned:has(> .trend)::before, .toned:has(.trend)::before { content: none; }
@@ -380,7 +382,7 @@ a.figure.link:hover .k { color: var(--signal-ink); }
 .day.done .what, .day.moved .ran { color: var(--text); }
 @media (max-width: 760px) {
   .day .what.short { font-family: var(--display); font-size: var(--fs-heading); font-weight: var(--w-medium); font-variant-numeric: tabular-nums; }
-  .day.rest .what.short { color: var(--line-strong); }
+  .day.rest .what.short { color: var(--muted); }   /* the rest-day dot was 1.6:1; --muted is 5.2:1 */
   .day.today .dow { color: var(--signal-ink); }
 }
 /* ── revamp phase 3: Strip, Row, RaceLine, check-in summary, Today's day band ── */
@@ -579,6 +581,8 @@ details.help[open] .more { display: none; }
 .bullets.flush { margin: 0; }
 /* a heading that sits on its own line above its text (a source drawer's Rule / How the plan uses it / Evidence) */
 .src-head { display: block; }
+/* a number and its unit never part at a line break ("6.3 / km"); the text itself is unchanged */
+.nw { white-space: nowrap; }
 .t-small { font-size: var(--fs-small); }
 .t-label { font-size: var(--fs-label); }
 

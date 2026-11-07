@@ -28,8 +28,8 @@ const D = decls(css);
 const ALLOW = {
   // the table's sideways-scroll fade is an alpha mask, not a colour
   colour: [/mask-image: linear-gradient\(to right, #000/],
-  // Leaflet needs a real colour if the CSS variable can't be read; it is the signal's own value
-  tsxColour: [/RunMap\.tsx: .*"#2b3cff"/],
+  // Leaflet needs a real colour if the CSS variable can't be read (its value is logic, outside these passes)
+  tsxColour: [/RunMap\.tsx: .*"#ff4f00"/],
 };
 
 describe("slop guard: spacing", () => {

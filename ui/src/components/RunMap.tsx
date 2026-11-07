@@ -11,7 +11,7 @@ export function RunMap({ id }: { id: number }) {
     if (!el.current || !path?.length) return;
     const map = L.map(el.current, { zoomControl: true, attributionControl: true, scrollWheelZoom: false });
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap" }).addTo(map);
-    const line = L.polyline(path, { color: getComputedStyle(document.documentElement).getPropertyValue("--signal").trim() || "#2b3cff", weight: 3 }).addTo(map);
+    const line = L.polyline(path, { color: getComputedStyle(document.documentElement).getPropertyValue("--signal").trim() || "#ff4f00", weight: 3 }).addTo(map);
     map.fitBounds(line.getBounds(), { padding: [16, 16] });
     return () => { map.remove(); };
   }, [q.data]);
