@@ -76,12 +76,8 @@ async function runFull() {
   ok('objective pill rendered (Demo Marathon)', /Demo Marathon/.test(await page.locator('#objbar').innerText()));
   // 0.76.0 (§GUN) — the bar carries a live countdown to the shown race; the seeded objective has no
   // gun time, so the midnight fallback is what must tick.
-  // Wait for the text to CHANGE (up to 5 s) rather than sampling once 1.2 s later: a busy main thread on a
-  // loaded box can delay one tick past a fixed sleep, which read as "not ticking" on main and branches alike.
-  // A countdown that is really frozen still fails — it just fails after 5 s.
   const cd1 = await page.evaluate(() => document.querySelector('#objbar #objcount')?.textContent ?? null);
-  await page.waitForFunction(was => (document.querySelector('#objbar #objcount')?.textContent ?? null) !== was,
-                             cd1, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(1200);
   const cd2 = await page.evaluate(() => document.querySelector('#objbar #objcount')?.textContent ?? null);
   ok(`objective bar countdown present and ticking ("${cd1}" → "${cd2}")`,
      cd1 !== null && /· in /.test(cd1) && cd2 !== null && cd2 !== cd1);
