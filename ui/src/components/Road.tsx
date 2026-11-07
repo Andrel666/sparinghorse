@@ -2,6 +2,8 @@
 import type { PlanPage } from "../lib/api";
 import { dateShort, km } from "../lib/format";
 
+const num = (v: number) => v.toFixed(1);
+
 export function Road({ road, phases, today, tuneUps = [], onPick }: { road: PlanPage["road"]; phases: PlanPage["phases"]; today: string;
   tuneUps?: { label: string; date: string }[]; onPick: (start: string) => void }) {
   const max = Math.max(...road.map(w => w.km || 0), 1);
@@ -27,8 +29,11 @@ export function Road({ road, phases, today, tuneUps = [], onPick }: { road: Plan
                   onClick={() => onPick(w.start)}>
             <span className="planned" style={{ height: `${(w.km / max) * 100}%` }}>
               {/* the week's long run (and its race) as the bottom of the bar: the build's own number, inside the week */}
-              {w.race_km ? <span className="part race" style={{ height: `${(Math.min(w.race_km, w.km) / (w.km || 1)) * 100}%` }} /> : null}
-              {w.long ? <span className="part long" style={{ height: `${(Math.min(w.long, w.km) / (w.km || 1)) * 100}%` }} /> : null}
+              {w.race_km ? <span className="part race" style={{ height: `${(Math.min(w.race_km, w.km) / (w.km || 1)) * 100}%` }}>
+                <span className="lab">{num(w.race_km)}</span></span> : null}
+              {w.long ? <span className="part long" style={{ height: `${(Math.min(w.long, w.km) / (w.km || 1)) * 100}%` }}>
+                <span className="lab">{num(w.long)}</span></span> : null}
+              {w.km ? <span className="lab top" aria-hidden="true">{num(w.km)}</span> : null}
             </span>
             {w.ran > 0 && <span className="ran" style={{ height: `${(Math.min(w.ran, w.km || w.ran) / max) * 100}%` }} />}
           </button>
@@ -39,7 +44,9 @@ export function Road({ road, phases, today, tuneUps = [], onPick }: { road: Plan
         {phases.map(p => <span key={p.start} data-phase={p.key || undefined} style={{ flex: p.weeks }}>{p.name}</span>)}
       </div>
       {ti >= 0 && <div className="road-today" style={{ left: `${((ti + (tday + 0.5) / 7) / road.length) * 100}%` }}>▲ today</div>}
-      {road.some(w => w.long) && <div className="road-key" aria-hidden="true"><span><i />week</span><span><i className="long" />long run</span>
+      {(() => { const s = road.find(w => w.selected) ?? road[ti]; return s ? <div className="road-readout" aria-live="polite">
+        <b>Week of {dateShort(s.start)}</b> · {km(s.km)}{s.long ? ` · long run ${km(s.long)}` : ""}{s.race_km ? ` · race ${km(s.race_km)}` : ""}{s.ran ? ` · ${km(s.ran)} run` : ""}</div> : null; })()}
+      {road.some(w => w.long) && <div className="road-key" aria-hidden="true"><span><i />week km (on top)</span><span><i className="long" />long run km (inside)</span>
         {road.some(w => w.race_km) && <span><i className="race" />race</span>}</div>}
     </div>
   );
