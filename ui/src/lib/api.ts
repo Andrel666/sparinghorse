@@ -217,6 +217,36 @@ export const useRunsLog = (month?: string, range?: string | null) =>
   q<RunsLog>(["ui", "runslog", month, range], `/api/ui/runs?${new URLSearchParams(Object.entries({ month, range }).filter(([, v]) => v) as [string, string][])}`);
 export const useRunsMonth = (month?: string) => q<RunsMonth>(["ui", "runs", month], `/api/runs${month ? `?month=${month}` : ""}`);
 export const useEndurance = () => q<EndurancePage>(["ui", "endurance"], "/api/ui/endurance");
+/** A run's debrief (sh_ui_lenses.run_debrief): asked vs did, what it cost, what it did to the goal, what's next. */
+export interface DebriefCheck { key: string; label: string; asked: string; did: string; state: "ok" | "warn" | "bad"; word: string; detail?: string | null }
+export interface Debrief {
+  ok: true; id: number; date: string; headline: string; tone: "ok" | "warn" | "bad" | null;
+  asked: { kind: string; title: string; km: number; minutes: number | null; date: string; target: Target | null; strides: number; moved: boolean } | null;
+  did: { km: number; minutes: number | null; pace: string | null; hr: number | null; hr_max: number | null; trimp: number | null };
+  checks: DebriefCheck[];
+  cost: { trimp: number | null; tsb: number; rest_days: number; fatigue_up: number | null } | null;
+  goal: { race: string | null; target: string | null; settles: string | null;
+          fitness: { before: number; after: number; delta: number } | null;
+          endurance: { before: number; after: number; delta: number; label: string } | null;
+          prediction: { before: string; after: string; delta_s: number; delta: string } | null };
+  next: { date: string; dow: string; title: string; km: number | null; target: Target | null } | null;
+  changed: string[]; plan_reacted: boolean;
+}
+export const useDebrief = (id: number | null | undefined) => q<Debrief>(["ui", "debrief", id], `/api/ui/debrief/${id}`, id != null);
+
+/** Goal (sh_ui_lenses.goal_page): the contract line, ranked levers, what holds the next weeks, vs the original plan. */
+export interface Lever { key: string; rank: number; title: string; effect: string; gain: number | null; modelled: boolean; useful: boolean; link: string }
+export interface GoalPage {
+  ok: true;
+  contract: { race: string; date: string; type: string; target: string | null; days: number; predicted: string | null; lo: string | null;
+              hi: string | null; tone: "ok" | "warn" | "bad" | null; words: string | null; short: string | null; margin_s: number | null;
+              fitness_race: number | null } | null;
+  levers: Lever[];
+  holding: { key: string; name: string; weeks: number; of: number; text: string | null; first: string; link: string }[];
+  vs_plan: VsPlan | null;
+}
+export const useGoal = () => q<GoalPage>(["ui", "goal"], "/api/ui/goal");
+
 export const useRacePlan = (target?: string) => q<RacePlanT>(["ui", "race", target], `/api/race/plan${target ? `?target=${encodeURIComponent(target)}` : ""}`);
 export const useProfile = (id?: number) => q<Profile>(["ui", "profile", id], `/api/activity/${id}/profile`, !!id);
 export const useRunMap = (id?: number) => q<{ has_gps: boolean; path: [number, number][] }>(["ui", "map", id], `/api/activity/${id}/map`, !!id);

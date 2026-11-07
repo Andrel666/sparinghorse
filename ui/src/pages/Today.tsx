@@ -2,9 +2,9 @@
 // this week and why it looks like that, the latest run, the overnight signals. Every number is a door.
 // The check-in and each day's detail open in a drawer (?checkin=1, ?day=), so back closes them.
 import { useSearchParams, Link } from "react-router-dom";
-import { useToday, type TodayPage, type VsPlan, type Where } from "../lib/api";
-import { bpm, dateLong, dateShort, km, minutes, pace, reading, verdictTone } from "../lib/format";
-import { Card, PageHead, Pill, Strip } from "../components/ui";
+import { useToday, type TodayPage, type Where } from "../lib/api";
+import { dateLong, dateShort, km, minutes, pace, verdictTone } from "../lib/format";
+import { Card, PageHead, Strip } from "../components/ui";
 import { Week } from "../components/Week";
 import { Steps } from "../components/Steps";
 import { Checkin, checkinLine } from "../components/Checkin";
@@ -14,9 +14,9 @@ import { Banner } from "../components/feedback";
 import { Drawer } from "../components/layout";
 import { DayDetail, type DaySession } from "../components/Session";
 import { Spark } from "../components/charts";
+import { Debrief } from "../components/Debrief";
 
 const VERDICT_WORD = { green: "Good to go", amber: "Go easier", red: "Hold off" } as const;
-const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 const MARKER_TONE = { ok: "ok", watch: "warn" } as const;
 const DOW_LONG: Record<string, string> = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
 
@@ -117,30 +117,6 @@ function WhereYouAre({ w, endu }: { w: Where; endu?: TodayPage["endurance"] }) {
     </Card>);
 }
 
-/** You against the race's original plan: your number, the plan's, the gap in units and in percent. */
-function VsOriginal({ v }: { v: VsPlan }) {
-  type It = VsPlan["items"][number];
-  const num = (x: number | null, u: It["unit"]) => (x == null ? "—" : u === "km" ? km(x) : reading(x));
-  // the glance cue: ▲ above the plan's number, ▼ below it (the figure's tone says whether that matters)
-  const arrow = (m: It) => m.diff == null || m.diff === 0 ? null
-    : <span aria-hidden="true" className="trend">{m.diff > 0 ? "▲" : "▼"}</span>;
-  const gap = (m: It) => {
-    if (m.diff == null) return m.note ?? m.word ?? undefined;
-    const sign = m.diff > 0 ? "+" : m.diff < 0 ? "−" : "±";
-    const pct = m.pct != null ? ` (${sign}${Math.abs(m.pct).toFixed(1)}%)` : "";
-    return `${sign}${num(Math.abs(m.diff), m.unit)}${pct} · ${m.word}`;
-  };
-  return (
-    <Card label="Vs. the original plan" span={12} lede={v.lede}
-          aside={<Link to="/plan?view=history" className="linkish t-small">History ›</Link>}>
-      <Strip items={v.items.map(m => ({
-        k: m.when && m.when !== "this week" ? `${m.label} · ${m.when}` : m.label,
-        v: <><span style={{ whiteSpace: "nowrap" }}>{arrow(m)}{num(m.actual, m.unit)}</span><small className="muted" style={{ whiteSpace: "nowrap" }}> vs {num(m.planned, m.unit)}</small></>,
-        s: gap(m), hint: m.note, tone: m.tone ?? undefined, to: m.link,
-      }))} />
-    </Card>);
-}
-
 function Why({ items }: { items: NonNullable<TodayPage["why"]> }) {
   return <ul className="why-list">{items.map(x => (
     <li key={x.key}><Link to={x.link} title={x.detail}>{x.text}<span className="muted"> ›</span></Link></li>))}</ul>;
@@ -160,21 +136,6 @@ function Recovery({ items }: { items: NonNullable<TodayPage["recovery"]> }) {
   </div>;
 }
 
-function LatestRun({ lr }: { lr: NonNullable<TodayPage["latest_run"]> }) {
-  return (
-    <Card label={`Latest run · ${dateShort(lr.date)}`} span={6} tone={verdictTone(lr.verdict)}>
-      <Strip items={[
-        { k: "Distance", v: km(lr.km), to: `/runs?id=${lr.id}` },
-        ...(lr.minutes != null ? [{ k: "Time", v: minutes(lr.minutes), to: `/runs?id=${lr.id}` }] : []),
-        { k: "Pace", v: pace(lr.pace), to: `/runs?id=${lr.id}` },
-        { k: "Heart rate", v: bpm(lr.hr), to: `/runs?id=${lr.id}` },
-      ]} />
-      {(lr.verdict_line || lr.verdict_text) && <Link to="/fitness#easy" style={{ textDecoration: "none", color: "inherit", alignSelf: "flex-start" }}>
-        <Pill tone={verdictTone(lr.verdict)} dot>{lr.verdict_line ?? cap(lr.verdict_text!)}</Pill></Link>}
-      {lr.cross_training && <span className="muted t-small">{lr.cross_training}</span>}
-    </Card>);
-}
-
 export function Today() {
   const [params, setParams] = useSearchParams();
   const day = params.get("day"), checkin = params.get("checkin") === "1";
@@ -187,21 +148,25 @@ export function Today() {
     const daySessions: DaySession[] = !day ? [] : inWeek ? (w!.sessions ?? []).filter(x => x.date === day) : (d.coming ?? []).filter(x => x.date === day);
     const dayInfo = inWeek ? w!.days.find(x => x.date === day) : undefined;
     const ranHere = (dayInfo?.runs ?? []).filter(run => !daySessions.some(s => s.activity_id === run.activity_id && !s.moved_to));
+    // the debrief of the latest run: above the day band on the day the run lands, once today's session is done
+    // or today is a rest day (the moment is "how did it go?"); below the week otherwise
+    const fresh = !!lr && lr.date === d.today && (d.session.done || ["rest", "none", "pre", "post"].includes(d.session.kind));
+    const debrief = lr && <Debrief id={lr.id} label={`Debrief · ${lr.date === d.today ? "today's run" : `latest run, ${dateShort(lr.date)}`}`} />;
     return (
       <div className="page">
         <PageHead title="Today">
           <span className="aside">{(d.dateline ?? dateLong(d.today)).split(" · ")[0]}</span>
         </PageHead>
         {r.halt && <Banner tone="bad"><b>Plan halted.</b> Clear it with your doctor before resuming.</Banner>}
+        {fresh && <div className="grid">{debrief}</div>}
         <section className={`dayband${verdictTn ? ` tone-${verdictTn}` : ""}`} aria-label="Today">
           <Hero d={d} onDay={setDay} />
           <Verdict d={d} onCheckin={() => setParam("checkin", "1")} />
         </section>
         <div className="grid">
           {d.where && <WhereYouAre w={d.where} endu={d.endurance} />}
-          {d.vs_plan && <VsOriginal v={d.vs_plan} />}
           {w && <Card label="This week" span={8}
-                      aside={<Link to="/plan" className="linkish t-small">Plan ›</Link>}>
+                      aside={<Link to="/road" className="linkish t-small">Road ›</Link>}>
             {w.km_done != null && <>
               <span className="num">{w.km_done} of {w.km} km · {w.runs_done} of {w.runs_planned} runs</span>
               <div className="meter" role="img" aria-label={`${w.km_done} of ${w.km} km run`}>
@@ -209,8 +174,9 @@ export function Today() {
             <Week days={w.days} phase={w.phase} onDay={w.sessions ? setDay : undefined} selected={day} today={d.today} />
           </Card>}
           {!!d.why?.length && <Card label="Why this week" span={4}><Why items={d.why} /></Card>}
-          {lr && <LatestRun lr={lr} />}
-          {d.recovery && <Card label="Recovery" span={6}><Recovery items={d.recovery} /></Card>}
+          {!fresh && debrief}
+          {lr?.cross_training && <p className="muted t-small span-12">{lr.cross_training}</p>}
+          {d.recovery && <Card id="recovery" label="Recovery" span={12}><Recovery items={d.recovery} /></Card>}
         </div>
         <Drawer title={day ? dateLong(day) : ""} open={!!day} onClose={() => setDay(null)}>
           <DayDetail sessions={daySessions} ranHere={ranHere} movedFrom={dayInfo?.moved_from} onRun={() => setDay(null)} />

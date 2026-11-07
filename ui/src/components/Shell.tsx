@@ -1,15 +1,17 @@
-// The app frame: sidebar on desktop, tab bar + More sheet on phones — both built from PAGES.
+// The app frame: the four lenses (Now, Road, Goal, Log) as the top bar on desktop and the tab bar on phones, Ask on
+// every page, and You (Coach, Music, Settings) at the bar's right end / the phone's fifth tab. All built from PAGES.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate, useNavigationType, useSearchParams, type Location } from "react-router-dom";
 import { Drawer } from "./layout";
 import { Chat } from "./Chat";
 import { BackCtx, type Back } from "../lib/trail";
-import { PAGES } from "../lib/pages";
+import { PAGES, lensOf } from "../lib/pages";
 import { Icon } from "./Icon";
 import { useShell } from "../lib/api";
 import { TopBar } from "./Frame";
 
-const navCls = ({ isActive }: { isActive: boolean }) => "nav-link" + (isActive ? " active" : "");
+// a lens is lit on its own path and on the deeper pages that belong to it (Fitness and Body light Goal)
+const lit = (path: string, here: string) => lensOf(here) === path;
 
 const ROOT = { root: true };
 
@@ -38,10 +40,9 @@ export function Shell({ children }: { children: ReactNode }) {
   const [more, setMore] = useState(false);
   const shell = useShell();
   const loc = useLocation();
-  const nav = PAGES.filter(p => !p.hidden);
-  const top = nav.filter(p => !p.bottom), bottom = nav.filter(p => p.bottom);
-  const tabs = nav.filter(p => p.tab), rest = nav.filter(p => !p.tab);
-  const inMore = rest.some(p => p.path === loc.pathname);
+  const lenses = PAGES.filter(p => p.tab), you = PAGES.filter(p => p.you);
+  const inYou = you.some(p => p.path === loc.pathname);
+  const cls = (base: string, path: string) => base + (lit(path, loc.pathname) ? " active" : "");
   const back = useTrail(loc), go = useNavigate();
   const [params, setParams] = useSearchParams();
   const asking = params.get("ask") === "1";            // the Ask drawer: the coach chat over any page
@@ -50,12 +51,15 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="shell">
       <header className="nav" aria-label="Sparing Horse">
         <div className="nav-brand">Sparing Horse</div>
-        <nav className="nav-links" aria-label="Pages">
-          {[...top, ...bottom].map(p => <NavLink key={p.path} to={p.path} end className={navCls} state={ROOT}>{p.label}</NavLink>)}
+        <nav className="nav-links" aria-label="Lenses">
+          {lenses.map(p => <NavLink key={p.path} to={p.path} end className={() => cls("nav-link", p.path)} state={ROOT}>{p.label}</NavLink>)}
         </nav>
         <div className="nav-spacer" />
         {loc.pathname !== "/coach" && <button type="button" className="btn ask-btn" aria-expanded={asking} onClick={() => setAsk(true)}>
           <Icon name="chat" />Ask</button>}
+        <nav className="nav-links nav-you" aria-label="You">
+          {you.map(p => <NavLink key={p.path} to={p.path} end className={() => cls("nav-link", p.path)} state={ROOT}>{p.label}</NavLink>)}
+        </nav>
         {shell.data && <TopBar s={shell.data} />}
       </header>
       <main className="main" onClick={() => more && setMore(false)}>
@@ -66,14 +70,14 @@ export function Shell({ children }: { children: ReactNode }) {
         <Link to="/coach" className="linkish" onClick={() => setAsk(false)} state={{ root: true }}>Open the coach page ›</Link>
       </Drawer>
       {more && <div className="more-sheet" role="menu">
-        {rest.map(p => <NavLink key={p.path} to={p.path} className={navCls} state={ROOT} onClick={() => setMore(false)}>
+        {you.map(p => <NavLink key={p.path} to={p.path} className={() => cls("nav-link", p.path)} state={ROOT} onClick={() => setMore(false)}>
           <Icon name={p.icon} />{p.label}</NavLink>)}
       </div>}
       <nav className="tabbar" aria-label="Pages">
-        {tabs.map(p => <NavLink key={p.path} to={p.path} end state={ROOT} className={({ isActive }) => "tab" + (isActive ? " active" : "")}>
+        {lenses.map(p => <NavLink key={p.path} to={p.path} end state={ROOT} className={() => cls("tab", p.path)}>
           <Icon name={p.icon} />{p.label}</NavLink>)}
-        <button type="button" className={"tab" + (inMore || more ? " active" : "")} aria-expanded={more}
-                onClick={() => setMore(m => !m)}><Icon name="more" />More</button>
+        <button type="button" className={"tab" + (inYou || more ? " active" : "")} aria-expanded={more}
+                onClick={() => setMore(m => !m)}><Icon name="more" />You</button>
       </nav>
     </div>
   );

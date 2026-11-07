@@ -324,7 +324,7 @@ def today_page(S, db):
 # §VSO — Today's "vs. the original plan": the engine's `vs_original`, worded for the card. Each figure
 # opens where its number is drawn; the long run opens the plan history, where the original road is.
 VSO_LABEL = {"ctl": "Fitness", "vo2": "VO₂max", "long": "Long run"}
-VSO_LINK = {"ctl": "/fitness#fitness-fatigue", "vo2": "/fitness", "long": "/plan?view=history"}
+VSO_LINK = {"ctl": "/fitness#fitness-fatigue", "vo2": "/fitness", "long": "/goal#history"}
 VSO_TONE = {"ahead": "ok", "behind": "warn"}
 VSO_WORD = {"ahead": "ahead of plan", "behind": "behind plan", "level": "on plan", "upcoming": "still to come"}
 
@@ -356,7 +356,7 @@ def today_vs_plan(S, db, today):
 
 # §ENDU — Runalyze's marathon shape (or the race's share of it), now and along the plan. Shown only:
 # the plan is not built to reach it. One summary for Today, the whole road for Plan → Race day.
-ENDU_LINK = "/plan?view=race#endurance"
+ENDU_LINK = "/goal#endurance"
 
 
 def _endu_day(iso):

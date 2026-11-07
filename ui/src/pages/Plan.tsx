@@ -16,12 +16,10 @@ import { Banner, Help } from "../components/feedback";
 import { LimitSource, basisLabel, hasSource } from "../components/LimitSource";
 import { RacesDrawer, RacesTile, type Diff } from "./plan/Races";
 import { AdjustmentBanner, TellTheHorse } from "./plan/Adjust";
-import { DriftView } from "./plan/Drift";
-import { Endurance } from "./plan/Endurance";
 import { Query } from "./Query";
 
-type View = "week" | "month" | "race" | "history";
-const VIEWS: [View, string][] = [["week", "Week"], ["month", "Month"], ["race", "Race day"], ["history", "History"]];
+type View = "week" | "month" | "race";
+const VIEWS: [View, string][] = [["week", "Week"], ["month", "Month"], ["race", "Race day"]];   // History lives on Goal now
 const MARK = { extra: "+", done: "✓", missed: "✕", today: "•", ahead: "○" } as const;
 const RACE_KEY = "sh-ui-race";
 // calendar dates in UTC arithmetic, so no local time zone can shift a day
@@ -151,7 +149,6 @@ function RaceView() {
         </form>
         <ul className="bullets flush t-small">{r.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
       </Card>
-      <Endurance />
     </div>)}</Query>;
 }
 
@@ -204,7 +201,7 @@ export function Plan() {
         ...(p.race ? [{ k: `${p.race.label} · ${dateShort(p.race.date)}`, v: `${daysTo} days`, s: `${r0?.weeks ?? "?"} weeks`, onClick: () => setParam("races", "1") }] : []),
         ...(p.race ? [{ k: "Predicted", v: p.race.prediction ?? "?", tone: p.race.tone ?? undefined,
                         s: [p.race.target && `goal ${p.race.target}`, p.race.call].filter(Boolean).join(" · "), onClick: () => setView("race") }] : []),
-        { k: "Fitness on race day", v: r0?.proj_ctl != null ? `${Math.round(r0.proj_ctl)}` : "?", s: "CTL", onClick: () => setView("history") },
+        { k: "Fitness on race day", v: r0?.proj_ctl != null ? `${Math.round(r0.proj_ctl)}` : "?", s: "CTL", to: "/goal#history" },
       ]} />
       <div className="grid">
         <Card span={8} id="road" label={p.race ? `The road to ${p.race.label} · ${dateShort(p.race.date)}` : "The road"} lede={p.road_headline ?? undefined}>
@@ -220,7 +217,6 @@ export function Plan() {
         {view === "week" && <WeekView p={p} onWeek={w => { setDaySel(undefined); setParam("week", w); }} onDay={openDay} onLimit={setLimit} onDiff={setDiff} />}
         {view === "month" && <MonthView month={params.get("month") || undefined} onMonth={m => setParam("month", m)} onDay={openDay} />}
         {view === "race" && <RaceView />}
-        {view === "history" && <DriftView race={viewRace} />}
       </div>
       <p className="meta-line">
         {rebuilt ? `Rebuilt ${rebuilt.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}, ${rebuilt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Not built yet"}
