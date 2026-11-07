@@ -71,7 +71,7 @@ export function Lines({ series, height = 220, fmt = (v: number) => v.toFixed(1),
       {at && at.length > 0 && <div className="readout">{at[0].p.date} · {at.map(({ s, p }) => `${s.label} ${s.label === "Load ratio" ? p.v.toFixed(2) : fmt(p.v)}`).join(" · ")}</div>}
       <figcaption className="row muted" style={{ justifyContent: "space-between", fontSize: "var(--fs-label)" }}>
         <span>{numDay(lo)}</span>
-        <span className="row">{series.filter(s => !s.hidden).map(s => <span key={s.label} className="row" style={{ gap: 6 }}>
+        <span className="row">{series.filter(s => !s.hidden).map(s => <span key={s.label} className="row" style={{ gap: "var(--sp-2)" }}>
           <span style={{ width: 14, height: 0, borderTop: `2px ${s.dashed ? "dashed" : "solid"} ${s.color}`, display: "inline-block" }} />
           {s.label}</span>)}</span>
         <span>{numDay(hi)}</span>
@@ -90,8 +90,8 @@ export function Bars({ items, height = 140, unit = "", scroll = false }:
   const ticks = <div className="yticks bars" aria-hidden="true" style={{ height }}>
     <span style={{ top: 0 }}>{tick(max)}{unit ? ` ${unit}` : ""}</span><span style={{ top: "50%" }}>{tick(max / 2)}</span></div>;
   const grid = (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${items.length}, ${scroll ? "10px" : "minmax(0, 1fr)"})`, gap: 3,
-                  alignItems: "end", height, minWidth: scroll ? items.length * 13 : undefined }}
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${items.length}, ${scroll ? "10px" : "minmax(0, 1fr)"})`, gap: 4,
+                  alignItems: "end", height, minWidth: scroll ? items.length * 14 : undefined }}
          role="img" aria-label={`${items.length} weeks, latest ${items.at(-1)?.v} ${unit}`}>
       {items.map((it, i) => (
         <div key={it.label} title={`${it.label}: ${it.v} ${unit}`}
@@ -99,7 +99,7 @@ export function Bars({ items, height = 140, unit = "", scroll = false }:
                       background: i === items.length - 1 ? "var(--signal)" : "var(--ph-base)" }} />
       ))}
     </div>);
-  return <div className="chart" style={{ position: "relative" }}>{ticks}
+  return <div className="chart bars-chart" style={{ position: "relative" }}>{ticks}
     {scroll ? <div ref={ref} style={{ overflowX: "auto", paddingBottom: 4 }}>{grid}</div> : grid}</div>;
 }
 
@@ -131,11 +131,11 @@ export function Scatter({ dots, height = 200, xLabel, yLabel, refs = [], fit, xF
 export function Gauge({ value, band, max = 2 }: { value: number; band: [number, number]; max?: number }) {
   const pct = (v: number) => `${Math.min(100, Math.max(0, (v / max) * 100))}%`;
   return (
-    <div style={{ position: "relative", height: 14, borderRadius: 7, background: "var(--surface-2)", border: "1px solid var(--line)" }}
+    <div style={{ position: "relative", height: 16, borderRadius: "var(--radius)", background: "var(--surface-2)", border: "1px solid var(--line)" }}
          role="img" aria-label={`${value.toFixed(2)} against a band of ${band[0]} to ${band[1]}`}>
       <div style={{ position: "absolute", top: 0, bottom: 0, left: pct(band[0]), width: `calc(${pct(band[1])} - ${pct(band[0])})`,
                     background: "var(--ok-soft)", borderLeft: "1px solid var(--ok)", borderRight: "1px solid var(--ok)" }} />
-      <div style={{ position: "absolute", top: -4, bottom: -4, width: 4, borderRadius: 2, left: `calc(${pct(value)} - 2px)`,
+      <div style={{ position: "absolute", top: -4, bottom: -4, width: 4, borderRadius: "var(--radius)", left: `calc(${pct(value)} - 2px)`,
                     background: value > band[1] ? "var(--bad)" : "var(--text)" }} />
     </div>
   );

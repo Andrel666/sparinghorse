@@ -26,7 +26,7 @@ export function Coach() {
         <Card span={8}><Chat /></Card>
         <Card span={4} label="What the coach sees" tier="group">
           <div className="sees"><Sees /></div>
-          <Link to="/plan?tell=1" className="linkish">Change the plan instead: tell the horse ›</Link>
+          <Link to="/plan?tell=1" className="linkish">Tell the horse ›</Link>
         </Card>
       </div>
     </div>);

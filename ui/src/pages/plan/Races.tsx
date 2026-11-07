@@ -121,7 +121,7 @@ export function RacesTile({ rows, selected, onSelect, onEdit }: { rows: RaceRow[
       {rows.map(r => {
         const g = r.finish ? goalSec(r.target, r.finish.s) : null, chain = rows.length > 1;
         return (
-          <div key={r.date} className="list" style={{ gap: 6 }}>
+          <div key={r.date} className="list" style={{ gap: "var(--sp-2)" }}>
             {chain ? <button type="button" className={`btn${selected === r.date ? " primary" : ""}`} aria-pressed={selected === r.date} onClick={() => onSelect(r.date)}>
               {r.label} · {dateShort(r.date)} · {r.weeks} w{r.target ? ` · goal ${r.target}` : ""}</button>
               : <span><b>{r.label}</b> <span className="muted">{dateShort(r.date)} · {r.weeks} weeks{r.target ? ` · goal ${r.target}` : ""}</span></span>}

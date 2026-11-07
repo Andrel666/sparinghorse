@@ -123,7 +123,7 @@ function VsOriginal({ v }: { v: VsPlan }) {
   const num = (x: number | null, u: It["unit"]) => (x == null ? "—" : u === "km" ? km(x) : reading(x));
   // the glance cue: ▲ above the plan's number, ▼ below it (the figure's tone says whether that matters)
   const arrow = (m: It) => m.diff == null || m.diff === 0 ? null
-    : <span aria-hidden="true" style={{ fontSize: "0.6em", verticalAlign: "0.25em", marginRight: "0.2em" }}>{m.diff > 0 ? "▲" : "▼"}</span>;
+    : <span aria-hidden="true" className="trend">{m.diff > 0 ? "▲" : "▼"}</span>;
   const gap = (m: It) => {
     if (m.diff == null) return m.note ?? m.word ?? undefined;
     const sign = m.diff > 0 ? "+" : m.diff < 0 ? "−" : "±";

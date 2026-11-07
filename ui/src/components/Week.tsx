@@ -23,6 +23,9 @@ function label(d: Day) {
     ran.length ? `ran ${runKm.toFixed(1)} km${d.moved_from ? `, moved from ${d.moved_from}` : ""}` : ""].filter(Boolean).join(": ");
 }
 
+/** Presentation only: wraps each "number unit" in a no-wrap span so a narrow cell never breaks "12.5 / km". */
+const keepUnits = (t: string) => t.split(/(\d+(?:\.\d+)? (?:km|bpm))/).map((x, i) => i % 2 ? <span key={i} className="nw">{x}</span> : x);
+
 /** `onDay` makes each day a button that opens its detail (Today, Plan). */
 export function Week({ days, phase, onDay, selected, today }: { days: Day[]; phase?: string | null; onDay?: (date: string) => void;
   selected?: string | null; today?: string }) {
@@ -44,14 +47,14 @@ export function Week({ days, phase, onDay, selected, today }: { days: Day[]; pha
             <span className="dow"><span className="full">{d.dow} </span><span className="short">{d.dow[0]} </span>{Number(d.date.slice(8))}</span>
             {/* desktop: words */}
             <span className="what full">
-              {plan ? <span className={moved || d.status === "missed" ? "struck" : undefined}>{mark && !moved && !(hasRun && !legacy && d.status !== "done") ? `${mark} ` : ""}{plan}</span>
+              {plan ? <span className={moved || d.status === "missed" ? "struck" : undefined}>{mark && !moved && !(hasRun && !legacy && d.status !== "done") ? `${mark} ` : ""}{keepUnits(plan)}</span>
                 : !hasRun && <span>Rest</span>}
             </span>
             {moved && <span className="muted detail full">moved to {d.moved_dow}</span>}
             {hasRun && !legacy && ran.map((r, i) => <span key={i} className="ran detail full num">
               {(d.kind === "rest" || moved || r.unplanned) && <b>{r.unplanned ? "+ " : "✓ "}{SHORT[r.kind] ?? "Run"} </b>}
-              {r.km} km{r.hr ? ` · ${r.hr} bpm` : ""}</span>)}
-            {legacy && d.actual && <span className="muted num detail full">{d.actual.km} km{d.actual.hr ? ` · ${d.actual.hr} bpm` : ""}</span>}
+              <span className="nw">{r.km} km{r.hr ? " ·" : ""}</span>{r.hr ? <> <span className="nw">{r.hr} bpm</span></> : ""}</span>)}
+            {legacy && d.actual && <span className="muted num detail full"><span className="nw">{d.actual.km} km{d.actual.hr ? " ·" : ""}</span>{d.actual.hr ? <> <span className="nw">{d.actual.hr} bpm</span></> : ""}</span>}
             {d.moved_from && <span className="muted detail full">↷ from {d.moved_from}</span>}
             {/* phone: one number and a mark */}
             <span className="what short num">{big != null ? <>{mark ? `${mark} ` : ""}{Math.round(big * 10) / 10}</> : moved ? "↷" : "·"}</span>

@@ -1,4 +1,5 @@
-// Line icons, one set for the whole app (24px grid, 1.8 stroke).
+// Line icons, one set for the whole app: a 24px grid, ONE stroke (1.5), round caps. Nav icons draw at 20px on the
+// phone, everything else at 16px (.icon-inline). Never an emoji in place of one of these (slop.test.ts).
 import type { IconName } from "../lib/pages";
 
 const PATHS: Record<IconName, string> = {
@@ -19,13 +20,15 @@ const PATHS: Record<IconName, string> = {
   theme: "M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18zM12 3v18",
   alert: "M12 3l9.5 17h-19zM12 10v4M12 17h.01",
   chevron: "M9 6l6 6l-6 6",
+  download: "M12 4v11M7 10l5 5l5-5M5 20h14",
 };
 // the small glyphs that sit inside buttons and lines (16px) rather than the nav (24px)
-const INLINE: ReadonlySet<IconName> = new Set(["close", "trash", "hide", "note", "chat", "theme", "alert", "chevron"]);
+const INLINE: ReadonlySet<IconName> = new Set(["close", "trash", "hide", "note", "chat", "theme", "alert", "chevron", "download"]);
+const STROKE = 1.5;                 // the one stroke; "more" is three dots drawn as strokes, so it needs a heavier pen
 
 export function Icon({ name }: { name: IconName }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={name === "more" ? 3 : INLINE.has(name) ? 2 : 1.8}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={name === "more" ? 3 : STROKE}
          className={INLINE.has(name) ? "icon-inline" : undefined}
          strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={PATHS[name]} />

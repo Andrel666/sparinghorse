@@ -38,7 +38,7 @@ export function Checkin({ initial, onSaved }: { initial: C | null; onSaved?: () 
   const [note, showNote] = useState(!!c.note);
   const m = useMutation({ mutationFn: postCheckin, onSuccess: () => { qc.invalidateQueries({ queryKey: ["ui"] }); onSaved?.(); } });
   return (
-    <form className="list" style={{ gap: 10 }} onSubmit={e => { e.preventDefault(); m.mutate(c); }}>
+    <form className="list" style={{ gap: "var(--sp-3)" }} onSubmit={e => { e.preventDefault(); m.mutate(c); }}>
       <Choice label="Legs" value={c.energy} options={LEGS} onChange={energy => set({ ...c, energy })} />
       <Choice label="Sleep" value={c.sleep} options={SLEEP} onChange={sleep => set({ ...c, sleep })} />
       {note ? <input className="input" aria-label="Note" placeholder="e.g. calf a bit tight" value={c.note} autoFocus

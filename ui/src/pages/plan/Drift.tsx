@@ -104,7 +104,7 @@ export function DriftView({ race }: { race?: string }) {
                      { pts: (d.finish_drift || []).map(f => ({ date: f.date, v: f.hi })), color: "var(--muted)", label: "Slow end", dashed: true }]} />}
         </> : cq.isPending ? <Card><span className="muted">Building the comparison…</span></Card>
           : !cf ? <Card><span className="muted">The comparison needs a race set.</span></Card> : <>
-          <Block title="Cumulative distance" note={`${NAME[cf.vs]} is your road now; ${NAME[cf.regime]} is ${cf.regime === "assertive" ? "what earning it unlocks" : "the floor if the gate re-closes"}.`}
+          <Block title="Cumulative distance" note={`${NAME[cf.vs]} is your road now; ${NAME[cf.regime]} is ${cf.regime === "assertive" ? "what earning it allows" : "the floor if the gate re-closes"}.`}
             fmt={v => `${dist(v).toFixed(0)} ${unit()}`}
             series={[{ pts: curDist.filter(x => x.kind === "actual").map(x => ({ date: x.date, v: x.cum })), color: "var(--text)", label: "Run" },
                      { pts: curDist.map(x => ({ date: x.date, v: x.cum })), color: "var(--text)", label: `${NAME[cf.vs]}: now` },
