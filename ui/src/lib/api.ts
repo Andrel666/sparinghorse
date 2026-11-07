@@ -139,7 +139,7 @@ export interface PlanPage {
   races: import("../pages/plan/Races").RaceRow[]; tune_ups: { label: string; date: string }[];
   race: { label: string; date: string; type: string; target: string | null; tone?: "ok" | "warn" | "bad" | null; call?: string | null; prediction: string | null;
           lo: string | null; hi: string | null; verdict: string | null } | null;
-  road: { start: string; phase: string | null; km: number; ran: number; current: boolean; selected: boolean; race: boolean; frozen: boolean;
+  road: { start: string; phase: string | null; km: number; long?: number | null; race_km?: number | null; ran: number; current: boolean; selected: boolean; race: boolean; frozen: boolean;
           flags: { label: string; date: string; day: number }[] }[];
   phases: { key: string | null; name: string | null; start: string; weeks: number }[]; road_headline?: string | null;
   week: { start: string; end: string; phase: string | null; phase_name: string | null; n: number | null; km: number;
@@ -163,7 +163,7 @@ export interface Marker { key: string; label: string; unit: string; value: numbe
   good: string | null; state: "ok" | "watch" | null; stale: boolean; delta: number | null; group: string; stale_days: number | null;
   n: number; first: string; series: { date: string; v: number }[]; recent: { date: string; v: number }[] }
 export interface BodyPage { ok: true; markers: Marker[]; stopped: string | null; add: { key: string; label: string }[]; injuries: { start: string; end: string | null; label: string | null }[] }
-export interface Field { key: string; label: string; help: string; help_short?: string; kind: string; choices: { v: string; t: string }[];
+export interface Field { key: string; label: string; help: string; help_short?: string; kind: string; min?: number; max?: number; unit?: string; choices: { v: string; t: string }[];
   value: string; source: string }
 export interface SettingsPage { ok: true; groups: { name: string; fields: Field[] }[] }
 

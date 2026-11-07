@@ -1014,6 +1014,10 @@ def week_flags(S, w):
         add("long run held (+10 %)", "This week's long run was held to +10 % over your longest of the last 4 weeks; the freed volume went to easy runs.")
     if w.get("long_max_capped"):
         add("long run at its limit", "Held to 35 km or 3 h 30 min at its planned pace, whichever comes first.")
+    lf = next((x.get("long_first_km") for x in w.get("sessions") or [] if x.get("long_first_km")), None)
+    if lf:
+        add(f"long run +{lf:g} km from the easy runs", "Long run first: the week was held by its weekly limits, so the "
+            "long run rose toward its +10% step and the km came out of this week's easy runs.")
     if w.get("long_held"):
         add("long run kept", f"Kept at its ladder rung ({w['long_held'].get('rung_km')} km): your easy days ran over the sheet.")
     if w.get("run_moved"):
@@ -1113,6 +1117,30 @@ def _session_line(S, x, tiso):
                     if len(x.get("runs") or []) > 1 else []}
 
 
+LONG_KINDS = ("long", "long_mp")
+
+
+def road_long_km(sessions):
+    """A week's long run on the road: its long session's planned km (the race is not a long run)."""
+    ks = [x.get("km") or 0 for x in sessions or [] if x.get("kind") in LONG_KINDS and not x.get("race")]
+    return round(max(ks), 1) if ks and max(ks) > 0 else None
+
+
+def road_headline(S, road):
+    """'Peak 39.8 km · long run 19.0 km · week of Jan 31': the biggest week and the longest run, worded
+    once when they share a week and each with its own week when they don't."""
+    wk = lambda r: f"{S._date(r['start']).strftime('%b')} {S._date(r['start']).day}"
+    pk = max(road, key=lambda r: r.get("km") or 0, default=None)
+    if not (pk and pk.get("km")):
+        return None
+    lg = max(road, key=lambda r: r.get("long") or 0)
+    if not lg.get("long"):
+        return f"Peak {pk['km']:g} km · week of {wk(pk)}"
+    if lg is pk:
+        return f"Peak {pk['km']:g} km · long run {lg['long']:.1f} km · week of {wk(pk)}"
+    return f"Peak {pk['km']:g} km, week of {wk(pk)} · long run {lg['long']:.1f} km, week of {wk(lg)}"
+
+
 def plan_page(S, db, week=None, day=None):
     log = S.block_log(db)
     if not log:
@@ -1131,7 +1159,11 @@ def plan_page(S, db, week=None, day=None):
         ran = sum((x.get("actual") or {}).get("km") or 0 for x in w["sessions"])
         road.append({"start": w["start"], "phase": phase_key(w.get("pk")), "km": w.get("km"), "ran": round(ran, 1),
                      "current": w is cur, "selected": w is sel,
-                     "race": any(x.get("race") for x in w["sessions"])})
+                     "race": any(x.get("race") for x in w["sessions"]),
+                     # the week's long run and its race, drawn inside the bar (the long run is the number a
+                     # build is judged by; a race week's bar is tall because of the race, not the training)
+                     "long": road_long_km(w["sessions"]),
+                     "race_km": round(sum(x.get("km") or 0 for x in w["sessions"] if x.get("race")), 1) or None})
     phases = []
     for r in road:
         if phases and phases[-1]["key"] == r["phase"]:
@@ -1170,8 +1202,7 @@ def plan_page(S, db, week=None, day=None):
                      "lo": (ft.get("band") or {}).get("lo_hms"), "hi": (ft.get("band") or {}).get("hi_hms"),
                      "verdict": (plan.get("feasibility") or {}).get("verdict")} if obj else None,
             "road": road, "phases": phases,
-            "road_headline": (lambda pk: f"Peak {pk['km']:g} km · week of {S._date(pk['start']).strftime('%b')} {S._date(pk['start']).day}"
-                              if pk and pk.get("km") else None)(max(road, key=lambda r: r.get("km") or 0, default=None)),
+            "road_headline": road_headline(S, road),
             "week": {"start": sel["start"], "end": end(sel), "phase": phase_key(sel.get("pk")),
                      "phase_name": phase_name(sel.get("pk")), "n": sel.get("wk"), "km": sel.get("km"),
                      "intent": sel.get("intent"), "current": sel is cur,
@@ -1412,22 +1443,42 @@ def help_short(text):
     t = re.sub(r"\s+", " ", text or "").strip()
     for m in re.finditer(r"[.!?](\s|$)", t):
         head = t[:m.start() + 1]
-        if not re.search(r"(\be\.g|\bi\.e|\betc|\bvs|\bapprox|\bmin|\bmax|\d)\.$", head):
+        if not re.search(r"(\be\.g|\bi\.e|\betc|\bvs|\bapprox|\bmin|\bmax)\.$", head):
             return head
     return t
 
 
 # ── Settings ──────────────────────────────────────────────────────────────────────────────────
 # Typed inputs for the settings that have a fixed set of answers (Classic shows free-text boxes).
+DAYS7 = [("mon", "Monday"), ("tue", "Tuesday"), ("wed", "Wednesday"), ("thu", "Thursday"), ("fri", "Friday"),
+         ("sat", "Saturday"), ("sun", "Sunday")]
+
+
+def _tz_choices():
+    """Every Area/City IANA zone, sorted (the legacy and Etc/ aliases left out)."""
+    try:
+        from zoneinfo import available_timezones
+        zs = sorted(z for z in available_timezones() if "/" in z and not z.startswith(("Etc/", "SystemV/", "US/")))
+    except Exception:
+        zs = []
+    return [("", "Server default")] + [(z, z.replace("_", " ")) for z in zs]
+
+
 CHOICES = {
     "units": [("km", "Kilometres"), ("mi", "Miles")],
     "week_start": [("", "Monday (default)"), ("sun", "Sunday"), ("sat", "Saturday")],
-    "long_run_day": [("", "Default (last day of the week)")] + [(d, d.capitalize()) for d in
-                     ("mon", "tue", "wed", "thu", "fri", "sat", "sun")],
+    "long_run_day": [("", "Default (last day of the week)")] + DAYS7,
     "max_runs_per_week": [("", "No cap")] + [(str(n), str(n)) for n in (3, 4, 5, 6)],
+    "taper_weeks": [("", "Automatic (3 on a road of 16+ weeks, else 2)"), ("2", "2 weeks"), ("3", "3 weeks")],
+    "tz": _tz_choices(),
 }
+# fields with a typed control other than a dropdown: whole numbers, and the ranked rest days
+NUMBERS = {"athlete_age": (10, 100, "years"), "manual_lthr": (100, 220, "bpm")}   # the validators' own bounds
+RANKED = {"rest_day_rank": DAYS7}
+
+
 SETTING_GROUPS = [("Athlete", ["athlete_context", "athlete_age", "manual_lthr", "injury_history"]),
-                  ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "taper_weeks"]),
+                  ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "long_run_first", "taper_weeks"]),
                   ("Display", ["units", "tz"]),
                   ("AI features", ["ai_narration", "ai_parsing", "ai_judgment", "ai_coach"]),
                   ("Links", ["house_url", "house_name", "private_url"])]
@@ -1439,13 +1490,21 @@ def settings_page(S, db):
         v, src = S._resolve_setting(db, spec)
         by[spec["key"]] = {"key": spec["key"], "label": spec["label"], "help": spec.get("help", ""),
                            "help_short": help_short(spec.get("help", "")),
-                           "kind": "choice" if spec["key"] in CHOICES else spec.get("kind", "line"),
-                           "choices": [{"v": a, "t": b} for a, b in CHOICES.get(spec["key"], [])],
+                           "kind": ("choice" if spec["key"] in CHOICES else "number" if spec["key"] in NUMBERS
+                                    else "rank" if spec["key"] in RANKED else spec.get("kind", "line")),
+                           "choices": [{"v": a, "t": b} for a, b in (CHOICES.get(spec["key"]) or RANKED.get(spec["key"]) or [])],
+                           **({"min": NUMBERS[spec["key"]][0], "max": NUMBERS[spec["key"]][1], "unit": NUMBERS[spec["key"]][2]}
+                              if spec["key"] in NUMBERS else {}),
                            "value": v or "", "source": src}
     for k, f in by.items():                          # a stored "Sunday" selects the "sun" choice
         vals = [c["v"] for c in f["choices"]]
-        if vals and f["value"] not in vals:
+        if f["kind"] == "rank":                      # "Fri, mon" → "fri,mon": the ranking in the choices' keys
+            f["value"] = ",".join(v for w in re.split(r"[,\s]+", f["value"].strip().lower()) if w
+                                  for v in vals if w.startswith(v))
+        elif vals and f["value"] not in vals:
             f["value"] = next((v for v in vals if v and f["value"].strip().lower().startswith(v)), f["value"])
+            if f["value"] not in vals and f["value"]:  # a stored value the list does not carry stays selectable
+                f["choices"].insert(1, {"v": f["value"], "t": f["value"]})
     groups = [{"name": n, "fields": [by[k] for k in ks if k in by]} for n, ks in SETTING_GROUPS]
     known = {k for _, ks in SETTING_GROUPS for k in ks}
     groups.append({"name": "Other", "fields": [f for k, f in by.items() if k not in known]})   # any key added later

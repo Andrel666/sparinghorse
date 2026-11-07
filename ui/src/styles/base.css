@@ -225,7 +225,17 @@ button.month-day { cursor: pointer; } button.month-day:hover { background: var(-
 .road-wrap { display: flex; flex-direction: column; gap: 4px; position: relative; }
 .road { display: flex; align-items: flex-end; gap: 2px; height: 160px; border-bottom: 1px solid var(--rule); }
 .road-bar { flex: 1; height: 100%; position: relative; border: 0; background: none; padding: 0; cursor: pointer; display: flex; align-items: flex-end; }
-.road-bar .planned { width: 100%; background: var(--bar, var(--ph-base)); }
+.road-bar .planned { width: 100%; background: var(--bar, var(--ph-base)); display: flex; flex-direction: column-reverse; }
+/* inside the bar: the long run (ink over the bar's own colour) and the race (signal) */
+.road-bar .part { display: block; width: 100%; box-shadow: inset 0 2px 0 var(--bg); }   /* a 2px cut in paper: the split reads on any phase colour */
+.road-bar .part.long { background: color-mix(in srgb, var(--text) 30%, var(--bar, var(--ph-base))); }
+.road-bar .part.race { background: var(--signal); }
+.road-bar.current .part.long { background: color-mix(in srgb, var(--on-accent) 40%, var(--signal)); }
+.road-key { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); font-size: var(--fs-label); color: var(--muted); }
+.road-key > span { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.road-key i { display: inline-block; width: var(--mark); height: var(--mark); background: var(--ph-base); }
+.road-key i.long { background: color-mix(in srgb, var(--text) 30%, var(--ph-base)); }
+.road-key i.race { background: var(--signal); }
 .road-bar:hover .planned { filter: brightness(.9); }
 .road-bar .ran { position: absolute; left: 30%; right: 30%; bottom: 0; background: var(--text); }
 .road-bar.current .planned { background: var(--signal); }
@@ -331,8 +341,8 @@ dialog.confirm ul { margin: 0; padding-left: var(--indent); color: var(--muted);
 /* forms: label and help on the left, the control on the right (desktop) */
 @media (min-width: 900px) {
   .field { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); column-gap: var(--sp-6); row-gap: 8px; align-items: start; }
-  .field > label { grid-column: 1; grid-row: 1 / span 3; padding-top: 8px; }
-  .field > :not(label) { grid-column: 2; }
+  .field > label:not(.switch) { grid-column: 1; grid-row: 1 / span 3; padding-top: 8px; }
+  .field > :not(label), .field > label.switch { grid-column: 2; }
 }
 /* the top bar's contents sit on the same centred column as the page (wide screens) */
 .nav { padding-left: max(var(--sp-6), calc((100% - var(--content-max)) / 2)); padding-right: max(var(--sp-6), calc((100% - var(--content-max)) / 2)); }
@@ -657,3 +667,33 @@ body { font-variation-settings: "opsz" 14; font-optical-sizing: auto; }
 .phone-top { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); }
 .phone-you { display: flex; gap: var(--sp-4); }
 @media (min-width: 761px) { .phone-top { display: none; } }
+.num-input { width: 12ch; }
+.seg.rank { align-self: flex-start; justify-self: start; width: auto; }
+.seg.rank button sup { font-size: var(--fs-label); margin-left: 2px; color: inherit; }
+
+/* the road: numbers on the bars (the week's km on top, the long run inside), and the chart fills its section */
+.road-bar .planned { position: relative; }
+.road-bar .part { position: relative; display: flex; align-items: flex-end; justify-content: center; }
+.road-bar .lab { font-size: var(--fs-label); line-height: 1; font-variant-numeric: tabular-nums; padding-bottom: var(--sp-1); color: var(--bg); pointer-events: none; }
+.road-bar .part.race .lab, .road-bar.current .part .lab { color: var(--on-accent); }
+.road-bar .part .lab { position: relative; z-index: 1; }   /* above the run-so-far bar of the current week */
+.road-bar .lab.top { position: absolute; bottom: 100%; left: 0; right: 0; text-align: center; color: var(--text-2); padding-bottom: var(--sp-1); }
+.road-bar.current .lab.top { color: var(--signal); }
+.road-readout { font-size: var(--fs-small); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.road-readout b { font-weight: var(--w-medium); color: var(--text); }
+#road .road-wrap { flex: 1; }
+#road .road-wrap > .chart { flex: 1; display: flex; flex-direction: column; }
+#road .road { flex: 1; height: auto; min-height: 200px; padding-top: var(--sp-5); }
+.road-wrap { container-type: inline-size; }
+@container (max-width: 640px) { .road-bar .lab { display: none; } }
+
+/* the road's dates: each week's start under its bar; on a narrow chart, only the month a week opens */
+.road-dates { display: flex; gap: 2px; font-size: var(--fs-label); color: var(--muted); font-variant-numeric: tabular-nums; }
+.road-dates > span { flex: 1; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; }
+.road-dates .now { color: var(--signal); }
+.road-dates .short { display: none; }
+@container (max-width: 640px) {
+  .road-dates > span { overflow: visible; text-align: left; }
+  .road-dates .full { display: none; }
+  .road-dates .m .short { display: inline; }
+}
