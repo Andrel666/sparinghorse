@@ -52,21 +52,21 @@ small { font-size: .6em; font-weight: var(--w-medium); }
   border-top: 1px solid var(--rule); padding-top: var(--sp-3);
   display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0;
 }
-.card-label { font-size: var(--fs-label); font-weight: var(--w-medium); color: var(--muted); }
+.card-label { font-size: var(--fs-label); font-weight: var(--w-medium); color: var(--text); }   /* a section title: ink; field labels stay --muted */
 .tone-ok { --tone: var(--ok); } .tone-warn { --tone: var(--warn); } .tone-bad { --tone: var(--bad); }
 .stat-value { font-family: var(--display); font-size: var(--fs-display); font-weight: var(--w-medium); line-height: 1; letter-spacing: var(--track-display); font-variant-numeric: tabular-nums; }
 .stat-value.sm { font-size: var(--fs-title); letter-spacing: var(--track-display); }
 .stat-sub { font-size: var(--fs-small); color: var(--muted); }
 /* the tone mark (primitive): a value that carries a state stays ink, with a round 8px dot in the state colour before it.
-   Round is a state; the square is *now* (the signal). Today's day band is the one place a state colours the words. */
-.tone-ok .toned::before, .tone-warn .toned::before, .tone-bad .toned::before,
-.toned.tone-ok::before, .toned.tone-warn::before, .toned.tone-bad::before {
+   Round is a state; the square is *now* (the signal). Only warn and bad get a mark: a good state is the default and
+   unmarked, so a dot always means look here. Today's day band is the one place a state colours the words. */
+.tone-warn .toned::before, .tone-bad .toned::before, .toned.tone-warn::before, .toned.tone-bad::before {
   content: ""; display: inline-block; width: var(--mark); height: var(--mark); border-radius: 50%; background: var(--tone);
   margin-right: var(--sp-2); vertical-align: middle; flex: none; }
 .dayband .toned::before { content: none; }
 /* a big figure stays plain ink: in a strip its state mark sits on the sub line, not before the number */
-.figure .v.toned::before, .stat-value.toned::before { content: none; }
-.figure.tone-ok .s::before, .figure.tone-warn .s::before, .figure.tone-bad .s::before {
+.figure .v.toned::before { content: none; }
+.figure.tone-warn .s::before, .figure.tone-bad .s::before {
   content: ""; display: inline-block; width: var(--mark); height: var(--mark); border-radius: 50%; background: var(--tone);
   margin-right: var(--sp-2); vertical-align: 1px; }
 /* the open state of a Why disclosure keeps its dash (removing it is on the approval list) */
@@ -74,13 +74,15 @@ small { font-size: .6em; font-weight: var(--w-medium); }
 /* a trend arrow (▲ above / ▼ below a reference) is itself the mark: it takes the tone, and no dot is added */
 .trend { font-size: .6em; vertical-align: .25em; margin-right: var(--sp-1); color: var(--tone, var(--muted)); }
 .toned:has(> .trend)::before, .toned:has(.trend)::before { content: none; }
+.figure:has(.trend) .s::before { content: none; }   /* the arrow already marks the figure */
 .pill {
   display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; font-size: var(--fs-label);
   font-weight: var(--w-medium); color: var(--muted); padding: 0; background: none; border: 0;
 }
 .pill + .pill::before { content: "·"; margin-right: 8px; color: var(--muted); }
 .pill .dot { width: var(--mark); height: var(--mark); border-radius: 50%; background: var(--tone, currentColor); }
-.pill.tone-ok:not(:has(.dot))::before, .pill.tone-warn:not(:has(.dot))::before, .pill.tone-bad:not(:has(.dot))::before {
+.pill.tone-ok .dot, .flag.tone-ok::before { display: none; }
+.pill.tone-warn:not(:has(.dot))::before, .pill.tone-bad:not(:has(.dot))::before {
   content: ""; width: var(--mark); height: var(--mark); border-radius: 50%; background: var(--tone); flex: none; }
 .pill.tone-ok, .pill.tone-warn, .pill.tone-bad { color: var(--text-2); font-weight: var(--w-regular); }
 .pill.tone-warn, .pill.tone-bad { color: var(--text); }   /* the verdict that matters reads one step stronger */
@@ -120,6 +122,7 @@ textarea.input { height: auto; padding: 8px 12px; }
 .day .dow { font-size: var(--fs-label); color: var(--muted); }
 /* a narrow day cell breaks a line between words, not between a number and its unit ("12.5 / km") */
 .day .what, .day .ran, .day .detail { text-wrap: balance; }
+.day .ran, .day .detail { font-size: var(--fs-label); }
 .day .what { font-weight: var(--w-medium); }
 .day .short { display: none; }
 .day.rest .what { font-weight: var(--w-regular); color: var(--muted); }
@@ -493,6 +496,7 @@ a.marker-row:hover { background: var(--surface-2); }
 .run-hero { grid-template-columns: repeat(4, minmax(0, 1fr)); border-top-width: 1px; }
 .run-hero .figure .v { font-size: var(--fs-figure-sm); }
 .run-secondary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px var(--sp-4); font-size: var(--fs-small); }
+.run-secondary > div > :last-child { white-space: nowrap; }
 .run-secondary > div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); padding: 4px 0; }
 @media (max-width: 760px) { .run-hero { grid-template-columns: 1fr 1fr; } .run-secondary { grid-template-columns: 1fr 1fr; } }
 .r.active { padding-left: 12px; }
