@@ -1488,6 +1488,10 @@ def register(app, S):
             return jsonify(ok=False, error="not available on the public view"), 403
         return None
 
+    # fork §LENS — the four lenses' own endpoints (the run debrief, the Goal page) live in sh_ui_lenses
+    import sh_ui_lenses
+    sh_ui_lenses.register(app, S, private)
+
     @app.post("/api/ui/adjust/propose")
     def api_ui_adjust_propose():
         """Classic's propose, plus the effect worded once (the same words the active banner uses)."""

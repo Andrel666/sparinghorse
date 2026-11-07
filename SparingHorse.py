@@ -11377,7 +11377,7 @@ def _endu_vo2_reader(db):
     return at, (rows[-1][1] if rows else None)
 
 
-def endurance_road(db, today=None):
+def endurance_road(db, today=None, extra_week_km=0.0, long_extra_km=0.0):
     """§ENDU — Runalyze's marathon shape now, along the plan to race day, against what the race needs.
 
     Measured days read the athlete's runs (de-duplicated, ignored runs out) at Runalyze's effective
@@ -11385,7 +11385,9 @@ def endurance_road(db, today=None):
     today; race day itself is left out: the value is race MORNING's) at today's VO₂max moved by the
     plan's own projected rise, pro-rated by its TRIMP — a rising VO₂max raises the targets, as it does
     in Runalyze. The race needs distance^1.23 % (marathon 100 %, half 42.5 %); without a race, the
-    marathon's 100 %. `check` compares our number with the marathonShape Runalyze reported."""
+    marathon's 100 %. `check` compares our number with the marathonShape Runalyze reported.
+    `extra_week_km` / `long_extra_km` are what-ifs (more km a week, a longer long run) for the Goal
+    lens's levers; 0 is the plan as laid."""
     import sh_engine as _E
     today = today or datetime.now().date()
     drop = dropped_ids(db)
@@ -11421,7 +11423,13 @@ def endurance_road(db, today=None):
                 continue
             if (d > today or (d == today and not ran_today)) and (race_date is None or d < race_date) \
                     and s.get("kind") not in (None, "rest", "race") and (s.get("km") or 0) > 0:
-                ahead.append((d, float(s["km"]), s.get("trimp") or 0.0))
+                ahead.append((d, float(s["km"]) + (long_extra_km if s.get("kind") == "long" else 0.0), s.get("trimp") or 0.0))
+    # a what-if for the Goal lens's levers: extra km a week, spread over that week's planned runs
+    if extra_week_km:
+        per = {}
+        for d, _k, _t in ahead:
+            per[week_start_of(d)] = per.get(week_start_of(d), 0) + 1
+        ahead = [(d, k + extra_week_km / per[week_start_of(d)], t) for d, k, t in ahead]
     ft = (plan.get("feasibility") or {}).get("finish_time") or {}
     v0, vstar = (ft.get("today") or {}).get("at_evo2"), ft.get("at_evo2")
     total = sum(t for *_x, t in ahead)

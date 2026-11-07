@@ -16944,6 +16944,102 @@ def _stc_marathon_shape():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_lenses():
+    """Fork §LENS — the four lenses' run debrief and Goal page (sh_ui_lenses), on a half-marathon fixture.
+    (a) a run the plan paired with a session is debriefed against THAT session (asked = the session, did = the
+    activity), and the headline is "As asked" exactly when every check is ok; a run with no session is "Unplanned";
+    (b) the cost is the reconstruction's own (form = CTL - ATL that day, rest days = rest_days of that day);
+    (c) the goal settles before -> after: fitness = CTL day before vs that day, and the prediction from the plan in
+    force that morning vs the first plan built after it (faster plan -> a negative delta, its changes listed);
+    (d) the Goal page's contract margin is goal - predicted, levers that can move the goal rank first, each modelled
+    lever's effect is the endurance what-if's own number, and "holding you back" looks at most 4 weeks ahead;
+    (e) both routes are private."""
+    import json
+    import sh_ui_lenses as L
+    from datetime import date as _d, timedelta as _td
+    fails = []
+    saved_ro, saved_auth = S.READONLY, S._AUTH_ACTIVE
+    fx, today = _race_fixture_db("half", today=_d.today())
+    try:
+        plan = S.generate_plan(fx, today=today)
+        fx.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)",
+                   (today.isoformat() + "T06:00:00", today.isoformat(), "{}", json.dumps(plan)))
+        fx.commit()
+        log = S.block_log(fx) or {}
+        paired = [x for w in log.get("weeks") or [] for x in w.get("sessions") or [] if x.get("activity_id") and not x.get("unplanned")]
+        acts = [r["id"] for r in fx.execute("SELECT id FROM activities WHERE " + S.RUN_FAMILY_SQL + " ORDER BY date").fetchall()]
+        if not paired or not acts:
+            fails.append(f"(a) the fixture has no paired session ({len(paired)}) or no run ({len(acts)})")
+        else:
+            x = paired[-1]
+            d = L.run_debrief(S, fx, x["activity_id"])
+            a = fx.execute("SELECT date, distance FROM activities WHERE id=?", (x["activity_id"],)).fetchone()
+            if not d.get("ok") or (d["asked"] or {}).get("km") != x["km"] or d["did"]["km"] != round(a["distance"], 1):
+                fails.append(f"(a) asked/did are not the session and the activity: {d.get('asked')} / {d.get('did')}")
+            if (d["headline"] == "As asked") != all(c["state"] == "ok" for c in d["checks"]):
+                fails.append(f"(a) headline '{d['headline']}' disagrees with the checks {d['checks']}")
+            day = S._date(a["date"])
+            h = {p["date"]: p for p in S.reconstruct_history(fx, end=day.isoformat())}
+            e, pr = h[day.isoformat()], h[(day - _td(days=1)).isoformat()]
+            if d["cost"]["tsb"] != round(e["ctl"] - e["atl"]) or d["cost"]["rest_days"] != UIAPI.rest_days(S, e["ctl"], e["atl"], day + _td(days=1)):
+                fails.append(f"(b) cost is not the reconstruction's: {d['cost']}")
+            if (d["goal"]["fitness"] or {}).get("delta") != round(e["ctl"] - pr["ctl"], 1):
+                fails.append(f"(c) fitness delta {d['goal']['fitness']} is not CTL that day minus the day before")
+            # plant the morning's plan and a faster one built after the run
+            before = json.loads(json.dumps(plan)); after = json.loads(json.dumps(plan))
+            sec = (before.get("feasibility") or {}).get("finish_time", {}).get("seconds") or 6000
+            before.setdefault("feasibility", {}).setdefault("finish_time", {})["seconds"] = sec
+            after["feasibility"]["finish_time"]["seconds"] = sec - 30
+            mem = fx
+            mem.execute("DELETE FROM plans")
+            for fd, p_ in ((a["date"], before), ((day + _td(days=1)).isoformat(), after), (today.isoformat(), plan)):
+                mem.execute("INSERT INTO plans (created_at, for_date, inputs, plan) VALUES (?,?,?,?)", (fd + "T06:00:00", fd, "{}", json.dumps(p_)))
+            mem.commit()
+            d2 = L.run_debrief(S, mem, x["activity_id"])
+            pd = d2["goal"].get("prediction") or {}
+            if pd.get("delta_s") != -30 or not str(pd.get("delta", "")).startswith("−"):
+                fails.append(f"(c) the prediction did not settle -30 s from the morning's plan to the next: {pd}")
+            un = [i for i in acts if i not in {y["activity_id"] for y in paired}]
+            if un and L.run_debrief(S, mem, un[0])["headline"] != "Unplanned run":
+                fails.append("(a) a run with no session is not 'Unplanned run'")
+        g = L.goal_page(S, fx, today)
+        c = g.get("contract") or {}
+        gs, ps = UIAPI._hms_s(c.get("target")), (plan.get("feasibility") or {}).get("finish_time", {}).get("seconds")
+        if not c or (gs and ps and c.get("margin_s") != gs - ps):
+            fails.append(f"(d) contract margin {c.get('margin_s')} is not goal - predicted")
+        lv = g.get("levers") or []
+        if [x["useful"] for x in lv] != sorted([x["useful"] for x in lv], reverse=True):
+            fails.append(f"(d) a lever that can move the goal ranks below one that can't: {[(x['key'], x['useful']) for x in lv]}")
+        base = (S.endurance_road(fx).get("race_morning") or {}).get("of_need")
+        wk = next((x for x in lv if x["key"] == "week_km"), None)
+        what = (S.endurance_road(fx, extra_week_km=L.LEVER_WEEK_KM).get("race_morning") or {}).get("of_need")
+        if wk and (wk["gain"] != what - base or f"{what} %" not in wk["effect"]):
+            fails.append(f"(d) the weekly-km lever is not the what-if's own number: {wk} vs {base} -> {what}")
+        syn = L.rank_levers([{"key": "a", "useful": False, "modelled": True, "gain": 9},
+                             {"key": "b", "useful": True, "modelled": False, "gain": None},
+                             {"key": "c", "useful": True, "modelled": True, "gain": 2},
+                             {"key": "d", "useful": True, "modelled": True, "gain": 5}])
+        if [x["key"] for x in syn] != ["d", "c", "b", "a"] or [x["rank"] for x in syn] != [1, 2, 3, 4]:
+            fails.append(f"(d) levers rank {[x['key'] for x in syn]}, want useful+modelled by gain, then unmodelled, then the rest")
+        if any(h_["of"] > L.AHEAD_WEEKS for h_ in g.get("holding") or []):
+            fails.append("(d) holding-you-back looks past 4 weeks")
+        S.READONLY, S._AUTH_ACTIVE = True, False
+        cl = S.app.test_client()
+        for path in ("/api/ui/goal", f"/api/ui/debrief/{acts[0] if acts else 1}"):
+            if cl.get(path).status_code != 403:
+                fails.append(f"(e) {path} is served on the public view")
+    except Exception as e:
+        import traceback
+        fails.append(f"raised {type(e).__name__}: {e} {traceback.format_exc().splitlines()[-3:]}")
+    finally:
+        S.READONLY, S._AUTH_ACTIVE = saved_ro, saved_auth
+        fx.close()
+    return _st("det", "lenses",
+               "the four lenses: a run is debriefed against the session it completed (asked vs did, cost, the goal "
+               "settled before -> after, next), and Goal ranks levers by their computed effect on the race",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_calibration():
     """Fork §CAL — the per-athlete calibration. On a synthetic history with known answers: (a) the
     TRIMP scale recovers the planted easy rate (2.0 vs the engine's 1.65) within 3 %; (b) with NO
@@ -25789,7 +25885,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),
