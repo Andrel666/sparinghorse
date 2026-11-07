@@ -87,7 +87,7 @@ from sh_engine import (
     TAPER_BOTTOM, TAPER_LONG_FRAC, TAPER_SHARP_FRAC, TAPER_TOP, TAU_ATL, TAU_CTL,
     TRIMP_PER_MIN, WEEK_TRIMP_SEARCH_MAX, set_day_preferences, set_week_start, week_start_of,
     trimp_per_min,
-    MAX_RUNS_RANGE, set_max_runs, max_runs, _cap_runs,
+    MAX_RUNS_RANGE, set_max_runs, max_runs, _cap_runs, set_long_first, long_first,
     LONG_RUN_MAX_BY_RACE, _long_run_max,
     V5K_VVO2MAX_FRAC, _actual_week_caps, _adj_directive, _adj_fingerprint, _adj_summary,
     _apply_adjustment, _athlete_age, _av_blocked_dates, _av_run_days, _build_long_mp,
@@ -2182,6 +2182,7 @@ def apply_settings_overrides(db):
         _resolve_setting(db, SETTINGS_BY_KEY["long_run_day"])[0],
         _resolve_setting(db, SETTINGS_BY_KEY["rest_day_rank"])[0])
     set_max_runs(_resolve_setting(db, SETTINGS_BY_KEY["max_runs_per_week"])[0])   # fork §MAXRUNS
+    set_long_first(_resolve_setting(db, SETTINGS_BY_KEY["long_run_first"])[0])     # fork §LRF
     set_week_start(_resolve_setting(db, SETTINGS_BY_KEY["week_start"])[0])        # fork §WEEK
     # Fork §CAL — an APPROVED calibration overlays the engine's fitted constants; none ⇒ defaults.
     # Like the day preference it changes how the NEXT plan is laid, not one already generated.

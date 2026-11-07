@@ -1014,6 +1014,10 @@ def week_flags(S, w):
         add("long run held (+10 %)", "This week's long run was held to +10 % over your longest of the last 4 weeks; the freed volume went to easy runs.")
     if w.get("long_max_capped"):
         add("long run at its limit", "Held to 35 km or 3 h 30 min at its planned pace, whichever comes first.")
+    lf = next((x.get("long_first_km") for x in w.get("sessions") or [] if x.get("long_first_km")), None)
+    if lf:
+        add(f"long run +{lf:g} km from the easy runs", "Long run first: the week was held by its weekly limits, so the "
+            "long run rose toward its +10% step and the km came out of this week's easy runs.")
     if w.get("long_held"):
         add("long run kept", f"Kept at its ladder rung ({w['long_held'].get('rung_km')} km): your easy days ran over the sheet.")
     if w.get("run_moved"):
@@ -1427,7 +1431,7 @@ CHOICES = {
     "max_runs_per_week": [("", "No cap")] + [(str(n), str(n)) for n in (3, 4, 5, 6)],
 }
 SETTING_GROUPS = [("Athlete", ["athlete_context", "athlete_age", "manual_lthr", "injury_history"]),
-                  ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "taper_weeks"]),
+                  ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "long_run_first", "taper_weeks"]),
                   ("Display", ["units", "tz"]),
                   ("AI features", ["ai_narration", "ai_parsing", "ai_judgment", "ai_coach"]),
                   ("Links", ["house_url", "house_name", "private_url"])]

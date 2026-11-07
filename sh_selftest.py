@@ -15932,6 +15932,119 @@ def _stc_race_correction_fitness():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_long_run_first():
+    """Fork §LRF — Long run first. On a half and a marathon road, at 3 runs a week (the cap the share
+    ceiling bites hardest at) and uncapped: (a) off, no session is marked and the plan is the one the
+    engine laid before the switch existed (its marker never appears); (b) on, at least one week is
+    raised somewhere (anti-vacuity); (c) the FIRST
+    week the two plans differ is the raised week, and against the same week laid off it keeps its
+    total (± 0.3 km), keeps its quality sessions verbatim, and only its long run grew while its easy
+    runs gave the km; (d) every raised week: the long run holds its +10% step and §LRMAX, stays under half the
+    week (the engine aims at LONG_FIRST_SHARE), and every easy run keeps LONG_FIRST_SHORT_MIN_KM;
+    (e) no taper or down week is raised."""
+    E_ = E
+    fails, raised_n = [], 0
+    prev_cap, prev_lf = E_.max_runs(), E_.long_first()
+    weeks_of = lambda plan: [w for v in plan.values() if isinstance(v, dict) and "weeks" in v for w in v["weeks"]]
+    QUAL = lambda x: (x.get("kind") or "") not in ("easy", "long", "long_mp", "rest")
+    try:
+        # the roads: the standard fixture (10 km runs), and a returning runner's short runs on a 3-run
+        # cap: the case the switch exists for, where the share ceiling holds the long run under its rung
+        for cap, rt, rk in (("3", "half", 10.0), ("", "half", 10.0), ("3", "marathon", 10.0), ("", "marathon", 10.0),
+                            ("3", "half", 6.0)):
+            if True:
+                E_.set_max_runs(cap)
+                tag = f"{rt}@{cap or 'free'}/{rk:g}km"
+                E_.set_long_first("0")
+                fx, fx_today = _race_fixture_db(rt, run_km=rk)
+                off = weeks_of(S.generate_plan(fx, today=fx_today)); fx.close()
+                if any(x.get("long_first_km") for w in off for x in w.get("sessions") or []):
+                    fails.append(f"(a) {tag}: a session is marked with the switch off")
+                E_.set_long_first("1")
+                fx, fx_today = _race_fixture_db(rt, run_km=rk)
+                on = weeks_of(S.generate_plan(fx, today=fx_today)); fx.close()
+                raised = [w for w in on if any(x.get("long_first_km") for x in w.get("sessions") or [])]
+                raised_n += len(raised)
+                # (c) the first difference is a raised week, laid against the same week off
+                byk = {w.get("start"): w for w in off}
+                for w in on:
+                    o = byk.get(w.get("start"))
+                    if o is None:
+                        continue
+                    sig = lambda ww: [(x.get("date"), x.get("kind"), x.get("km")) for x in ww.get("sessions") or []]
+                    if sig(w) == sig(o):
+                        continue
+                    if w not in raised:
+                        fails.append(f"(c) {tag}/{w.get('start')}: the first changed week is not a raised one")
+                        break
+                    if abs((w.get("km") or 0) - (o.get("km") or 0)) > max(0.3, 0.015 * (o.get("km") or 0)):   # whole-minute rounding
+                        fails.append(f"(c) {tag}/{w.get('start')}: total {w.get('km')} vs {o.get('km')} off")
+                    if [x for x in w["sessions"] if QUAL(x)] != [x for x in o["sessions"] if QUAL(x)]:
+                        fails.append(f"(c) {tag}/{w.get('start')}: a quality session changed")
+                    lg = lambda ww: max((x.get("km") or 0) for x in ww["sessions"] if (x.get("kind") or "").startswith("long"))
+                    ez = lambda ww: sum((x.get("km") or 0) for x in ww["sessions"] if x.get("kind") == "easy")
+                    if not (lg(w) > lg(o) and ez(w) < ez(o)):
+                        fails.append(f"(c) {tag}/{w.get('start')}: long {lg(o)}→{lg(w)}, easy {ez(o)}→{ez(w)}: not a shift")
+                    break
+                for w in raised:
+                    wid = f"{tag}/{w.get('start')}"
+                    ss = [x for x in w.get("sessions") or [] if (x.get("km") or 0) > 0 and x.get("kind") != "rest"]
+                    lg = max(x["km"] for x in ss if (x.get("kind") or "").startswith("long"))
+                    L = w.get("limits") or {}
+                    if "long_step" in L and L["long_step"]["laid"] > L["long_step"]["ceiling"] + E_.LIMITS_LAID_TOL:
+                        fails.append(f"(d) {wid}: long {L['long_step']['laid']} over its step {L['long_step']['ceiling']}")
+                    if w.get("km") and lg >= 0.5 * w["km"]:      # the promise: under half the week (aim LONG_FIRST_SHARE)
+                        fails.append(f"(d) {wid}: long {lg} is {lg / w['km']:.0%} of the week")
+                    short = [x["km"] for x in ss if x.get("kind") == "easy"]
+                    if short and min(short) < E_.LONG_FIRST_SHORT_MIN_KM - 0.05:
+                        fails.append(f"(d) {wid}: an easy run of {min(short)} km fed the long run")
+                    if E_._is_taper(w) or E_._is_down(w):
+                        fails.append(f"(e) {wid}: a taper or down week was raised")
+        # (f) the case it exists for, laid directly: a returning runner's 18-km base week at 3 runs, the
+        # long run's rung at 7.7 km, held under it by the share ceiling. On, the long run reaches the
+        # rung (anti-vacuity: the share must bind off), the week keeps its km, every easy run keeps the floor.
+        from datetime import date as _dd
+        easy = 402
+        zones = {"easy_top": easy, "easy": 430, "marathon": 340, "threshold": 320, "interval": 290}
+        wk = {"wk": 2, "km": 18, "runs": 3, "long": 5, "strides": 0, "quality": [], "phase": "base", "intent": "Base"}
+        bud = 18.0 * (easy / 60.0) * E_.EASY_TRIMP_PER_MIN        # the engine's own (a calibration moves it)
+        E_.set_max_runs("3")
+        lay, _ws, _dp = {}, E_.WEEK_START, E_._DAY_PREF
+        E_.WEEK_START = 0; E_.set_day_preferences(None, None)      # the house week: a Monday, the long run Sunday
+        try:
+            for lf in ("0", "1"):
+                E_.set_long_first(lf)
+                lay[lf], _ = S._distribute_week(wk, _dd(2026, 11, 9), bud, easy, zones, long_km_cap=7.7)
+        finally:
+            E_.WEEK_START, E_._DAY_PREF = _ws, _dp
+        lg = {k: max(x["km"] for x in v if x["kind"] == "long") for k, v in lay.items()}
+        tot = {k: sum(x["km"] for x in v) for k, v in lay.items()}
+        if not lg["0"] < 7.7 - 0.3:
+            fails.append(f"(f) anti-vacuity: off, the long run is {lg['0']} km, not held under its 7.7 km rung")
+        if not (7.7 - 0.2 <= lg["1"] <= 7.7 + 1e-9):
+            fails.append(f"(f) on, the long run is {lg['1']} km, not at its 7.7 km rung")
+        if abs(tot["1"] - tot["0"]) > 0.35:                    # three runs, each rounded to whole minutes
+            fails.append(f"(f) the week's km moved: {tot['0']:.1f} → {tot['1']:.1f}")
+        if min(x["km"] for x in lay["1"] if x["kind"] == "easy") < E_.LONG_FIRST_SHORT_MIN_KM - 0.05:
+            fails.append("(f) an easy run fell under the floor")
+        if not any(x.get("long_first_km") for x in lay["1"]) or any(x.get("long_first_km") for x in lay["0"]):
+            fails.append("(f) the raised long run is not marked (or the unraised one is)")
+        raised_n += 1 if lg["1"] > lg["0"] else 0
+        if not raised_n:
+            fails.append("(b) no week raised on any road: the switch did nothing")
+    except Exception as e:
+        fails.append(f"raised {type(e).__name__}: {e}")
+    finally:
+        E_.set_max_runs("" if prev_cap is None else str(prev_cap))
+        E_.set_long_first("1" if prev_lf else "0")
+    return _st("det", "long-run-first",
+               "Fork §LRF Long run first: off lays as before; on, a week held by its weekly limits raises its "
+               "long run toward the +10% step with km from its easy runs; the week's total and quality hold, "
+               "the step, the share and the easy-run floor hold, taper and down weeks are untouched",
+               passed=not fails, expect="a shift, not more load; every limit holds",
+               got={"failures": fails or "none", "raised_weeks": raised_n})
+
+
 def _stc_long_day_turned():
     """§DAYPREF — the house layout turns WITH the long run. The table lays every frequency around a long
     run on its last slot (Sunday on a Monday week), with the rest days placed around it. A long run on
@@ -21660,7 +21773,7 @@ def _stc_taper():
                output={"acwr": [w.get("proj_acwr") for w in weeks]})
 
 
-def _race_fixture_db(race_type="marathon", weeks_out=20, today=None):
+def _race_fixture_db(race_type="marathon", weeks_out=20, today=None, run_km=10.0):
     """An in-memory DB holding ONE upcoming race and eight weeks of plain history — enough runway for
     the periodizer to publish a full block (rebase → base → build → peak → taper) with the race week
     inside it. Dets that assert on a RACE road use this instead of the ambient DB: `--past-race`
@@ -21677,7 +21790,7 @@ def _race_fixture_db(race_type="marathon", weeks_out=20, today=None):
         if d.weekday() in (0, 2, 4, 6):
             m.execute("INSERT INTO activities(date,date_time,sport,distance,duration,trimp) "
                       "VALUES(?,?,?,?,?,?)",
-                      (d.isoformat(), d.isoformat() + "T18:00", S.RUNNING_SPORT, 10.0, 3600, 60.0))
+                      (d.isoformat(), d.isoformat() + "T18:00", S.RUNNING_SPORT, run_km, round(360 * run_km), 6.0 * run_km))
         d += _td(days=1)
     m.execute("INSERT INTO shape_snapshots(snapshot_date,effective_vo2max,fitness,fatigue) "
               "VALUES(?,?,?,?)", ((today - _td(days=1)).isoformat(), 50.0, 45.0, 42.0))
@@ -25772,6 +25885,8 @@ def _pinned_engine_globals():
     # same class of settings-seeded engine global: pinned to the defaults for the run, put back after.
     saved_mr, saved_cal = E.max_runs(), E.calibration_in_force()
     E.set_max_runs("")
+    saved_lf = E.long_first()           # fork §LRF — Long run first is the same class of setting
+    E.set_long_first("0")
     E.reset_calibration()
     # Fork §LOCAL — `auto` would see a developer's `claude` CLI and turn the AI layer on for every
     # det that assumes the keyless test env. The battery keeps the key-only rule it always had;
@@ -25786,6 +25901,7 @@ def _pinned_engine_globals():
         E._DAY_PREF = saved          # restore the parsed pair as-is
         E.WEEK_START = saved_ws
         E.set_max_runs("" if saved_mr is None else str(saved_mr))
+        E.set_long_first("1" if saved_lf else "0")
         E.apply_calibration(saved_cal)
 
 
@@ -25897,7 +26013,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_long_run_first(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

@@ -186,6 +186,11 @@ SETTINGS_SPEC = [
              "this. The volume a week would have spread over more runs goes to longer easy runs, "
              "still under every per-run limit, and what does not fit is dropped and flagged, never "
              "crammed."},
+    {"key": "long_run_first", "env": "SH_LONG_RUN_FIRST", "label": "Long run first", "kind": "flag", "default": "0",
+     "help": "When a week is held by its weekly limits, the long run still rises to its own +10% step and "
+             "the km come out of that week's easy runs. The week's total does not change; easy runs keep "
+             "at least 4 km, intervals and race-pace runs are untouched, and the long run stays under half "
+             "the week. Off = the doctrine share (30% of the week in base). Regenerate the plan after changing it."},
     {"key": "taper_weeks", "env": "SH_TAPER_WEEKS", "label": "Taper length (weeks)", "kind": "line",
      "help": "The weeks of the taper before a goal race, race week included: 2 or 3. Empty = "
              "automatic: 3 weeks when the road to the race is 16 weeks or longer, else 2. A week "
@@ -1314,6 +1319,32 @@ def set_max_runs(text):
 
 def max_runs():
     return _MAX_RUNS
+
+
+# Fork §LRF — "Long run first". When the week is held by a whole-week limit (fitness gain, load ratio,
+# impact load), the doctrine SHARE ceiling (LONG_RUN_MAX_FRAC by phase) is what stops the long run
+# short of its own +10% rung, so the ladder never compounds. Opt-in: with it on, the §PRO23 raise to
+# the rung may take up to LONG_FIRST_SHARE of the WEEK, and the km come from the week's easy runs
+# (shares of the same budget, so the week's total and load stay put). Guards: every short easy keeps
+# LONG_FIRST_SHORT_MIN_KM; quality sessions are built before this and never touched; the raise stops
+# at the rung (§PRO9's +10% step) and §LRMAX's ceiling, both applied after it and still owning them;
+# taper, down weeks and partial re-lays keep their own bound. Off ⇒ byte-identical.
+LONG_FIRST_SHARE = 0.45          # the most of the week a long run may be with Long run first on
+LONG_FIRST_SHORT_MIN_KM = 4.0    # no easy run is shortened below this to feed the long run
+_LONG_FIRST = False
+
+
+def set_long_first(text):
+    """Publish the Long run first switch ('1' on; anything else off)."""
+    global _LONG_FIRST
+    _LONG_FIRST = str(text or "").strip() == "1"
+
+
+def long_first():
+    return _LONG_FIRST
+
+
+set_long_first(os.environ.get("SH_LONG_RUN_FIRST"))
 
 
 def _tight_cap():
@@ -3081,6 +3112,8 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
     # §PRO23 alone: §PRO21's ratio floor keeps its own bound. `long_km_cap` is assertive-only ⇒ caution
     # and the re-base byte-identical.
     long_cap_wk = long_cap
+    long_first_wk = None                       # Fork §LRF — set below only when Long run first is on
+    long_first_km = None
     if (long_km_cap and free_from is None and easy_budget > 0
             and not _is_taper(wk) and not _is_down(wk)):
         _km_per_tr = 60.0 / (easy_pace_sec * EASY_TRIMP_PER_MIN)         # easy km per TRIMP
@@ -3088,6 +3121,12 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
         _week_km = _q_km + mp_km + easy_budget * _km_per_tr
         _cap_base_tr = max(0.0, long_cap * _week_km - mp_km) / _km_per_tr
         long_cap_wk = min(1.0, _cap_base_tr / easy_budget)              # §ROT — of the week, no floor
+        # Fork §LRF — Long run first: the same conversion at LONG_FIRST_SHARE of the week, held under the
+        # share that leaves every short easy LONG_FIRST_SHORT_MIN_KM. Only ever widens the bound.
+        if _LONG_FIRST and n_short > 0:
+            _first_tr = max(0.0, max(long_cap, LONG_FIRST_SHARE) * _week_km - mp_km) / _km_per_tr
+            _floor_w = 1.0 - n_short * LONG_FIRST_SHORT_MIN_KM / (easy_budget * _km_per_tr)
+            long_first_wk = max(long_cap_wk, min(1.0, _first_tr / easy_budget, _floor_w))
     # §PRO15 — the long run is sized off the WEEK, not off what is left of it. `long_w` is a SHARE
     # of the budget, so when the §6o remainder governs a fraction of the week (mid-week regeneration,
     # over-run early days) the long run takes the same proportional haircut as the easy days — the
@@ -3141,7 +3180,13 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
     # outside the assertive regime, so caution never evaluates it ⇒ byte-identical, as for part 1.
     if long_km_cap and easy_budget > 0 and n_short > 0:
         _w_ladder = (max(0.0, long_km_cap - mp_km) * easy_pace_sec / 60.0 * EASY_TRIMP_PER_MIN) / easy_budget
+        _before_first = long_w
         long_w = max(long_w, min(_w_ladder, long_cap_wk))     # §SHARE — the bound is of the week
+        if long_first_wk is not None and long_first_wk > long_cap_wk:      # Fork §LRF
+            _raised = max(long_w, min(_w_ladder, long_first_wk))
+            if _raised > long_w + 1e-9:
+                long_first_km = round((_raised - long_w) * easy_budget * 60.0 / (easy_pace_sec * EASY_TRIMP_PER_MIN), 1)
+                long_w = _raised
     # §PRO9 — long-run progression cap. Clip the long-run SHARE so its distance ≤ `long_km_cap`; the
     # freed budget flows to the short easies through the (1−long_w) split below (weekly total untouched).
     # Needs somewhere to redistribute (n_short>0) and a positive easy budget; the MP-finish km rides on
@@ -3481,6 +3526,13 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
                         or sess["minutes"] > _lr_min)):
                 tr = round(tr - EASY_TRIMP_PER_MIN, 1)
                 sess = _build_long_mp(date, tr, mp_work, long_q, zones, easy_pace_sec)
+            # Fork §LRF — the same rounding past §PRO9's step: an MP long run laid AT its +10% rung can
+            # publish 0.1 km over it (whole minutes, two paces), and the limit is a promise about the
+            # published run. Step the base down a minute until it holds, as above.
+            while (long_step_capped and long_km_cap and tr > EASY_TRIMP_PER_MIN
+                   and sess["km"] > long_km_cap + 1e-9):
+                tr = round(tr - EASY_TRIMP_PER_MIN, 1)
+                sess = _build_long_mp(date, tr, mp_work, long_q, zones, easy_pace_sec)
             _held = long_step_capped or _lr_caution_held or (long_max_bound and _at_long_max(sess, long_km_cap, _lr_min))
             if _held:                                   # §PRO9 / §LRMAX — tell the truth about the cap
                 sess["note"] += _long_cap_note(long_max_bound or _lr_caution_held, wk)
@@ -3566,6 +3618,11 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
         if _shed_km >= REST_SHED_MIN_KM:
             sessions[-1]["rest_gated"] = True
             sessions[-1]["rest_shed_km"] = _shed_km
+    # Fork §LRF — mark the long run Long run first raised, with the km it took from the easy runs
+    if long_first_km:
+        _lr = next((x for x in sessions if x.get("kind") in ("long", "long_mp")), None)
+        if _lr is not None:
+            _lr["long_first_km"] = long_first_km
     sessions.sort(key=lambda x: x["date"])
     return sessions, day_trimps
 
