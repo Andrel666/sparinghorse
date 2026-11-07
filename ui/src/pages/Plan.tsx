@@ -149,7 +149,7 @@ function RaceView() {
           <button className="btn" type="submit">Try</button>
           {target && <button className="btn" type="button" onClick={() => { setTarget(undefined); setDraft(""); }}>Back to goal</button>}
         </form>
-        <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-small)" }}>{r.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+        <ul className="bullets flush t-small">{r.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
       </Card>
       <Endurance />
     </div>)}</Query>;
@@ -198,7 +198,7 @@ export function Plan() {
       {p.header.stale && <Banner tone="warn" action={genBtn}>{p.header.stale}</Banner>}
       {p.header.seed && <Banner tone="warn" action={genBtn}>{p.header.seed}</Banner>}
       {diff && !diff.first && diff.summary && <Banner tone="ok" action={<button className="btn" aria-label="Dismiss" onClick={() => setDiff(undefined)}><Icon name="close" /></button>}>
-        <b>Re-planned: {diff.summary}</b>{diff.changes?.length ? <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{diff.changes.map((c, i) => <li key={i}>{c}</li>)}</ul> : null}</Banner>}
+        <b>Re-planned: {diff.summary}</b>{diff.changes?.length ? <ul className="bullets">{diff.changes.map((c, i) => <li key={i}>{c}</li>)}</ul> : null}</Banner>}
       {p.adjustment && <AdjustmentBanner a={p.adjustment} onDiff={setDiff} />}
       <Strip items={[
         ...(p.race ? [{ k: `${p.race.label} · ${dateShort(p.race.date)}`, v: `${daysTo} days`, s: `${r0?.weeks ?? "?"} weeks`, onClick: () => setParam("races", "1") }] : []),

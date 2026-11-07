@@ -42,7 +42,7 @@ export function TellTheHorse({ enabled, onDiff, bare }: { enabled: boolean; onDi
         <button type="submit" className="btn primary" disabled={!enabled || propose.isPending || !text.trim()}>{propose.isPending ? "Thinking…" : "Tell"}</button>
       </form>
       {prop?.ok && prop.kind === "log" && <span>{prop.reply}</span>}
-      {prop?.ok && prop.kind !== "log" && <div className="list" style={{ gap: 6 }}>
+      {prop?.ok && prop.kind !== "log" && <div className="list" style={{ gap: "var(--sp-2)" }}>
         <span>{prop.reply}</span>
         {prop.effect && <b>{prop.medical_flag ? "Medical flag: " : ""}{prop.effect}</b>}
         <span className="muted">{prop.applies_from} → {prop.applies_until}{prop.summary ? ` · ${prop.summary}` : ""}{prop.clamp ? ` · engine clamp: ${prop.clamp}` : ""}</span>

@@ -74,7 +74,7 @@ function Result({ d, write }: { d: A; write: boolean }) {
     {(d.segments || []).map((sg: A, i: number) => <div key={i} className="list" style={{ gap: 4 }}>
       <span><b>{sg.label}</b> <span className="muted">{sg.minutes} min · target <b>{Math.round(sg.target_spm)}</b> spm ({sg.target?.why})
         {sg.line ? ` · songs ${sg.line[0] === sg.line[1] ? sg.line[0] : `${sg.line[0]}–${sg.line[1]}`} bpm` : ""} · {sg.filled_min} min filled{sg.fresh != null ? ` · ${sg.fresh} new` : ""}</span></span>
-      {sg.tracks?.length ? <ol style={{ margin: 0, paddingLeft: 22 }}>{sg.tracks.map((t: A, j: number) => <li key={j}>{t.title}: {t.artist}
+      {sg.tracks?.length ? <ol className="bullets flush">{sg.tracks.map((t: A, j: number) => <li key={j}>{t.title}: {t.artist}
         <span className="muted t-small"> · {Math.round(t.tempo)} bpm{t.hit === "half" ? " ×2" : ""} · {Math.round(t.duration_ms / 60000)}′
           {t.weight ? ` · taste ${t.weight.toFixed(2)}` : ""}{t.follow != null ? ` · legs ${t.follow}` : ""}{t.served ? ` · on ${t.served} recent lists` : ""}</span>
         {t.never_run && <Pill>never run to{t.source ? ` · ${SRC[t.source] || t.source}` : ""}</Pill>}{t.discovered && <Pill>new</Pill>}</li>)}</ol>

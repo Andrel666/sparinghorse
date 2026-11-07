@@ -50,7 +50,7 @@ function FirstRun({ steps }: { steps: NonNullable<ShellT["first_run"]> }) {
     <Banner action={active && (active.key === "race" ? <Link className="btn primary" to="/plan?races=1">Add a race</Link>
                               : active.key === "token" ? <Link className="btn primary" to="/settings#connections">Open Settings</Link> : null)}>
       <b>Welcome to Sparing Horse.</b> Three steps to your first plan.
-      <ol style={{ margin: "6px 0 0", paddingLeft: 20 }}>{steps.map(x => (
+      <ol className="bullets">{steps.map(x => (
         <li key={x.key} style={{ opacity: x.done ? .6 : 1 }}>{x.done ? "✓ " : ""}<b>{x.title}</b>{x === active ? `: ${x.text}` : ""}</li>))}</ol>
     </Banner>);
 }
@@ -67,12 +67,12 @@ function DataQuality({ s }: { s: ShellT }) {
     {s.duplicates.length > 0 && <Banner tone="warn">
       <b>{s.duplicates.length} likely duplicate {s.duplicates.length > 1 ? "activities" : "activity"}</b> (same time, distance and sport).
       They inflate fitness, fatigue and the load ratio on Runalyze too: delete them there and sync. The charts here already ignore them.
-      <div className="row" style={{ marginTop: 6 }}>{s.duplicates.map(d => (
+      <div className="row" style={{ marginTop: "var(--sp-2)" }}>{s.duplicates.map(d => (
         <button key={d.id} type="button" className="btn" onClick={() => del.mutate(d.id)}><Icon name="trash" /> Delete {d.date ? dateShort(d.date) : `#${d.id}`} · {km(d.distance)}</button>))}</div>
     </Banner>}
     {s.ignored.length > 0 && <Banner>
       {s.ignored.length} {s.ignored.length > 1 ? "runs are" : "run is"} excluded from your stats.
-      <div className="row" style={{ marginTop: 6 }}>{s.ignored.map(i => (
+      <div className="row" style={{ marginTop: "var(--sp-2)" }}>{s.ignored.map(i => (
         <button key={i.id} type="button" className="btn" onClick={() => restore.mutate(i.id)}>Restore {i.date ? dateShort(i.date) : `#${i.id}`}</button>))}</div>
     </Banner>}
   </>;

@@ -37,7 +37,7 @@ export function Profile({ id }: { id: number }) {
   const cut = p.hrzones?.cutoffs || [];
   const hi_ = hx == null ? null : p.dist.reduce((b, d, i) => Math.abs(d - hx) < Math.abs(p.dist[b] - hx) ? i : b, 0);
   return (
-    <div className="list" style={{ gap: 6 }}>
+    <div className="list" style={{ gap: "var(--sp-2)" }}>
       <Seg label="Profile channel" wrap cols={3} value={ch.k} onChange={setLocked} onPeek={setPeek}
            options={avail.map(c => ({ v: c.k, label: c.label }))} />
       <figure style={{ margin: 0, position: "relative" }}>
@@ -59,8 +59,8 @@ export function Profile({ id }: { id: number }) {
           .map(c => c.fmt((p[c.k] as number[])[hi_])).join(" · ")}</div>}
         <figcaption className="row muted" style={{ justifyContent: "space-between", fontSize: "var(--fs-label)" }}>
           <span>{ch.label.toLowerCase()} profile{ch.invert ? " (faster = higher)" : ""}{ch.k === "hr" && p.hr_avg ? ` · avg ${p.hr_avg} bpm` : ""}</span>
-          {p.has_hr && cut.length > 0 && <span className="row" style={{ gap: 6 }}>{ZC.map((c, i) => <span key={i} className="row" style={{ gap: 3 }}>
-            <span style={{ width: 10, height: 6, background: c, display: "inline-block" }} />Z{i + 1}</span>)}
+          {p.has_hr && cut.length > 0 && <span className="row" style={{ gap: "var(--sp-2)" }}>{ZC.map((c, i) => <span key={i} className="row" style={{ gap: "var(--sp-1)" }}>
+            <span style={{ width: 12, height: 8, background: c, display: "inline-block" }} />Z{i + 1}</span>)}
             <span>· {p.hrzones?.anchor === "lthr" ? `LTHR ${p.hrzones.ref}` : "% HRmax"}</span></span>}
         </figcaption>
       </figure>

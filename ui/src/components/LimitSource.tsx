@@ -21,7 +21,7 @@ export function LimitSource({ k }: { k: string }) {
       {s.what && <p>{s.what}</p>}
       {s.rule && <p><b>Rule.</b> {s.rule}</p>}
       {s.use && <p><b>How the plan uses it.</b> {s.use}</p>}
-      {s.refs?.length ? <div><b>Evidence</b><ul style={{ paddingLeft: 18, margin: "6px 0 0" }}>{s.refs.map(r => (
+      {s.refs?.length ? <div><b>Evidence</b><ul className="bullets">{s.refs.map(r => (
         <li key={r.cite} style={{ marginBottom: 8 }}><span>{r.finding}</span><br /><span className="muted t-small">{r.cite}</span></li>))}</ul></div> : null}
       {s.caveat && <p className="muted t-small">Caveat: {s.caveat}</p>}
     </div>

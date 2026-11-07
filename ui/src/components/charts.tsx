@@ -71,7 +71,7 @@ export function Lines({ series, height = 220, fmt = (v: number) => v.toFixed(1),
       {at && at.length > 0 && <div className="readout">{at[0].p.date} · {at.map(({ s, p }) => `${s.label} ${s.label === "Load ratio" ? p.v.toFixed(2) : fmt(p.v)}`).join(" · ")}</div>}
       <figcaption className="row muted" style={{ justifyContent: "space-between", fontSize: "var(--fs-label)" }}>
         <span>{numDay(lo)}</span>
-        <span className="row">{series.filter(s => !s.hidden).map(s => <span key={s.label} className="row" style={{ gap: 6 }}>
+        <span className="row">{series.filter(s => !s.hidden).map(s => <span key={s.label} className="row" style={{ gap: "var(--sp-2)" }}>
           <span style={{ width: 14, height: 0, borderTop: `2px ${s.dashed ? "dashed" : "solid"} ${s.color}`, display: "inline-block" }} />
           {s.label}</span>)}</span>
         <span>{numDay(hi)}</span>
@@ -131,7 +131,7 @@ export function Scatter({ dots, height = 200, xLabel, yLabel, refs = [], fit, xF
 export function Gauge({ value, band, max = 2 }: { value: number; band: [number, number]; max?: number }) {
   const pct = (v: number) => `${Math.min(100, Math.max(0, (v / max) * 100))}%`;
   return (
-    <div style={{ position: "relative", height: 14, borderRadius: 7, background: "var(--surface-2)", border: "1px solid var(--line)" }}
+    <div style={{ position: "relative", height: 16, borderRadius: 8, background: "var(--surface-2)", border: "1px solid var(--line)" }}
          role="img" aria-label={`${value.toFixed(2)} against a band of ${band[0]} to ${band[1]}`}>
       <div style={{ position: "absolute", top: 0, bottom: 0, left: pct(band[0]), width: `calc(${pct(band[1])} - ${pct(band[0])})`,
                     background: "var(--ok-soft)", borderLeft: "1px solid var(--ok)", borderRight: "1px solid var(--ok)" }} />

@@ -43,7 +43,11 @@
   --fs-small: 14px;
   --fs-label: 13px;
 
+  /* space: a 4px grid. Only these steps (or another multiple of 4) for margin, padding, gap and fixed heights;
+     1-2px are for hairlines and nudges. ui/src/lib/slop.test.ts fails the build on anything else. */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 40px; --sp-7: 56px;
+  --ctl: 36px;                 /* buttons, inputs, segments on desktop (the phone raises them to --hit) */
+  --indent: 20px;              /* a bulleted list's indent */
   /* rhythm: a page has zones (big gap, --rule) and groups inside a zone (small gap, --line) */
   --gap-zone: 56px; --gap-group: 24px;
   --radius: 2px; --radius-sm: 2px;
