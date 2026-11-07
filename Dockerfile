@@ -17,6 +17,7 @@ COPY sh_engine.py .
 COPY sh_calibrate.py .
 COPY sh_coach.py .
 COPY sh_ui_api.py .
+COPY sh_ui_lenses.py .
 # The self-test battery (TECH-1): a separate module the app imports LAZILY, so a typo in a det
 # cannot take the web app and the nightly scheduler down at import time. It is also the entry
 # point the /api/selftest/run route spawns as its own process.

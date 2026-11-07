@@ -19,7 +19,7 @@ function label(d: Day) {
   const { ran, runKm, plan } = describe(d);
   return [`${dayName(d.date)} ${Number(d.date.slice(8))}`,
     d.status === "moved" ? `${plan} planned, moved to ${d.moved_dow ?? "another day"}`
-      : plan ? `${plan}${d.status === "done" ? ", done" : d.status === "missed" ? ", missed" : ""}` : ran.length ? "" : "rest",
+      : plan ? `${plan}${d.status === "done" ? (d.km != null && runKm < d.km * 0.9 ? ", shorter than asked" : ", done") : d.status === "missed" ? ", missed" : ""}` : ran.length ? "" : "rest",
     ran.length ? `ran ${runKm.toFixed(1)} km${d.moved_from ? `, moved from ${d.moved_from}` : ""}` : ""].filter(Boolean).join(": ");
 }
 
@@ -38,16 +38,17 @@ export function Week({ days, phase, onDay, selected, today }: { days: Day[]; pha
         const moved = d.status === "moved" && !legacy;
         const hasRun = ran.length > 0 || (legacy && !!d.actual);
         const st = moved ? "moved" : hasRun ? (d.status === "extra" || ran.every(r => r.unplanned) ? "extra" : "done") : d.status;
-        const mark = st === "done" ? "✓" : st === "extra" ? "+" : st === "missed" ? "✕" : "";
+        const short = st === "done" && !legacy && d.km != null && runKm < d.km * 0.9;   // the debrief's distance verdict (±10 %)
+        const mark = short ? "" : st === "done" ? "✓" : st === "extra" ? "+" : st === "missed" ? "✕" : "";
         const big = hasRun ? (legacy ? d.actual!.km : runKm) : d.kind !== "rest" && !moved ? d.km : null;
         return (
           <Tag key={d.date} role={onDay ? undefined : "listitem"} data-phase={phase || undefined}
                {...(onDay ? { type: "button" as const, onClick: () => onDay(d.date), "aria-label": `${label(d)}. Show details` } : {})}
-               className={["day", !plan && !hasRun ? "rest" : "", st, today === d.date ? "today" : "", selected === d.date ? "selected" : ""].join(" ")}>
+               className={["day", !plan && !hasRun ? "rest" : "", st, short ? "short" : "", today === d.date ? "today" : "", selected === d.date ? "selected" : ""].join(" ")}>
             <span className="dow"><span className="full">{d.dow} </span><span className="short">{d.dow[0]} </span>{Number(d.date.slice(8))}</span>
             {/* desktop: words */}
             <span className="what full">
-              {plan ? <span className={moved || d.status === "missed" ? "struck" : undefined}>{mark && !moved && !(hasRun && !legacy && d.status !== "done") ? `${mark} ` : ""}{keepUnits(plan)}</span>
+              {plan ? <span className={moved || d.status === "missed" ? "struck" : undefined}>{short && <span className="short-mark" aria-hidden="true" />}{mark && !moved && !(hasRun && !legacy && d.status !== "done") ? `${mark} ` : ""}{keepUnits(plan)}</span>
                 : !hasRun && <span>Rest</span>}
             </span>
             {moved && <span className="muted detail full">moved to {d.moved_dow}</span>}
@@ -57,7 +58,7 @@ export function Week({ days, phase, onDay, selected, today }: { days: Day[]; pha
             {legacy && d.actual && <span className="muted num detail full"><span className="nw">{d.actual.km} km{d.actual.hr ? " ·" : ""}</span>{d.actual.hr ? <> <span className="nw">{d.actual.hr} bpm</span></> : ""}</span>}
             {d.moved_from && <span className="muted detail full">↷ from {d.moved_from}</span>}
             {/* phone: one number and a mark */}
-            <span className="what short num">{big != null ? <>{mark ? `${mark} ` : ""}{Math.round(big * 10) / 10}</> : moved ? "↷" : "·"}</span>
+            <span className="what short num">{big != null ? <>{short && <span className="short-mark" aria-hidden="true" />}{mark ? `${mark} ` : ""}{Math.round(big * 10) / 10}</> : moved ? "↷" : "·"}</span>
           </Tag>);
       })}
     </div>

@@ -70,6 +70,10 @@ every field. Every number on a page is a door to where it is decided.
 | Bullets | `.bullets` (`.flush`) | a list's indent and top gap; no inline list styles |
 | Source heading | `.src-head` | a heading on its own line above its text (no run-in "Rule.") |
 | Bar gutter | `.bars-chart` | a bar chart's y values sit in a left gutter, never on the bars |
+| Short mark | `.short-mark`, a day in the week strip | a run shorter than asked (outside ±10 %) gets the warm dot in place of the tick: the debrief's distance verdict, never a second rule |
+| Debrief | `components/Debrief.tsx` (Now, Log) | the four questions after a run, numbered, in order: did I do what was asked · what it cost · what it did to the goal (ending in the goal as it stands) · what's next. Stacked on the phone, 2×2 on desktop; a section without data says when it settles |
+| Contract | `pages/Goal.tsx` `Contract`, the debrief's "The goal now" | goal · predicted (band) · margin · days left; the margin is the one toned figure |
+| Levers | `ol.levers` (Goal) | what to change · its computed effect · a door to where you'd change it; what can still move the race first, then the computed, then habits |
 | Icons | `Icon.tsx` | one line set, one stroke (1.5), 16px inline / 20px tabs; never an emoji |
 
 **The guard.** `src/lib/slop.test.ts` (run by `npm test`) fails on off-grid spacing, weights other than the

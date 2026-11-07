@@ -7,7 +7,8 @@ import { postJSON, useShell, type ShellT } from "../lib/api";
 import { useAction } from "../lib/actions";
 import { dateShort, km, setUnits } from "../lib/format";
 import { Banner, useFeedback } from "./feedback";
-import { Link } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
+import { PAGES } from "../lib/pages";
 
 type Theme = "auto" | "dark" | "light";
 const THEME_KEY = "sh-ui-theme";
@@ -94,7 +95,9 @@ export function Frame({ children }: { children: ReactNode }) {
   const s = q.data;
   if (s) setUnits(s.units);
   return <>
-    {s && <div className="page frame-top"><div className="phone-only"><TopBar s={s} /></div>{s.first_run && <FirstRun steps={s.first_run} />}<DataQuality s={s} /></div>}
+    {s && <div className="page frame-top"><div className="phone-only phone-top"><nav className="phone-you" aria-label="You">
+      {PAGES.filter(p => p.you).map(p => <NavLink key={p.path} to={p.path} className="linkish" state={{ root: true }}>{p.label}</NavLink>)}</nav>
+      <TopBar s={s} /></div>{s.first_run && <FirstRun steps={s.first_run} />}<DataQuality s={s} /></div>}
     {children}
     {s && <footer className="page footer"><span>Sparing Horse v{s.version}</span>
       <a href="https://runalyze.com" target="_blank" rel="noopener noreferrer">powered by Runalyze</a>

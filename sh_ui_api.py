@@ -324,7 +324,7 @@ def today_page(S, db):
 # §VSO — Today's "vs. the original plan": the engine's `vs_original`, worded for the card. Each figure
 # opens where its number is drawn; the long run opens the plan history, where the original road is.
 VSO_LABEL = {"ctl": "Fitness", "vo2": "VO₂max", "long": "Long run"}
-VSO_LINK = {"ctl": "/fitness#fitness-fatigue", "vo2": "/fitness", "long": "/plan?view=history"}
+VSO_LINK = {"ctl": "/fitness#fitness-fatigue", "vo2": "/fitness", "long": "/goal#history"}
 VSO_TONE = {"ahead": "ok", "behind": "warn"}
 VSO_WORD = {"ahead": "ahead of plan", "behind": "behind plan", "level": "on plan", "upcoming": "still to come"}
 
@@ -356,7 +356,7 @@ def today_vs_plan(S, db, today):
 
 # §ENDU — Runalyze's marathon shape (or the race's share of it), now and along the plan. Shown only:
 # the plan is not built to reach it. One summary for Today, the whole road for Plan → Race day.
-ENDU_LINK = "/plan?view=race#endurance"
+ENDU_LINK = "/goal#endurance"
 
 
 def _endu_day(iso):
@@ -1215,6 +1215,8 @@ def runs_log(S, db, month=None, last_days=None):
     extra = {r["id"]: r for r in db.execute(
         f"SELECT id, duration, hr_avg FROM activities WHERE id IN ({','.join('?' * len(ids))})", ids).fetchall()} if ids else {}
     ed = {x.get("date"): x for x in (S.effort_discipline(db) or {}).get("runs") or []}
+    import sh_ui_lenses as LN
+    short = {x["activity_id"]: x for x in LN.short_sessions(S, db)}      # the debrief's distance verdict, per run
     out = []
     for r in sorted(rows, key=lambda r: (r["date"], r.get("t") or ""), reverse=True):
         a, e = extra.get(r["id"]), ed.get(r["date"]) or {}
@@ -1222,7 +1224,10 @@ def runs_log(S, db, month=None, last_days=None):
                     "km": r.get("km"), "pace": r.get("pace"), "z": r.get("z"),
                     "hr": a["hr_avg"] if a else None, "min": round(a["duration"] / 60) if a and a["duration"] else None,
                     "kind": KIND_TITLE.get(e.get("kind"), "Run") if e.get("kind") else "Run",
-                    "verdict": e.get("verdict"), "verdict_text": VERDICT_TEXT.get(e.get("verdict") or "")})
+                    "verdict": e.get("verdict"), "verdict_text": "; ".join(t for t in (
+                        f"{short[r['id']]['did']:g} of {short[r['id']]['asked']:g} km asked" if r["id"] in short else None,
+                        VERDICT_TEXT.get(e.get("verdict") or "")) if t) or None,
+                    "short": r["id"] in short})
     weeks = []
     for r in out:
         ws = E.week_start_of(S._date(r["date"])).isoformat()
@@ -1487,6 +1492,10 @@ def register(app, S):
         if S.READONLY:
             return jsonify(ok=False, error="not available on the public view"), 403
         return None
+
+    # fork §LENS — the four lenses' own endpoints (the run debrief, the Goal page) live in sh_ui_lenses
+    import sh_ui_lenses
+    sh_ui_lenses.register(app, S, private)
 
     @app.post("/api/ui/adjust/propose")
     def api_ui_adjust_propose():

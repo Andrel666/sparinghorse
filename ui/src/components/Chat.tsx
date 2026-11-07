@@ -1,16 +1,25 @@
-// The coach chat, shared by the Coach page and the Ask drawer (?ask=1, on every page). Answers come from
-// /api/coach (sh_coach.py), inside the engine's picture of the athlete.
-import { useState } from "react";
+// The coach chat: the Ask drawer (?ask=1) over every page, so the coach is one conversation wherever you are.
+// Its first suggestions follow the page it was opened over; ?q= puts a draft in the box (a debrief's "Ask about
+// this run"). Answers come from /api/coach (sh_coach.py), inside the engine's picture of the athlete.
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { postJSON, useCoach, type CoachMsg } from "../lib/api";
 import { Query } from "../pages/Query";
 
-const SUGGEST = ["What should I do today?", "Why is this week's long run so short?", "How should I pace race day?", "Are my easy runs easy enough?"];
+export type Topic = "today" | "run" | "road" | "goal" | "other";
+const SUGGEST: Record<Topic, string[]> = {
+  today: ["What should I do today?", "Should I run today or rest?", "How hard should today's run feel?"],
+  run: ["What did my last run do to my goal?", "Why was my last run shorter or harder than asked?", "What should I change next time?"],
+  road: ["Why is this week laid out like this?", "Can I move this week's long run?", "What's the hardest week ahead?"],
+  goal: ["Am I on track for my goal?", "What one change would help my race most?", "Is my goal realistic?"],
+  other: ["What should I do today?", "Am I on track for my goal?", "How should I pace race day?"],
+};
 
-export function Chat() {
+export function Chat({ topic = "other", draft }: { topic?: Topic; draft?: string }) {
   const qc = useQueryClient();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(draft ?? "");
+  useEffect(() => { if (draft) setText(draft); }, [draft]);
   const send = useMutation({
     mutationFn: (message: string) => postJSON<{ ok: boolean; messages: CoachMsg[]; error?: string }>("/api/coach/chat", { message }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["ui", "coach"] }),
@@ -21,7 +30,7 @@ export function Chat() {
     : !c.available ? <p><b>No AI connection.</b> Add a Claude API key in <Link to="/settings#connections">Settings</Link>.</p>
     : <div className="chat-wrap">
         <div className="chat" aria-live="polite">
-          {!c.messages.length && <div className="suggest">{SUGGEST.map(s => <button key={s} type="button" className="r hit" onClick={() => ask(s)}>
+          {!c.messages.length && <div className="suggest">{SUGGEST[topic].map(s => <button key={s} type="button" className="r hit" onClick={() => ask(s)}>
             <span className="r-main"><span className="r-title">{s}</span></span><span className="r-trail" aria-hidden="true">›</span></button>)}</div>}
           {c.messages.map(m => <div key={m.id} className={`msg ${m.role}`}>{m.text}</div>)}
           {send.isPending && <div className="msg coach muted">Thinking…</div>}

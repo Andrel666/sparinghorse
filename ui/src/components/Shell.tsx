@@ -1,17 +1,26 @@
-// The app frame: sidebar on desktop, tab bar + More sheet on phones — both built from PAGES.
+// The app frame: the four lenses (Now, Road, Goal, Log) as the top bar on desktop and the tab bar on phones; Ask (the
+// coach chat, a drawer over any page) on the bar and as the phone's fifth tab; You (Music, Settings) at the bar's
+// right end and on the phone's top row. All built from PAGES.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link, NavLink, useLocation, useNavigate, useNavigationType, useSearchParams, type Location } from "react-router-dom";
+import { NavLink, useLocation, useNavigate, useNavigationType, useSearchParams, type Location } from "react-router-dom";
 import { Drawer } from "./layout";
-import { Chat } from "./Chat";
+import { Chat, useClearChat } from "./Chat";
 import { BackCtx, type Back } from "../lib/trail";
-import { PAGES } from "../lib/pages";
+import { PAGES, lensOf } from "../lib/pages";
 import { Icon } from "./Icon";
-import { useShell } from "../lib/api";
+import { useCoach, useShell } from "../lib/api";
 import { TopBar } from "./Frame";
 
-const navCls = ({ isActive }: { isActive: boolean }) => "nav-link" + (isActive ? " active" : "");
+// a lens is lit on its own path and on the deeper pages that belong to it (Fitness and Body light Goal)
+const lit = (path: string, here: string) => lensOf(here) === path;
 
 const ROOT = { root: true };
+
+/** What the chat's first suggestions are about: the page it was opened over. */
+function topicOf(path: string, q: URLSearchParams): "today" | "run" | "road" | "goal" | "other" {
+  if ((path === "/log" && q.get("id")) || q.get("q")?.startsWith("About my run")) return "run";
+  return path === "/" ? "today" : path === "/road" ? "road" : path === "/goal" || path === "/fitness" ? "goal" : path === "/log" ? "run" : "other";
+}
 
 /** The in-app history since the last tab/sidebar click, and the nearest entry on another page. */
 function useTrail(loc: Location): Back | null {
@@ -35,45 +44,43 @@ function useTrail(loc: Location): Back | null {
 }
 
 export function Shell({ children }: { children: ReactNode }) {
-  const [more, setMore] = useState(false);
   const shell = useShell();
   const loc = useLocation();
-  const nav = PAGES.filter(p => !p.hidden);
-  const top = nav.filter(p => !p.bottom), bottom = nav.filter(p => p.bottom);
-  const tabs = nav.filter(p => p.tab), rest = nav.filter(p => !p.tab);
-  const inMore = rest.some(p => p.path === loc.pathname);
+  const lenses = PAGES.filter(p => p.tab), you = PAGES.filter(p => p.you);
+  const cls = (base: string, path: string) => base + (lit(path, loc.pathname) ? " active" : "");
   const back = useTrail(loc), go = useNavigate();
   const [params, setParams] = useSearchParams();
   const asking = params.get("ask") === "1";            // the Ask drawer: the coach chat over any page
-  const setAsk = (on: boolean) => setParams(p => { const n = new URLSearchParams(p); if (on) n.set("ask", "1"); else n.delete("ask"); return n; });
+  const setAsk = (on: boolean) => setParams(p => { const n = new URLSearchParams(p); if (on) n.set("ask", "1"); else { n.delete("ask"); n.delete("q"); } return n; });
+  const coach = useCoach(), clear = useClearChat();
   return (
     <div className="shell">
       <header className="nav" aria-label="Sparing Horse">
         <div className="nav-brand">Sparing Horse</div>
-        <nav className="nav-links" aria-label="Pages">
-          {[...top, ...bottom].map(p => <NavLink key={p.path} to={p.path} end className={navCls} state={ROOT}>{p.label}</NavLink>)}
+        <nav className="nav-links" aria-label="Lenses">
+          {lenses.map(p => <NavLink key={p.path} to={p.path} end className={() => cls("nav-link", p.path)} state={ROOT}>{p.label}</NavLink>)}
         </nav>
         <div className="nav-spacer" />
-        {loc.pathname !== "/coach" && <button type="button" className="btn ask-btn" aria-expanded={asking} onClick={() => setAsk(true)}>
-          <Icon name="chat" />Ask</button>}
+        <button type="button" className="btn ask-btn" aria-expanded={asking} onClick={() => setAsk(true)}>
+          <Icon name="chat" />Ask</button>
+        <nav className="nav-links nav-you" aria-label="You">
+          {you.map(p => <NavLink key={p.path} to={p.path} end className={() => cls("nav-link", p.path)} state={ROOT}>{p.label}</NavLink>)}
+        </nav>
         {shell.data && <TopBar s={shell.data} />}
       </header>
-      <main className="main" onClick={() => more && setMore(false)}>
+      <main className="main">
         {back && <div className="backbar"><button type="button" className="back-link" onClick={() => go(-back.steps)}>‹ {back.label}</button></div>}
         <BackCtx.Provider value={back}>{children}</BackCtx.Provider></main>
-      <Drawer title="Ask the coach" open={asking} onClose={() => setAsk(false)}>
-        <Chat />
-        <Link to="/coach" className="linkish" onClick={() => setAsk(false)} state={{ root: true }}>Open the coach page ›</Link>
+      <Drawer title="Coach" open={asking} onClose={() => setAsk(false)}>
+        <p className="muted t-small">It sees your plan, today's session and readiness, your runs and the prediction.
+          {!!coach.data?.messages.length && <> <button type="button" className="linkish" onClick={() => clear.mutate()}>Clear the chat</button></>}</p>
+        <Chat topic={topicOf(loc.pathname, params)} draft={params.get("q") ?? undefined} />
       </Drawer>
-      {more && <div className="more-sheet" role="menu">
-        {rest.map(p => <NavLink key={p.path} to={p.path} className={navCls} state={ROOT} onClick={() => setMore(false)}>
-          <Icon name={p.icon} />{p.label}</NavLink>)}
-      </div>}
       <nav className="tabbar" aria-label="Pages">
-        {tabs.map(p => <NavLink key={p.path} to={p.path} end state={ROOT} className={({ isActive }) => "tab" + (isActive ? " active" : "")}>
+        {lenses.map(p => <NavLink key={p.path} to={p.path} end state={ROOT} className={() => cls("tab", p.path)}>
           <Icon name={p.icon} />{p.label}</NavLink>)}
-        <button type="button" className={"tab" + (inMore || more ? " active" : "")} aria-expanded={more}
-                onClick={() => setMore(m => !m)}><Icon name="more" />More</button>
+        <button type="button" className={"tab" + (asking ? " active" : "")} aria-expanded={asking}
+                onClick={() => setAsk(!asking)}><Icon name="chat" />Ask</button>
       </nav>
     </div>
   );

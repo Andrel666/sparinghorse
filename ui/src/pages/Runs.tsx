@@ -1,5 +1,5 @@
-// Runs: every run on a calendar with totals; a picked run opens with its numbers, read-back, profile,
-// map and the data tools (ignore, delete).
+// Log: every run on a list or a calendar with totals; a picked run opens as its debrief (asked vs did, cost, what
+// it did to the goal, next), then its numbers, read-back, profile, map and the data tools (ignore, delete).
 import { ZONE_COLORS } from "../lib/format";
 import { Icon } from "../components/Icon";
 import { useState } from "react";
@@ -14,6 +14,7 @@ import { RunMap } from "../components/RunMap";
 import { Profile } from "../components/Profile";
 import { Help } from "../components/feedback";
 import { Query } from "./Query";
+import { Debrief } from "../components/Debrief";
 
 const ZONE = ZONE_COLORS;
 const TOTALS: [string, string, (v: unknown) => string][] = [["runs", "Runs", v => String(v ?? "—")], ["km", "Distance", v => km(v as number)],
@@ -93,9 +94,9 @@ export function Runs() {
     const run = picked ?? Object.values(m.days).flat().at(-1)?.id;
     return (
       <div className="page">
-        <PageHead title="Runs">
-          <Seg label="Runs view" value={view} onChange={v => set({ view: v === "log" ? null : v })}
-               options={[{ v: "log", label: "Log" }, { v: "calendar", label: "Calendar" }]} />
+        <PageHead title="Log">
+          <Seg label="Log view" value={view} onChange={v => set({ view: v === "log" ? null : v })}
+               options={[{ v: "log", label: "List" }, { v: "calendar", label: "Calendar" }]} />
         </PageHead>
         <div className={`grid runs-split${picked ? " has-run" : ""}`}>
           <div className="span-5 runs-left list" style={{ gap: "var(--gap-group)" }}>
@@ -117,8 +118,8 @@ export function Runs() {
             {m.since && <span className="muted t-label">All time = since {new Date(m.since).toLocaleDateString()}</span>}
           </div>
           <div className="span-7 runs-right">
-            {picked && <button type="button" className="linkish phone-only" onClick={() => pick(undefined)}>‹ Runs</button>}
-            {run ? <RunDetail id={run} onGone={() => pick(undefined)} /> : <Card span={12}><span className="muted">No runs this month.</span></Card>}
+            {picked && <button type="button" className="linkish phone-only" onClick={() => pick(undefined)}>‹ Log</button>}
+            {run ? <><Debrief id={run} /><RunDetail id={run} onGone={() => pick(undefined)} /></> : <Card span={12}><span className="muted">No runs this month.</span></Card>}
           </div>
         </div>
       </div>);
