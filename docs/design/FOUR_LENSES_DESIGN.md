@@ -37,8 +37,11 @@ asked says so without blame and says what it changes.
 | **Goal** | `/goal` | am I on track, what can I improve (ranked levers), what holds me back, the plan vs its original road | Plan → History, vs-original, endurance, the deep Fitness and Body pages behind doors |
 | **Log** | `/log` | every run, each opened as a **debrief** | Runs |
 
-*Ask* (the coach) is a button on every page. Coach, Music and Settings sit under **You** (the phone's fifth tab,
-the right end of the desktop bar). Old addresses redirect (`/plan` → `/road`, `/runs` → `/log`,
+**The coach is a chat, not a page.** *Ask* opens it over whatever page you are on: the desktop bar's button, the
+phone's fifth tab (a bottom sheet). It is one conversation everywhere; its first suggestions follow the page it was
+opened over (today, a run, the road, the goal), and a debrief's "Ask about this run" opens it with the run already
+named in the box. Music and Settings sit under **You** (the right end of the desktop bar, the phone's top row).
+`/coach` opens the chat. Old addresses redirect (`/plan` → `/road`, `/runs` → `/log`,
 `/plan?view=history` → `/goal#history`), so every existing door keeps working. Fitness and Body stay as deeper
 pages behind Goal (the Goal tab stays lit on them).
 
@@ -102,7 +105,8 @@ long_extra_km=…)` what-ifs, the easy-run check and the block's adherence.
 
 ## 5. Acceptance (checked on the rendered screen, 1440×900 and 390×844, demo data)
 
-- Navigation: four lenses + You on the phone; four lenses, Ask and You on desktop; old URLs land on their new home.
+- Navigation: four lenses + Ask on the phone's tab bar, You on its top row; four lenses, Ask and You on desktop;
+  old URLs land on their new home (`/coach` opens the chat).
 - Now: the debrief of the latest run shows the four sections; on the day of a run it sits above the day band.
 - Log: every run opens as a debrief; an unplanned run says so.
 - Goal: the contract line, at least two computed levers with effects, the limits ahead, endurance, history.

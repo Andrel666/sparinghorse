@@ -4,19 +4,20 @@ export type IconName = "today" | "plan" | "runs" | "fitness" | "body" | "coach" 
 export interface PageDef {
   path: string; label: string; icon: IconName;
   tab: boolean;            // one of the four lenses: a phone tab and the main desktop links
-  you?: boolean;           // under "You" (the phone's fifth tab, the right end of the desktop bar)
+  you?: boolean;           // under "You" (the right end of the desktop bar, the phone's top row)
   hidden?: boolean;        // a route only, not in the navigation
   lights?: string;         // the lens whose tab stays lit on this page (Fitness and Body light Goal)
   redirect?: string;       // an old address: it lands on this path, keeping its query and hash
 }
-// The four lenses on one road (docs/design/FOUR_LENSES_DESIGN.md): Now, Road, Goal, Log. Ask (the coach) is a
-// button on every page; Coach, Music and Settings live under You. Old addresses redirect, so every door still works.
+// The four lenses on one road (docs/design/FOUR_LENSES_DESIGN.md): Now, Road, Goal, Log. The coach is a chat opened
+// by Ask from every page (the desktop bar's button, the phone's fifth tab), not a page; Music and Settings live
+// under You. Old addresses redirect, so every door still works (/coach opens the chat).
 export const PAGES: PageDef[] = [
   { path: "/", label: "Now", icon: "today", tab: true },
   { path: "/road", label: "Road", icon: "plan", tab: true },
   { path: "/goal", label: "Goal", icon: "fitness", tab: true },
   { path: "/log", label: "Log", icon: "runs", tab: true },
-  { path: "/coach", label: "Coach", icon: "coach", tab: false, you: true },
+  { path: "/coach", label: "Coach", icon: "coach", tab: false, hidden: true, redirect: "/?ask=1" },
   { path: "/music", label: "Music", icon: "music", tab: false, you: true },
   { path: "/settings", label: "Settings", icon: "settings", tab: false, you: true },
   { path: "/fitness", label: "Fitness", icon: "fitness", tab: false, hidden: true, lights: "/goal" },

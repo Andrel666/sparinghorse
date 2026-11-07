@@ -24,7 +24,6 @@ const BUILT: Record<string, React.ComponentType> = {
   "/log": lazyPage(() => import("./pages/Runs"), "Runs"),
   "/fitness": lazyPage(() => import("./pages/Fitness"), "Fitness"),
   "/body": lazyPage(() => import("./pages/Body"), "Body"),
-  "/coach": lazyPage(() => import("./pages/Coach"), "Coach"),
   "/settings": lazyPage(() => import("./pages/Settings"), "Settings"),
   "/music": lazyPage(() => import("./pages/Music"), "Music"),
 };
@@ -34,7 +33,10 @@ function Redirect({ to }: { to: string }) {
   const loc = useLocation();
   const q = new URLSearchParams(loc.search);
   if (q.get("view") === "history") return <Navigate to="/goal#history" replace />;
-  return <Navigate to={`${to}${loc.search}${loc.hash}`} replace />;
+  const [path, extra] = to.split("?");
+  const merged = new URLSearchParams(extra); q.forEach((v, k) => merged.set(k, v));
+  const qs = merged.toString();
+  return <Navigate to={`${path}${qs ? `?${qs}` : ""}${loc.hash}`} replace />;
 }
 
 const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 60_000, refetchOnWindowFocus: true, retry: 1 } } });

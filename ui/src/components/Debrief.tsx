@@ -66,7 +66,10 @@ function Next({ d }: { d: D }) {
 export function Debrief({ id, label, span = 12 }: { id: number; label?: string; span?: 6 | 8 | 12 }) {
   return <Query q={useDebrief(id)}>{d => (
     <Card id="debrief" label={label ?? `Debrief · ${dateLong(d.date)}`} span={span} lede={d.headline} tone={d.tone ?? undefined}
-          aside={<Link to={`/log?id=${d.id}`} className="linkish t-small">The run ›</Link>}>
+          aside={<span className="row" style={{ gap: "var(--sp-4)" }}>
+            <Link to={`?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(location.search)), ask: "1",
+              q: `About my run on ${dateLong(d.date)}, ${d.headline[0].toLowerCase()}${d.headline.slice(1)}: ` })}`} className="linkish t-small">Ask about this run ›</Link>
+            <Link to={`/log?id=${d.id}`} className="linkish t-small">The run ›</Link></span>}>
       <div className="debrief">
         <section aria-label="Did I do what was asked"><h3 className="debrief-q">1 Did I do what was asked</h3><Did d={d} /></section>
         <section aria-label="What it cost"><h3 className="debrief-q">2 What it cost</h3><Cost d={d} /></section>

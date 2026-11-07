@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **The four lenses (new UI): Now, Road, Goal, Log** (`docs/design/FOUR_LENSES_DESIGN.md`). Navigation becomes
-  four lenses plus You (Coach, Music, Settings), with Ask on every page; old addresses redirect (`/plan` → `/road`,
-  `/runs` → `/log`, `/plan?view=history` → `/goal#history`). **The run debrief** (`GET /api/ui/debrief/<id>`,
+  four lenses plus You (Music, Settings). The coach is a chat opened by Ask over any page (the desktop button, the
+  phone's fifth tab), with suggestions for the page it was opened over and "Ask about this run" on every debrief;
+  old addresses redirect (`/plan` → `/road`, `/runs` → `/log`, `/plan?view=history` → `/goal#history`, `/coach` →
+  the chat). **The run debrief** (`GET /api/ui/debrief/<id>`,
   `sh_ui_lenses.run_debrief`): asked vs did with a verdict per check, what it cost, what it did to the goal
   (fitness, endurance, prediction before → after, the goal as it stands) and what's next; on Now for the latest
   run (above the day band on the day it lands) and on Log for every run. **Goal** (`GET /api/ui/goal`): the
