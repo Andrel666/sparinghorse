@@ -40,6 +40,15 @@ export function Road({ road, phases, today, tuneUps = [], onPick }: { road: Plan
         ))}
       </div>
       </div>
+      <div className="road-dates" aria-hidden="true">
+        {road.map((w, i) => {
+          const d = new Date(w.start + "T00:00:00"), prev = i ? new Date(road[i - 1].start + "T00:00:00") : null;
+          const month = !prev || prev.getMonth() !== d.getMonth();
+          return <span key={w.start} className={`${month ? "m" : ""}${w.current ? " now" : ""}`}>
+            <span className="full">{dateShort(w.start)}</span>
+            {month && <span className="short">{d.toLocaleDateString(undefined, { month: "short" })}</span>}</span>;
+        })}
+      </div>
       <div className="road-phases">
         {phases.map(p => <span key={p.start} data-phase={p.key || undefined} style={{ flex: p.weeks }}>{p.name}</span>)}
       </div>

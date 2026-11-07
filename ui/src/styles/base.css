@@ -686,3 +686,14 @@ body { font-variation-settings: "opsz" 14; font-optical-sizing: auto; }
 #road .road { flex: 1; height: auto; min-height: 200px; padding-top: var(--sp-5); }
 .road-wrap { container-type: inline-size; }
 @container (max-width: 640px) { .road-bar .lab { display: none; } }
+
+/* the road's dates: each week's start under its bar; on a narrow chart, only the month a week opens */
+.road-dates { display: flex; gap: 2px; font-size: var(--fs-label); color: var(--muted); font-variant-numeric: tabular-nums; }
+.road-dates > span { flex: 1; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; }
+.road-dates .now { color: var(--signal); }
+.road-dates .short { display: none; }
+@container (max-width: 640px) {
+  .road-dates > span { overflow: visible; text-align: left; }
+  .road-dates .full { display: none; }
+  .road-dates .m .short { display: inline; }
+}
