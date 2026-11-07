@@ -16616,6 +16616,24 @@ def _stc_ui_pages():
         fx.commit()
         pw = E._plan_all_weeks(plan)
         p = U.plan_page(S, fx)
+        # (f) the road's long run and race are the week's own sessions (the bar draws them inside it), and
+        # the headline names the longest run; a week without a long session draws none
+        for r, w in zip(p["road"], S.block_log(fx)["weeks"]):
+            lk = [x.get("km") or 0 for x in w["sessions"] if x.get("kind") in ("long", "long_mp") and not x.get("race")]
+            want_long = round(max(lk), 1) if lk and max(lk) > 0 else None
+            want_race = round(sum(x.get("km") or 0 for x in w["sessions"] if x.get("race")), 1) or None
+            if r.get("long") != want_long or r.get("race_km") != want_race:
+                fails.append(f"(f) road week {r['start']}: long {r.get('long')}/race {r.get('race_km')}, the week says {want_long}/{want_race}")
+            if r.get("long") and r.get("km") and r["long"] > r["km"] + 0.05:
+                fails.append(f"(f) road week {r['start']}: long run {r['long']} longer than its week {r['km']}")
+        top = max((r.get("long") or 0) for r in p["road"])
+        if not top or f"long run {top:.1f} km" not in (p.get("road_headline") or ""):
+            fails.append(f"(f) the headline does not name the longest run {top}: {p.get('road_headline')!r}")
+        if not any(r.get("race_km") for r in p["road"]):
+            fails.append("(f) anti-vacuity: the race week carries no race km")
+        two = [{"start": "2027-01-24", "km": 40.0, "long": 15.0}, {"start": "2027-01-31", "km": 38.0, "long": 19.0}]
+        if U.road_headline(S, two) != "Peak 40 km, week of Jan 24 · long run 19.0 km, week of Jan 31":
+            fails.append(f"(f) peak week and longest run in different weeks: {U.road_headline(S, two)!r}")
         if len(p["road"]) != len(pw) or sum(x["weeks"] for x in p["phases"]) != len(pw):
             fails.append(f"(b) road/phases do not cover the plan: {len(p['road'])}, {sum(x['weeks'] for x in p['phases'])} vs {len(pw)}")
         later = pw[min(3, len(pw) - 1)]

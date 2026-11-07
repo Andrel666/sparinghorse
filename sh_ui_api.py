@@ -1117,6 +1117,30 @@ def _session_line(S, x, tiso):
                     if len(x.get("runs") or []) > 1 else []}
 
 
+LONG_KINDS = ("long", "long_mp")
+
+
+def road_long_km(sessions):
+    """A week's long run on the road: its long session's planned km (the race is not a long run)."""
+    ks = [x.get("km") or 0 for x in sessions or [] if x.get("kind") in LONG_KINDS and not x.get("race")]
+    return round(max(ks), 1) if ks and max(ks) > 0 else None
+
+
+def road_headline(S, road):
+    """'Peak 39.8 km · long run 19.0 km · week of Jan 31': the biggest week and the longest run, worded
+    once when they share a week and each with its own week when they don't."""
+    wk = lambda r: f"{S._date(r['start']).strftime('%b')} {S._date(r['start']).day}"
+    pk = max(road, key=lambda r: r.get("km") or 0, default=None)
+    if not (pk and pk.get("km")):
+        return None
+    lg = max(road, key=lambda r: r.get("long") or 0)
+    if not lg.get("long"):
+        return f"Peak {pk['km']:g} km · week of {wk(pk)}"
+    if lg is pk:
+        return f"Peak {pk['km']:g} km · long run {lg['long']:.1f} km · week of {wk(pk)}"
+    return f"Peak {pk['km']:g} km, week of {wk(pk)} · long run {lg['long']:.1f} km, week of {wk(lg)}"
+
+
 def plan_page(S, db, week=None, day=None):
     log = S.block_log(db)
     if not log:
@@ -1135,7 +1159,11 @@ def plan_page(S, db, week=None, day=None):
         ran = sum((x.get("actual") or {}).get("km") or 0 for x in w["sessions"])
         road.append({"start": w["start"], "phase": phase_key(w.get("pk")), "km": w.get("km"), "ran": round(ran, 1),
                      "current": w is cur, "selected": w is sel,
-                     "race": any(x.get("race") for x in w["sessions"])})
+                     "race": any(x.get("race") for x in w["sessions"]),
+                     # the week's long run and its race, drawn inside the bar (the long run is the number a
+                     # build is judged by; a race week's bar is tall because of the race, not the training)
+                     "long": road_long_km(w["sessions"]),
+                     "race_km": round(sum(x.get("km") or 0 for x in w["sessions"] if x.get("race")), 1) or None})
     phases = []
     for r in road:
         if phases and phases[-1]["key"] == r["phase"]:
@@ -1174,8 +1202,7 @@ def plan_page(S, db, week=None, day=None):
                      "lo": (ft.get("band") or {}).get("lo_hms"), "hi": (ft.get("band") or {}).get("hi_hms"),
                      "verdict": (plan.get("feasibility") or {}).get("verdict")} if obj else None,
             "road": road, "phases": phases,
-            "road_headline": (lambda pk: f"Peak {pk['km']:g} km · week of {S._date(pk['start']).strftime('%b')} {S._date(pk['start']).day}"
-                              if pk and pk.get("km") else None)(max(road, key=lambda r: r.get("km") or 0, default=None)),
+            "road_headline": road_headline(S, road),
             "week": {"start": sel["start"], "end": end(sel), "phase": phase_key(sel.get("pk")),
                      "phase_name": phase_name(sel.get("pk")), "n": sel.get("wk"), "km": sel.get("km"),
                      "intent": sel.get("intent"), "current": sel is cur,

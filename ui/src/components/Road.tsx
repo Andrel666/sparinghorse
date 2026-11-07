@@ -21,9 +21,15 @@ export function Road({ road, phases, today, tuneUps = [], onPick }: { road: Plan
         {road.map(w => (
           <button key={w.start} type="button" role="listitem" data-phase={w.phase || undefined}
                   className={["road-bar", w.current ? "current" : "", w.selected ? "sel" : "", w.race ? "race" : "", w.frozen ? "frozen" : ""].join(" ")}
-                  title={`${dateShort(w.start)} · ${km(w.km)} planned${w.ran ? ` · ${km(w.ran)} run` : ""}`}
-                  aria-label={`Week of ${dateShort(w.start)}, ${km(w.km)}${w.ran ? `, ${km(w.ran)} run` : ""}`} onClick={() => onPick(w.start)}>
-            <span className="planned" style={{ height: `${(w.km / max) * 100}%` }} />
+                  title={[`Week of ${dateShort(w.start)}`, `${km(w.km)} planned`, w.long ? `long run ${km(w.long)}` : "",
+                          w.race_km ? `race ${km(w.race_km)}` : "", w.ran ? `${km(w.ran)} run` : ""].filter(Boolean).join(" · ")}
+                  aria-label={`Week of ${dateShort(w.start)}, ${km(w.km)}${w.long ? `, long run ${km(w.long)}` : ""}${w.race_km ? `, race ${km(w.race_km)}` : ""}${w.ran ? `, ${km(w.ran)} run` : ""}`}
+                  onClick={() => onPick(w.start)}>
+            <span className="planned" style={{ height: `${(w.km / max) * 100}%` }}>
+              {/* the week's long run (and its race) as the bottom of the bar: the build's own number, inside the week */}
+              {w.race_km ? <span className="part race" style={{ height: `${(Math.min(w.race_km, w.km) / (w.km || 1)) * 100}%` }} /> : null}
+              {w.long ? <span className="part long" style={{ height: `${(Math.min(w.long, w.km) / (w.km || 1)) * 100}%` }} /> : null}
+            </span>
             {w.ran > 0 && <span className="ran" style={{ height: `${(Math.min(w.ran, w.km || w.ran) / max) * 100}%` }} />}
           </button>
         ))}
@@ -33,6 +39,8 @@ export function Road({ road, phases, today, tuneUps = [], onPick }: { road: Plan
         {phases.map(p => <span key={p.start} data-phase={p.key || undefined} style={{ flex: p.weeks }}>{p.name}</span>)}
       </div>
       {ti >= 0 && <div className="road-today" style={{ left: `${((ti + (tday + 0.5) / 7) / road.length) * 100}%` }}>▲ today</div>}
+      {road.some(w => w.long) && <div className="road-key" aria-hidden="true"><span><i />week</span><span><i className="long" />long run</span>
+        {road.some(w => w.race_km) && <span><i className="race" />race</span>}</div>}
     </div>
   );
 }

@@ -225,7 +225,17 @@ button.month-day { cursor: pointer; } button.month-day:hover { background: var(-
 .road-wrap { display: flex; flex-direction: column; gap: 4px; position: relative; }
 .road { display: flex; align-items: flex-end; gap: 2px; height: 160px; border-bottom: 1px solid var(--rule); }
 .road-bar { flex: 1; height: 100%; position: relative; border: 0; background: none; padding: 0; cursor: pointer; display: flex; align-items: flex-end; }
-.road-bar .planned { width: 100%; background: var(--bar, var(--ph-base)); }
+.road-bar .planned { width: 100%; background: var(--bar, var(--ph-base)); display: flex; flex-direction: column-reverse; }
+/* inside the bar: the long run (ink over the bar's own colour) and the race (signal) */
+.road-bar .part { display: block; width: 100%; box-shadow: inset 0 2px 0 var(--bg); }   /* a 2px cut in paper: the split reads on any phase colour */
+.road-bar .part.long { background: color-mix(in srgb, var(--text) 30%, var(--bar, var(--ph-base))); }
+.road-bar .part.race { background: var(--signal); }
+.road-bar.current .part.long { background: color-mix(in srgb, var(--on-accent) 40%, var(--signal)); }
+.road-key { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); font-size: var(--fs-label); color: var(--muted); }
+.road-key > span { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.road-key i { display: inline-block; width: var(--mark); height: var(--mark); background: var(--ph-base); }
+.road-key i.long { background: color-mix(in srgb, var(--text) 30%, var(--ph-base)); }
+.road-key i.race { background: var(--signal); }
 .road-bar:hover .planned { filter: brightness(.9); }
 .road-bar .ran { position: absolute; left: 30%; right: 30%; bottom: 0; background: var(--text); }
 .road-bar.current .planned { background: var(--signal); }

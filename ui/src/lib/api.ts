@@ -139,7 +139,7 @@ export interface PlanPage {
   races: import("../pages/plan/Races").RaceRow[]; tune_ups: { label: string; date: string }[];
   race: { label: string; date: string; type: string; target: string | null; tone?: "ok" | "warn" | "bad" | null; call?: string | null; prediction: string | null;
           lo: string | null; hi: string | null; verdict: string | null } | null;
-  road: { start: string; phase: string | null; km: number; ran: number; current: boolean; selected: boolean; race: boolean; frozen: boolean;
+  road: { start: string; phase: string | null; km: number; long?: number | null; race_km?: number | null; ran: number; current: boolean; selected: boolean; race: boolean; frozen: boolean;
           flags: { label: string; date: string; day: number }[] }[];
   phases: { key: string | null; name: string | null; start: string; weeks: number }[]; road_headline?: string | null;
   week: { start: string; end: string; phase: string | null; phase_name: string | null; n: number | null; km: number;
