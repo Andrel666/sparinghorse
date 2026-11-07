@@ -22,6 +22,18 @@ function Input({ f, value, onChange }: { f: Field; value: string; onChange: (v: 
   if (f.kind === "choice") return <select id={id} className="input" value={value} onChange={e => onChange(e.target.value)}>
     {f.choices.map(c => <option key={c.v} value={c.v}>{c.t}</option>)}</select>;
   if (f.kind === "text") return <textarea id={id} className="input" value={value} onChange={e => onChange(e.target.value)} />;
+  if (f.kind === "number") return <span className="row">
+    <input id={id} className="input num-input" type="number" inputMode="numeric" min={f.min} max={f.max} step={1}
+           value={value} onChange={e => onChange(e.target.value)} />{f.unit && <span className="muted">{f.unit}</span>}</span>;
+  if (f.kind === "rank") {                    // the ranked rest days: tap in order of preference, tap again to remove
+    const order = value ? value.split(",").filter(Boolean) : [];
+    const flip = (v: string) => onChange((order.includes(v) ? order.filter(x => x !== v) : [...order, v]).join(","));
+    return <span className="seg rank" role="group" aria-label={f.label} id={id}>{f.choices.map(c => {
+      const n = order.indexOf(c.v);
+      return <button key={c.v} type="button" aria-pressed={n >= 0} aria-label={`${c.t}${n >= 0 ? `, rest choice ${n + 1}` : ""}`}
+                     onClick={() => flip(c.v)}>{c.t.slice(0, 3)}{n >= 0 && <sup>{n + 1}</sup>}</button>; })}</span>;
+  }
+  if (f.kind === "url") return <input id={id} className="input" type="url" style={{ maxWidth: 320 }} value={value} onChange={e => onChange(e.target.value)} />;
   return <input id={id} className="input" style={{ maxWidth: 320 }} value={value} onChange={e => onChange(e.target.value)} />;
 }
 

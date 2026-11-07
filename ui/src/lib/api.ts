@@ -163,7 +163,7 @@ export interface Marker { key: string; label: string; unit: string; value: numbe
   good: string | null; state: "ok" | "watch" | null; stale: boolean; delta: number | null; group: string; stale_days: number | null;
   n: number; first: string; series: { date: string; v: number }[]; recent: { date: string; v: number }[] }
 export interface BodyPage { ok: true; markers: Marker[]; stopped: string | null; add: { key: string; label: string }[]; injuries: { start: string; end: string | null; label: string | null }[] }
-export interface Field { key: string; label: string; help: string; help_short?: string; kind: string; choices: { v: string; t: string }[];
+export interface Field { key: string; label: string; help: string; help_short?: string; kind: string; min?: number; max?: number; unit?: string; choices: { v: string; t: string }[];
   value: string; source: string }
 export interface SettingsPage { ok: true; groups: { name: string; fields: Field[] }[] }
 

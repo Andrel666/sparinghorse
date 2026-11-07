@@ -1416,20 +1416,40 @@ def help_short(text):
     t = re.sub(r"\s+", " ", text or "").strip()
     for m in re.finditer(r"[.!?](\s|$)", t):
         head = t[:m.start() + 1]
-        if not re.search(r"(\be\.g|\bi\.e|\betc|\bvs|\bapprox|\bmin|\bmax|\d)\.$", head):
+        if not re.search(r"(\be\.g|\bi\.e|\betc|\bvs|\bapprox|\bmin|\bmax)\.$", head):
             return head
     return t
 
 
 # ── Settings ──────────────────────────────────────────────────────────────────────────────────
 # Typed inputs for the settings that have a fixed set of answers (Classic shows free-text boxes).
+DAYS7 = [("mon", "Monday"), ("tue", "Tuesday"), ("wed", "Wednesday"), ("thu", "Thursday"), ("fri", "Friday"),
+         ("sat", "Saturday"), ("sun", "Sunday")]
+
+
+def _tz_choices():
+    """Every Area/City IANA zone, sorted (the legacy and Etc/ aliases left out)."""
+    try:
+        from zoneinfo import available_timezones
+        zs = sorted(z for z in available_timezones() if "/" in z and not z.startswith(("Etc/", "SystemV/", "US/")))
+    except Exception:
+        zs = []
+    return [("", "Server default")] + [(z, z.replace("_", " ")) for z in zs]
+
+
 CHOICES = {
     "units": [("km", "Kilometres"), ("mi", "Miles")],
     "week_start": [("", "Monday (default)"), ("sun", "Sunday"), ("sat", "Saturday")],
-    "long_run_day": [("", "Default (last day of the week)")] + [(d, d.capitalize()) for d in
-                     ("mon", "tue", "wed", "thu", "fri", "sat", "sun")],
+    "long_run_day": [("", "Default (last day of the week)")] + DAYS7,
     "max_runs_per_week": [("", "No cap")] + [(str(n), str(n)) for n in (3, 4, 5, 6)],
+    "taper_weeks": [("", "Automatic (3 on a road of 16+ weeks, else 2)"), ("2", "2 weeks"), ("3", "3 weeks")],
+    "tz": _tz_choices(),
 }
+# fields with a typed control other than a dropdown: whole numbers, and the ranked rest days
+NUMBERS = {"athlete_age": (10, 100, "years"), "manual_lthr": (100, 220, "bpm")}   # the validators' own bounds
+RANKED = {"rest_day_rank": DAYS7}
+
+
 SETTING_GROUPS = [("Athlete", ["athlete_context", "athlete_age", "manual_lthr", "injury_history"]),
                   ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "long_run_first", "taper_weeks"]),
                   ("Display", ["units", "tz"]),
@@ -1443,13 +1463,21 @@ def settings_page(S, db):
         v, src = S._resolve_setting(db, spec)
         by[spec["key"]] = {"key": spec["key"], "label": spec["label"], "help": spec.get("help", ""),
                            "help_short": help_short(spec.get("help", "")),
-                           "kind": "choice" if spec["key"] in CHOICES else spec.get("kind", "line"),
-                           "choices": [{"v": a, "t": b} for a, b in CHOICES.get(spec["key"], [])],
+                           "kind": ("choice" if spec["key"] in CHOICES else "number" if spec["key"] in NUMBERS
+                                    else "rank" if spec["key"] in RANKED else spec.get("kind", "line")),
+                           "choices": [{"v": a, "t": b} for a, b in (CHOICES.get(spec["key"]) or RANKED.get(spec["key"]) or [])],
+                           **({"min": NUMBERS[spec["key"]][0], "max": NUMBERS[spec["key"]][1], "unit": NUMBERS[spec["key"]][2]}
+                              if spec["key"] in NUMBERS else {}),
                            "value": v or "", "source": src}
     for k, f in by.items():                          # a stored "Sunday" selects the "sun" choice
         vals = [c["v"] for c in f["choices"]]
-        if vals and f["value"] not in vals:
+        if f["kind"] == "rank":                      # "Fri, mon" → "fri,mon": the ranking in the choices' keys
+            f["value"] = ",".join(v for w in re.split(r"[,\s]+", f["value"].strip().lower()) if w
+                                  for v in vals if w.startswith(v))
+        elif vals and f["value"] not in vals:
             f["value"] = next((v for v in vals if v and f["value"].strip().lower().startswith(v)), f["value"])
+            if f["value"] not in vals and f["value"]:  # a stored value the list does not carry stays selectable
+                f["choices"].insert(1, {"v": f["value"], "t": f["value"]})
     groups = [{"name": n, "fields": [by[k] for k in ks if k in by]} for n, ks in SETTING_GROUPS]
     known = {k for _, ks in SETTING_GROUPS for k in ks}
     groups.append({"name": "Other", "fields": [f for k, f in by.items() if k not in known]})   # any key added later
