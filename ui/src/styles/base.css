@@ -90,7 +90,8 @@ small { font-size: .6em; font-weight: var(--w-medium); }
 .btn.danger { background: var(--bad); color: var(--on-accent); border-color: var(--bad); }
 .input { font: inherit; font-size: var(--fs-small); height: var(--ctl); padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--surface); color: var(--text); min-width: 0; }
-.input:focus { border-color: var(--text); outline: none; }
+/* a field shows the same 2px focus ring as every other control, plus the ink border */
+.input:focus { border-color: var(--text); outline: 2px solid var(--focus); outline-offset: 1px; }
 textarea.input { height: auto; padding: 8px 12px; }
 .check { display: flex; gap: var(--sp-2); align-items: flex-start; font-size: var(--fs-small); }
 .check input { margin-top: 4px; flex: none; accent-color: var(--text); }
