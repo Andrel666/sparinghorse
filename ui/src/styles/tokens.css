@@ -13,7 +13,7 @@
   --line-strong: #c9c9c4;      /* the held line: ceilings, goals, targets */
   --rule: #0b0b0b;             /* zone rules */
   --text: #0b0b0b;             /* text role 1: primary */
-  --text-2: #3d3d3a;           /* text role 2: secondary prose, tone labels (11:1) */
+  --text-2: #3d3d3a;           /* text role 2: secondary prose, tone labels (10.4:1) */
   --muted: #6a6a66;            /* text role 3: labels and meta (5.2:1) */
   --signal: #2b3cff;           /* now / selected / primary data: 6.3:1 on --bg, carries white text 6.6:1 */
   --signal-soft: #e8eaff;

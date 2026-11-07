@@ -23,10 +23,10 @@ function label(d: Day) {
     ran.length ? `ran ${runKm.toFixed(1)} km${d.moved_from ? `, moved from ${d.moved_from}` : ""}` : ""].filter(Boolean).join(": ");
 }
 
-/** `onDay` makes each day a button that opens its detail (Today, Plan). */
 /** Presentation only: wraps each "number unit" in a no-wrap span so a narrow cell never breaks "12.5 / km". */
 const keepUnits = (t: string) => t.split(/(\d+(?:\.\d+)? (?:km|bpm))/).map((x, i) => i % 2 ? <span key={i} className="nw">{x}</span> : x);
 
+/** `onDay` makes each day a button that opens its detail (Today, Plan). */
 export function Week({ days, phase, onDay, selected, today }: { days: Day[]; phase?: string | null; onDay?: (date: string) => void;
   selected?: string | null; today?: string }) {
   return (
