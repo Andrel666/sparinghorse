@@ -1,5 +1,6 @@
 // Settings panels that read their own endpoints: away days, calibration, keys, Suunto, COROS,
 // console access, system status, backup & export, backfill.
+import { Icon } from "../../components/Icon";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
@@ -181,8 +182,8 @@ export function Backup() {
     done: r => `Backfill done: added ${r.activities?.added ?? 0} activities across ${r.activities?.pages_fetched ?? 0} pages`, fail: "Backfill didn't complete" });
   return <Card label="Backup & export">
     <div className="row">
-      <a className="btn" href="/api/backup/db" download>⬇ Database snapshot (.db)</a>
-      <a className="btn" href="/api/export/json" download>⬇ Data export (.json)</a>
+      <a className="btn" href="/api/backup/db" download><Icon name="download" /> Database snapshot (.db)</a>
+      <a className="btn" href="/api/export/json" download><Icon name="download" /> Data export (.json)</a>
       <button className="btn" disabled={back.isPending} onClick={() => back.mutate()}>{back.isPending ? "Backfilling…" : "Backfill all history"}</button>
     </div>
     <span className="help">The snapshot is a complete copy of the database: restore by stopping the app and dropping it into ./data as sparinghorse.db.
