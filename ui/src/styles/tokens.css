@@ -47,6 +47,12 @@
   --fs-body: 15px;
   --fs-small: 14px;
   --fs-label: 13px;
+  --fs-figure-sm: 28px;         /* a run's figures, the phone's figures */
+  /* two weights: hierarchy comes from size and colour, not boldness (no 600-900; slop.test.ts) */
+  --w-regular: 400; --w-medium: 500;
+  /* tracking: 0 for anything under 24px; display sizes tighten a little; never uppercase-and-track */
+  --track-display: -0.02em;      /* 24-48px: titles, figures */
+  --track-hero: -0.03em;         /* 56px and up: Today's hero */
 
   /* space: a 4px grid. Only these steps (or another multiple of 4) for margin, padding, gap and fixed heights;
      1-2px are for hairlines and nudges. ui/src/lib/slop.test.ts fails the build on anything else. */
