@@ -232,7 +232,9 @@ export interface Debrief {
           contract?: { predicted: string; margin_s: number | null; tone: "ok" | "warn" | "bad" | null; words: string | null; days: number } };
   next: { date: string; dow: string; title: string; km: number | null; target: Target | null } | null;
   changed: string[]; plan_reacted: boolean;
+  insights?: { keep: Insight[]; change: Insight[]; next: string[]; context: Insight[] };
 }
+export interface Insight { key: string; text: string }
 export const useDebrief = (id: number | null | undefined) => q<Debrief>(["ui", "debrief", id], `/api/ui/debrief/${id}`, id != null, false);
 
 /** Goal (sh_ui_lenses.goal_page): the contract line, ranked levers, what holds the next weeks, vs the original plan. */

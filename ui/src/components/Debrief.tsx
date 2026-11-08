@@ -1,5 +1,6 @@
 // A run's debrief: the four questions after a run, in the order the mind asks them (docs/design/FOUR_LENSES_DESIGN.md):
-// did I do what was asked · what did it cost · what did it do to my goal · what changes next. Stacked on the phone,
+// did I do what was asked · what did it cost · what did it do to my goal · what changes next; then what to keep and
+// what to change, each read against the athlete's own recent runs. Stacked on the phone,
 // a 2×2 grid on desktop. Numbers, words and verdicts come from /api/ui/debrief/<id>; this only lays them out.
 import { Link } from "react-router-dom";
 import { useDebrief, type Debrief as D } from "../lib/api";
@@ -62,6 +63,22 @@ function Next({ d }: { d: D }) {
   </div>;
 }
 
+function Insights({ d }: { d: D }) {
+  const i = d.insights;
+  if (!i) return null;
+  return <div className="insights">
+    <div className="list"><span className="insights-h">Keep</span>
+      {i.keep.length ? <ul className="bullets t-small">{i.keep.map(x => <li key={x.key}>{x.text}</li>)}</ul>
+        : <span className="muted t-small">Nothing stood out this time.</span>}</div>
+    <div className="list"><span className="insights-h">Change</span>
+      {i.change.length ? <ul className="bullets t-small">{i.change.map(x => <li key={x.key}>{x.text}</li>)}</ul>
+        : <span className="muted t-small">Nothing to change: this run did its job.</span>}</div>
+    {i.next.length > 0 && <div className="list insights-wide"><span className="insights-h">Next run</span>
+      <ul className="bullets t-small">{i.next.map((x, k) => <li key={k}>{x}</li>)}</ul></div>}
+    {i.context.length > 0 && <p className="muted t-small insights-wide">{i.context.map(x => x.text).join(" ")}</p>}
+  </div>;
+}
+
 /** The debrief of one run. `label` names where it sits ("Debrief · latest run" on Now, the run on Log). */
 export function Debrief({ id, label, span = 12 }: { id: number; label?: string; span?: 6 | 8 | 12 }) {
   return <Query q={useDebrief(id)}>{d => (
@@ -75,6 +92,8 @@ export function Debrief({ id, label, span = 12 }: { id: number; label?: string; 
         <section aria-label="What it cost"><h3 className="debrief-q">2 What it cost</h3><Cost d={d} /></section>
         <section aria-label="What it did to the goal"><h3 className="debrief-q">3 What it did to the goal</h3><Goal d={d} /></section>
         <section aria-label="What changes next"><h3 className="debrief-q">4 What's next</h3><Next d={d} /></section>
+        {d.insights && <section aria-label="What to keep and what to change" className="debrief-wide">
+          <h3 className="debrief-q">5 What to keep, what to change</h3><Insights d={d} /></section>}
       </div>
     </Card>)}</Query>;
 }

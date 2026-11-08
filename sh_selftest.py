@@ -17071,18 +17071,22 @@ def _stc_ui_rest_days():
     TSB ≥ 0 and after n − 1 it is still below; balanced form reads 0; (b) today's row is read off the
     de-duplicated reconstruction INCLUDING today's run, comes first in Recovery, links to the fitness
     chart, and turns 'watch' when form is at the tired line; (c) no history, no row."""
+    import math
     import sqlite3 as _sq
     from datetime import date as _d, timedelta as _td
     U = UIAPI
     fails = []
     start = _d(2026, 6, 4)
     for ctl, atl in ((60, 90), (60, 62), (40, 80), (55, 55)):
-        n = U.rest_days(S, ctl, atl, start)
+        x = U.rest_days(S, ctl, atl, start)
+        n = math.ceil(x)
         curve = S.roll({}, start, start + _td(days=max(n, 1)), ctl0=ctl, atl0=atl)
-        ok_n = n == 0 if ctl >= atl else (curve[n - 1]["ctl"] >= curve[n - 1]["atl"] and
+        ok_n = x == 0 if ctl >= atl else (curve[n - 1]["ctl"] >= curve[n - 1]["atl"] and
                                           (n == 1 or curve[n - 2]["ctl"] < curve[n - 2]["atl"]))
         if not ok_n:
-            fails.append(f"(a) CTL {ctl} / ATL {atl}: {n} rest day(s) is not the first day TSB reaches 0")
+            fails.append(f"(a) CTL {ctl} / ATL {atl}: {x} rest day(s) does not round up to the first day TSB reaches 0")
+        if ctl < atl and x == n:
+            fails.append(f"(a) CTL {ctl} / ATL {atl}: {x} has no decimal (Runalyze shows 3.4, not 4)")
     mem = _sq.connect(":memory:"); mem.row_factory = _sq.Row
     mem.executescript(S.SCHEMA)
     try:
@@ -17106,7 +17110,7 @@ def _stc_ui_rest_days():
         if U.rest_days(S, y["ctl"], y["atl"], today) == want:
             fails.append("(b) ANTI-VACUITY — today's run does not change the count, so (b) cannot see it")
         r = U.today_rest_days(S, mem, today) or {}
-        if h["date"] != today.isoformat() or r.get("value") != str(want) or want < 1:
+        if h["date"] != today.isoformat() or r.get("value") != f"{want:g}" or want < 1:
             fails.append(f"(b) rest days {r.get('value')} vs the reconstruction's {want} (today's run counted?)")
         if r.get("link") != "/fitness#fitness-fatigue" or not r.get("series"):
             fails.append(f"(b) the row has no door or no TSB series: {r.get('link')}")
@@ -17123,6 +17127,109 @@ def _stc_ui_rest_days():
     return _st("det", "ui-rest-days",
                "Today's Recovery shows Runalyze's rest days — full-rest days until TSB is back to 0 — exact on the "
                "engine's own EWMA, read off the de-duplicated history with today's run, first in the card",
+               passed=not fails, got={"failures": fails or "none"})
+
+
+def _stc_run_insights():
+    """Fork §LENS — a run's "what to keep, what to change", each read against the athlete's own recent runs.
+    (a) even 1 km splits, a steady heart rate (decoupling under 5 %) and the longest run in weeks are KEEPs;
+    (b) a second half ≥5 % slower is a CHANGE with advice for the next run; (c) a long run's fast last km is a
+    CHANGE, and a long run without one is a KEEP only for an athlete with an injury history; (d) an easy run over the
+    easy ceiling is a CHANGE (and names the pattern only for a run inside today's effort window), under it a KEEP;
+    (e) heartbeats per km against the recent median: better is a KEEP, worse a CHANGE; (f) heat is CONTEXT, never a
+    CHANGE; (g) a run with no splits, no decoupling and no heart rate says nothing (nothing is guessed); (h) the
+    debrief carries the insights."""
+    import json
+    import sqlite3 as _sq
+    import sh_ui_lenses as L
+    from datetime import date as _d, timedelta as _td
+    fails = []
+    mem = _sq.connect(":memory:"); mem.row_factory = _sq.Row
+    mem.executescript(S.SCHEMA)
+    saved_inj = L._has_injuries
+    today = _d.today()
+    ed = {"easy_hr_ceiling": 145, "easy_counts": {"judged": 5, "hot": 4, "too_hard": 0}, "window_days": 21}
+    aid = [0]
+
+    def add(day, km, sec_km, hr, splits=None, dc=None, temp=18, cad=82):
+        aid[0] += 1
+        raw = {"aerobic_decoupling_pace": dc, "temperature": temp, "humidity": 50, "cadence": cad,
+               "cadence_display_factor": 2,
+               "splits": splits if splits is not None else [{"distance": 1, "duration": sec_km} for _ in range(int(km))]}
+        mem.execute("INSERT INTO activities (id, date_time, date, sport, distance, duration, hr_avg, trimp, raw) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)", (aid[0], day.isoformat() + "T07:00:00", day.isoformat(), "Running",
+                                                   km, km * sec_km, hr, 80.0, json.dumps(raw)))
+        mem.commit()
+        return dict(mem.execute("SELECT * FROM activities WHERE id=?", (aid[0],)).fetchone())
+
+    keys = lambda r, part: {x["key"] for x in r[part]}
+    try:
+        L._has_injuries = lambda S_, db: True
+        add(today - _td(days=60), 10.0, 400, 150, dc=6)                 # the last longer run, 60 days back
+        for k in (30, 25, 20, 15):                                     # the recent runs: ~1000 beats a km, 7 % drift
+            add(today - _td(days=k), 6.0, 400, 150, dc=7)
+        long_ = {"kind": "long"}
+        # (a) + (c keep) + (d over) + (e better): even, steady, longest in weeks, over the ceiling, more km per beat
+        a = add(today - _td(days=1), 8.0, 400, 146, dc=4)
+        r = L.run_insights(S, mem, a, long_, {"pace": "6:40"}, ed, "hot")
+        for k in ("distance", "pacing", "decoupling", "finish", "efficiency"):
+            if k not in keys(r, "keep"):
+                fails.append(f"(a/c/e) '{k}' is not a keep on an even, steady, long, efficient run: {r['keep']}")
+        if "effort" not in keys(r, "change") or "4 of your last 5" not in next(x["text"] for x in r["change"] if x["key"] == "effort"):
+            fails.append(f"(d) 146 bpm over a 145 ceiling, inside the window, is not a change naming the pattern: {r['change']}")
+        if not r["next"]:
+            fails.append("(d) an over-ceiling run gives no advice for the next run")
+        L._has_injuries = lambda S_, db: False
+        if "finish" in keys(L.run_insights(S, mem, a, long_, {}, ed, "hot"), "keep"):
+            fails.append("(c) 'no push at the end' is said to an athlete with no injury history")
+        # (b) a fade: the second half 10 % slower; (c) a fast last km on a long run
+        sp = [{"distance": 1, "duration": 380}] * 3 + [{"distance": 1, "duration": 420}] * 3
+        b = add(today - _td(days=2), 6.0, 400, 140, splits=sp, dc=6)
+        r = L.run_insights(S, mem, b, {"kind": "easy"}, {}, ed, "on")
+        if "pacing" not in keys(r, "change") or not r["next"]:
+            fails.append(f"(b) a 10 % slower second half is not a change with advice: {r}")
+        if "effort" not in keys(r, "keep"):
+            fails.append(f"(d) 140 bpm under a 145 ceiling is not a keep: {r['keep']}")
+        sp = [{"distance": 1, "duration": 400}] * 5 + [{"distance": 1, "duration": 370}]
+        c = add(today - _td(days=3), 6.0, 395, 140, splits=sp, dc=6)
+        if "finish" not in keys(L.run_insights(S, mem, c, long_, {}, ed, "on"), "change"):
+            fails.append("(c) a long run's last km 7 % faster than its average is not a change")
+        # (d) an old run gets no pattern line: today's window doesn't speak for it
+        old = add(today - _td(days=40), 6.0, 400, 150, dc=7)
+        t = next((x["text"] for x in L.run_insights(S, mem, old, {"kind": "easy"}, {}, ed, "hot")["change"] if x["key"] == "effort"), "")
+        if not t or "of your last" in t:
+            fails.append(f"(d) a run 40 days back names today's pattern (or loses its effort line): {t!r}")
+        # (e) worse: 8 % more beats a km than the median
+        e = add(today - _td(days=4), 6.0, 400, 162, dc=6)
+        if "efficiency" not in keys(L.run_insights(S, mem, e, {"kind": "easy"}, {}, {}, None), "change"):
+            fails.append("(e) 8 % more beats a km than the recent median is not a change")
+        # (f) heat is context, not a change
+        f = add(today - _td(days=5), 6.0, 400, 150, dc=6, temp=29)
+        r = L.run_insights(S, mem, f, {"kind": "easy"}, {}, {}, None)
+        if "heat" not in keys(r, "context") or "heat" in keys(r, "change"):
+            fails.append(f"(f) 29 °C is not context only: {r}")
+        # (g) nothing to read, nothing said
+        aid[0] += 1
+        mem.execute("INSERT INTO activities (id, date_time, date, sport, distance, duration, hr_avg, trimp, raw) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)", (aid[0], today.isoformat() + "T07:00:00", today.isoformat(), "Running",
+                                                   3.0, 1200, None, 30.0, "{}"))
+        g = dict(mem.execute("SELECT * FROM activities WHERE id=?", (aid[0],)).fetchone())
+        r = L.run_insights(S, mem, g, None, {}, {}, None)
+        if any(r[k] for k in ("keep", "change", "next", "context")):
+            fails.append(f"(g) a run with nothing to read still says something: {r}")
+        # (h) the debrief carries them
+        d = L.run_debrief(S, mem, a["id"])
+        if set((d.get("insights") or {}).keys()) != {"keep", "change", "next", "context"}:
+            fails.append(f"(h) the debrief does not carry the insights: {d.get('insights')}")
+    except Exception as ex:
+        fails.append(f"raised {type(ex).__name__}: {ex}")
+    finally:
+        L._has_injuries = saved_inj
+        mem.close()
+    return _st("det", "run-insights",
+               "After a run: what to keep and what to change, each against the athlete's own recent runs (pacing, "
+               "heart-rate drift, effort vs the easy ceiling, beats per km, cadence, a long run's finish); heat is "
+               "context; a run with nothing to read says nothing",
                passed=not fails, got={"failures": fails or "none"})
 
 
@@ -26208,7 +26315,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_long_run_first(), lambda: _stc_calf_safe(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_long_run_first(), lambda: _stc_calf_safe(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_run_insights(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

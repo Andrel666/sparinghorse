@@ -9,6 +9,7 @@ is imported by the coach.
 The app module is passed in (`register(app, S)`): SparingHorse may be running as __main__.
 """
 import json
+import math
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -626,13 +627,17 @@ REST_DAYS_MAX = 60
 
 
 def rest_days(S, ctl, atl, start):
-    """Days of zero load from `start` until CTL − ATL ≥ 0 (0 when it already is; capped)."""
+    """Days of zero load from `start` until CTL − ATL ≥ 0, to one decimal like Runalyze (3.4, not 4).
+    On zero load each EWMA only decays (x·(1 − α)), so the crossing has a closed form on the engine's own
+    smoothing: CTL·dc^t = ATL·da^t → t = ln(ATL/CTL) / ln(dc/da). 0 when form is already balanced; capped."""
     if ctl - atl >= 0:
         return 0
-    for i, p in enumerate(S.roll({}, start, start + timedelta(days=REST_DAYS_MAX - 1), ctl0=ctl, atl0=atl), start=1):
-        if p["ctl"] - p["atl"] >= 0:
-            return i
-    return REST_DAYS_MAX
+    if ctl <= 0:
+        return float(REST_DAYS_MAX)
+    import math
+    dc, da = 1 - 2.0 / (S.TAU_CTL + 1), 1 - 2.0 / (S.TAU_ATL + 1)
+    t = math.log(atl / ctl) / math.log(dc / da)
+    return min(round(t, 1), float(REST_DAYS_MAX))
 
 
 def today_rest_days(S, db, today):
@@ -644,12 +649,13 @@ def today_rest_days(S, db, today):
     ctl, atl = last["ctl"], last["atl"]
     tsb = ctl - atl
     n = rest_days(S, ctl, atl, today + timedelta(days=1))
+    whole = math.ceil(n)                     # the first whole day form reads balanced
     cut = (today - timedelta(days=30)).isoformat()
     r = round(tsb)
     tsb_txt = f"{'+' if r > 0 else '−' if r < 0 else ''}{abs(r):.0f}"
-    by = f" ({(today + timedelta(days=n)).strftime('%a')})" if n <= 6 else ""
+    by = f" ({(today + timedelta(days=whole)).strftime('%a')})" if whole <= 6 else ""
     sub = f"form is balanced · TSB {tsb_txt}" if n == 0 else f"full rest to TSB 0{by} · now {tsb_txt}"
-    return {"key": "rest_days", "label": "Rest days", "value": f"{n}{'+' if n >= REST_DAYS_MAX else ''}",
+    return {"key": "rest_days", "label": "Rest days", "value": f"{n:g}{'+' if n >= REST_DAYS_MAX else ''}",
             "unit": "day" if n == 1 else "days", "sub": sub,
             "state": "watch" if tsb <= FORM_TIRED else None,
             "series": [{"date": p["date"], "v": round(p["ctl"] - p["atl"], 1)} for p in hist if p["date"] >= cut],

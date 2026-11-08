@@ -16,6 +16,17 @@ KM_TOL = 0.10                                    # within ±10 % of the asked di
 LEVER_WEEK_KM = 5.0                              # the weekly-km what-if
 LEVER_LONG_KM = 3.0                              # the long-run what-if
 AHEAD_WEEKS = 4                                  # how far "holding you back" looks
+# — run insights: what to keep, what to change. Each threshold is a reading of the athlete's OWN history —
+INS_WINDOW_DAYS = 42                             # the recent runs a run is compared with
+INS_MIN_KM = 4.0                                 # shorter runs don't compare (warm-up dominates)
+INS_EVEN_PCT = 3.0                               # second half within ±3 % of the first: even pacing
+INS_FADE_PCT = 5.0                               # second half ≥5 % slower: the run faded
+INS_SURGE_PCT = 3.0                              # last km ≥3 % faster than the average: a fast finish
+INS_DECOUPLE_OK, INS_DECOUPLE_HIGH = 5.0, 10.0   # aerobic decoupling (Pa:HR drift), %
+INS_EFF_PCT = 2.0                                # beats per km ≥2 % off the recent median is worth saying
+INS_CADENCE_SPM = 4                              # cadence ≥4 spm off the recent median
+INS_HOT_C, INS_HUMID_C, INS_HUMID_PCT = 26, 22, 75   # warm enough to lift heart rate
+INS_HOT_RUNS = 3                                 # easy runs over the ceiling in the effort window: a pattern
 
 
 def _hms(sec):
@@ -167,11 +178,163 @@ def run_debrief(S, db, aid):
     if pb and pa:
         d = S.diff_plans(pb, pa) or {}
         changed = [c for c in d.get("changes") or [] if not c.startswith("The plan already matched")][:3]
+    insights = run_insights(S, db, act, asked, did, ed, verdict)
     return {"ok": True, "id": aid, "date": act["date"], "headline": headline, "tone": tone, "asked": asked, "did": did,
-            "checks": checks, "cost": cost, "goal": goal, "note": (note["note"] if note else None) or None,
+            "checks": checks, "cost": cost, "insights": insights, "goal": goal, "note": (note["note"] if note else None) or None,
             "next": ({"date": nxt["date"], "dow": U._dow(S, nxt["date"]), "title": U.KIND_TITLE.get(nxt.get("kind"), nxt.get("kind")),
                       "km": nxt.get("km"), "target": U.session_target(S, db, nxt.get("kind"), zones)} if nxt else None),
             "changed": changed, "plan_reacted": bool(changed)}
+
+
+def _pace_s(sec_per_km):
+    m, x = divmod(int(round(sec_per_km)), 60)
+    return f"{m}:{x:02d}"
+
+
+def run_insights(S, db, act, asked, did, ed, verdict):
+    """What to keep and what to change after a run, each read against the athlete's own recent runs.
+    Returns {keep, change, next, context}: keep, change and context are {key, text} (context is what the run met,
+    such as heat, not something to change); next is the advice for the next run. A signal with no data stays
+    silent: nothing here is guessed."""
+    keep, change, nxt, context = [], [], [], []
+    try:
+        raw = json.loads(db.execute("SELECT raw FROM activities WHERE id=?", (act["id"],)).fetchone()["raw"] or "{}")
+    except Exception:
+        raw = {}
+    km, dur, hr = act["distance"] or 0.0, act["duration"] or 0.0, act["hr_avg"]
+    long_run = (asked or {}).get("kind") == "long"
+    easy = (asked or {}).get("kind") in EASY_KINDS or verdict is not None
+    # — the recent runs this one is compared with —
+    day = S._date(act["date"])
+    drop = S.dropped_ids(db)
+    recent = [r for r in db.execute(
+        "SELECT id, date, distance, duration, hr_avg, raw FROM activities WHERE sport='Running' AND date<? AND date>=? "
+        "AND distance>=? AND duration>0 ORDER BY date", (act["date"], (day - timedelta(days=INS_WINDOW_DAYS)).isoformat(),
+                                                         INS_MIN_KM)).fetchall() if r["id"] not in drop]
+    med = lambda xs: sorted(xs)[len(xs) // 2] if xs else None
+
+    # 1 distance: the longest run in a while
+    if km >= INS_MIN_KM:
+        longer = db.execute("SELECT date, distance FROM activities WHERE sport='Running' AND date<? AND distance>=? "
+                            "ORDER BY date DESC LIMIT 1", (act["date"], km + 0.05)).fetchone()
+        if longer and (day - S._date(longer["date"])).days >= 21:
+            keep.append({"key": "distance", "text": f"Your longest run since {S._date(longer['date']).strftime('%b %-d')} "
+                                                    f"({longer['distance']:.1f} km). The long run is growing."})
+
+    # 2 pacing: halves and the last km, from the 1 km splits
+    sp = [x for x in raw.get("splits") or [] if x.get("distance") and x.get("duration")]
+    if len(sp) >= 4 and km >= INS_MIN_KM:
+        tot = sum(x["distance"] for x in sp)
+        half, acc, first, second = tot / 2, 0.0, [0.0, 0.0], [0.0, 0.0]
+        for x in sp:
+            side = first if acc + x["distance"] / 2 < half else second
+            side[0] += x["distance"]; side[1] += x["duration"]; acc += x["distance"]
+        p1, p2 = first[1] / first[0], second[1] / second[0]
+        delta = 100 * (p2 - p1) / p1
+        full = [x for x in sp if x["distance"] >= 0.95]
+        lo, hi = min(x["duration"] / x["distance"] for x in full), max(x["duration"] / x["distance"] for x in full)
+        if abs(delta) <= INS_EVEN_PCT:
+            keep.append({"key": "pacing", "text": f"Even pacing: every full km between {_pace_s(lo)} and {_pace_s(hi)}, "
+                                                  f"the second half {'+' if delta >= 0 else '−'}{abs(delta):.0f} % on the first."})
+        elif delta < 0:
+            keep.append({"key": "pacing", "text": f"Negative split: the second half {abs(delta):.0f} % faster "
+                                                  f"({_pace_s(p1)} → {_pace_s(p2)}/km)."})
+        elif delta >= INS_FADE_PCT:
+            change.append({"key": "pacing", "text": f"The run faded: the second half {delta:.0f} % slower "
+                                                    f"({_pace_s(p1)} → {_pace_s(p2)}/km)."})
+            nxt.append("Start slower: the first two km should feel too easy.")
+        avg = dur / km if km else None
+        last = sp[-1] if sp[-1]["distance"] >= 0.5 else sp[-2]
+        lp = last["duration"] / last["distance"]
+        if avg and long_run:
+            if 100 * (avg - lp) / avg >= INS_SURGE_PCT:
+                change.append({"key": "finish", "text": f"A fast finish: the last km at {_pace_s(lp)} against "
+                                                        f"{_pace_s(avg)}/km on average."})
+                nxt.append("Keep the end of the long run at the same easy pace: no push in the last km.")
+            elif _has_injuries(S, db):
+                keep.append({"key": "finish", "text": f"No push at the end: the last km at {_pace_s(lp)}, the run's own "
+                                                      f"pace. Fast running late in a long run is what your injury "
+                                                      f"history warns about."})
+
+    # 3 aerobic decoupling (heart rate drifting up against pace), against the recent median
+    dc = raw.get("aerobic_decoupling_pace")
+    if dc is not None and km >= INS_MIN_KM:
+        rdc = [json.loads(r["raw"] or "{}").get("aerobic_decoupling_pace") for r in recent]
+        m = med([x for x in rdc if x is not None])
+        than = f" (your recent median is {m:g} %)" if m is not None else ""
+        if dc < INS_DECOUPLE_OK:
+            keep.append({"key": "decoupling", "text": f"Heart rate held steady against pace: {dc:g} % drift{than}. "
+                                                      f"Under 5 % means the aerobic base covered this distance."})
+        elif dc >= INS_DECOUPLE_HIGH:
+            change.append({"key": "decoupling", "text": f"Heart rate drifted {dc:g} % against pace{than}: "
+                                                        f"the distance was at the edge of the current base."})
+            nxt.append("Hold this distance until the drift falls under 5 %, before the long run grows.")
+
+    # 4 effort: heart rate against the easy ceiling, and whether it is a pattern
+    ceil = ed.get("easy_hr_ceiling")
+    counts = ed.get("easy_counts") or {}
+    # the pattern counts are today's window: they speak for a run inside it, not for an old one
+    from datetime import datetime
+    recent_run = (datetime.now().date() - day).days <= (ed.get("window_days") or 0)
+    if easy and hr and ceil:
+        if hr > ceil:
+            over = hr - ceil
+            change.append({"key": "effort", "text": f"Average heart rate {hr} bpm, {over} over the easy ceiling of {ceil}."
+                                                    + (f" That's {counts.get('hot', 0) + counts.get('too_hard', 0)} of your "
+                                                       f"last {counts['judged']} easy runs above it: the easy days are "
+                                                       f"running as moderate days."
+                                                       if counts.get("judged") and recent_run
+                                                       and counts.get("hot", 0) + counts.get("too_hard", 0) >= INS_HOT_RUNS else "")})
+            nxt.append(f"Run by heart rate, not pace: keep the watch under {ceil} from the first km, even if that "
+                       f"means slower than {did.get('pace') or 'today'}/km or a short walk on a climb.")
+        else:
+            keep.append({"key": "effort", "text": f"Easy, as asked: {hr} bpm against a ceiling of {ceil}."})
+
+    # 5 efficiency: heartbeats per km against the recent median (lower = more running per beat)
+    if hr and km >= INS_MIN_KM and dur:
+        bpk = hr * dur / 60 / km
+        rb = [r["hr_avg"] * r["duration"] / 60 / r["distance"] for r in recent if r["hr_avg"]]
+        m = med(rb) if len(rb) >= 3 else None
+        if m:
+            d = 100 * (bpk - m) / m
+            if d <= -INS_EFF_PCT:
+                keep.append({"key": "efficiency", "text": f"More running per heartbeat: {bpk:.0f} beats a km, {abs(d):.0f} % "
+                                                          f"under your median of the last {INS_WINDOW_DAYS // 7} weeks ({m:.0f})."})
+            elif d >= INS_EFF_PCT:
+                change.append({"key": "efficiency", "text": f"Each km cost more heartbeats than usual: {bpk:.0f} a km, "
+                                                            f"{d:.0f} % over your recent median ({m:.0f}). Heat, sleep or "
+                                                            f"tiredness show up here first."})
+
+    # 6 cadence against the recent median
+    cad = raw.get("cadence")
+    if cad:
+        f = raw.get("cadence_display_factor") or 1
+        rc = [json.loads(r["raw"] or "{}").get("cadence") for r in recent]
+        m = med([x for x in rc if x])
+        if m and abs(cad - m) * f >= INS_CADENCE_SPM:
+            word = "higher" if cad > m else "lower"
+            (keep if cad > m else change).append({"key": "cadence", "text": f"Cadence {cad * f} spm, {word} than your "
+                                                                             f"usual {m * f}."})
+
+    # 7 conditions: warm air lifts heart rate, so a high reading on a hot day reads differently
+    t, h = raw.get("temperature"), raw.get("humidity")
+    if t is not None and (t >= INS_HOT_C or (t >= INS_HUMID_C and (h or 0) >= INS_HUMID_PCT)):
+        context.append({"key": "heat", "text": f"{t}°C{f' and {h} % humidity' if h else ''}: warm enough to lift heart "
+                                               f"rate several beats at the same pace."})
+        nxt.append("On warm days run earlier or cooler, and judge the effort by heart rate.")
+    return {"keep": keep, "change": change, "next": nxt, "context": context}
+
+
+def _has_injuries(S, db):
+    spec = S.SETTINGS_BY_KEY.get("injury_history")
+    if not spec:
+        return False
+    try:
+        import sh_calibrate
+        inj, _bad = sh_calibrate.parse_injuries(S._resolve_setting(db, spec)[0])
+        return bool(inj)
+    except Exception:
+        return False
 
 
 def _levers(S, db, plan):
