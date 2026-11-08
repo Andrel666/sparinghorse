@@ -89,7 +89,7 @@ from sh_engine import (
     trimp_per_min,
     MAX_RUNS_RANGE, set_max_runs, max_runs, _cap_runs, set_long_first, long_first,
     LONG_RUN_CAP_RANGE, STEPUP_LONG_RANGE, set_long_run_cap, set_more_runs_at, set_long_easy,
-    HOLD_RANGE, set_volume_hold,
+    HOLD_RANGE, set_volume_hold, set_keep_quality,
     LONG_RUN_MAX_BY_RACE, _long_run_max,
     V5K_VVO2MAX_FRAC, _actual_week_caps, _adj_directive, _adj_fingerprint, _adj_summary,
     _apply_adjustment, _athlete_age, _av_blocked_dates, _av_run_days, _build_long_mp,
@@ -2199,6 +2199,7 @@ def apply_settings_overrides(db):
     set_more_runs_at(_resolve_setting(db, SETTINGS_BY_KEY["more_runs_at_long_km"])[0])   # fork §STEPUP
     set_long_easy(_resolve_setting(db, SETTINGS_BY_KEY["long_run_easy"])[0])       # fork §EASYLR
     set_volume_hold(_resolve_setting(db, SETTINGS_BY_KEY["volume_hold_km"])[0])    # fork §HOLD
+    set_keep_quality(_resolve_setting(db, SETTINGS_BY_KEY["keep_quality"])[0])     # fork §KEEPQ
     set_week_start(_resolve_setting(db, SETTINGS_BY_KEY["week_start"])[0])        # fork §WEEK
     # Fork §CAL — an APPROVED calibration overlays the engine's fitted constants; none ⇒ defaults.
     # Like the day preference it changes how the NEXT plan is laid, not one already generated.
@@ -8926,6 +8927,7 @@ def replan(db, mutate):
 _PV_REPS = {"detail": True, "effort": True, "km": True, "minutes": True, "pace_zone": True,
             "trimp": True, "zone": True}
 _PV_QUALITY = {"attach": True, "component": True, "frac": True, "kind": True, "label": True,
+               "easylr": True,   # fork §EASYLR — the race-pace session moved off the long run (prescription)
                "rec_min": True, "rep_min": True, "structure": True, "zone": True}
 # NOT `reflection`: the free-text "how it felt" is the readiness-note posture — private (§H7).
 _PV_SESSION = {"activity_id": True, "actual": {"km": True, "pace": True}, "component": True, "moved_to": True,
@@ -8956,6 +8958,9 @@ _PV_SESSION = {"activity_id": True, "actual": {"km": True, "pace": True}, "compo
 # by construction — a new phase key or a new payload cannot outrun it.
 _PV_LIMIT_AXIS = {"ceiling": True, "laid": True, "headroom": True, "binds": True, "basis": True, "unit": True}
 _PV_WEEK = {"adjusted": True, "clipped": True, "deload_forced": True, "deload_pulled": True,
+            # fork §STEPUP / §KEEPQ — the week's run ceiling, the shape's own count, and the km the week
+            # gave to keep its quality: governor annotations on the prescription, like `clipped`
+            "max_runs": True, "runs_designed": True, "kept_quality_km": True,
             "elapsed": True, "eq_km": True, "freq_actual": True, "frequency_met": True,
             "frozen": True, "intent": True, "intent_km": True, "intent_runs": True, "km": True,
             # §P1 — the structured role/phase behind the `intent` sentence already published

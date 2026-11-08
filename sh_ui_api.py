@@ -1006,14 +1006,20 @@ def week_flags(S, w):
         add("✓ frequency met — today optional", "This week's prescribed count and volume are already run; the remaining run is optional.", "ok")
     elif w.get("volume_met"):
         add("✓ volume run — today optional", "This week's planned km are already run; the remaining days aren't re-prescribed just to hit a run count.", "ok")
+    kq = w.get("kept_quality_km")
+    if kq is not None:                               # fork §KEEPQ — the week gave easy km for its workout
+        add(f"workout kept · −{kq:g} km", "Keep quality over volume: the workout would have pushed this week's "
+            "day-to-day load past the spike limit, so the week runs a little less easy instead of losing it.")
     if w.get("fatigue_capped"):
         add("⚠ build intent capped by recent fatigue", "A building week, but recent fatigue left no load-ratio headroom — the long run was held back.", "warn")
-    elif w.get("clipped"):
+    elif w.get("clipped") and kq is None:
         add("clipped to fit the load ratio", None, "warn")
     if w.get("long_step_capped"):
         add("long run held (+10 %)", "This week's long run was held to +10 % over your longest of the last 4 weeks; the freed volume went to easy runs.")
     if w.get("long_max_capped"):
-        add("long run at its limit", "Held to 35 km or 3 h 30 min at its planned pace, whichever comes first.")
+        _lm = (w.get("limits") or {}).get("long_max") or {}
+        add("long run at its limit", f"Held to {(_lm.get('max_km') or 35):g} km or its time limit at its planned pace, "
+            "whichever comes first.")
     lf = next((x.get("long_first_km") for x in w.get("sessions") or [] if x.get("long_first_km")), None)
     if lf:
         add(f"long run +{lf:g} km from the easy runs", "Long run first: the week was held by its weekly limits, so the "
@@ -1481,7 +1487,8 @@ RANKED = {"rest_day_rank": DAYS7}
 
 SETTING_GROUPS = [("Athlete", ["athlete_context", "athlete_age", "manual_lthr", "injury_history"]),
                   ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "more_runs_at_long_km",
-                            "long_run_first", "long_run_max_km", "long_run_easy", "volume_hold_km", "taper_weeks"]),
+                            "long_run_first", "long_run_max_km", "long_run_easy", "volume_hold_km",
+                            "keep_quality", "taper_weeks"]),
                   ("Display", ["units", "tz"]),
                   ("AI features", ["ai_narration", "ai_parsing", "ai_judgment", "ai_coach"]),
                   ("Links", ["house_url", "house_name", "private_url"])]

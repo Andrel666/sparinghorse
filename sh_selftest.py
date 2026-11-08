@@ -15944,21 +15944,29 @@ def _stc_calf_safe():
              and the VO₂ intervals still appear (they alternate); off, long runs finish at race pace.
       HOLD   (d) no building week goes past the hold until 3 of the 4 weeks before it carried ≥ 95% of it;
              off, a week passes it sooner.
-      ALL    (e) the four together keep (a)–(d), and settings validation refuses out-of-range values."""
+      ALL    (e) the four together keep (a)–(d), and settings validation refuses out-of-range values.
+      KEEPQ  (f) with Keep quality over volume added to the four: a week that keeps its quality says how
+             many km it gave, gave at most KEEPQ_MAX_TRIM of the week, holds the peak bound, and laid off
+             the first such week had no quality laid off; every week before it is laid identically;
+             the road carries more quality sessions than off (anti-vacuity).
+      PV     (g) every field these plans carry is classified for the public view (§PV)."""
     E_ = E
     fails, seen = [], {}
-    keep = (E_.max_runs(), E_.long_run_cap(), E_.more_runs_at(), E_.long_easy(), E_.volume_hold())
+    keep = (E_.max_runs(), E_.long_run_cap(), E_.more_runs_at(), E_.long_easy(), E_.volume_hold(), E_.keep_quality())
+    plans = []
     weeks_of = lambda plan: [w for v in plan.values() if isinstance(v, dict) and "weeks" in v for w in v["weeks"]]
     runs_of = lambda w: [x for x in w.get("sessions") or [] if (x.get("km") or 0) > 0 and x.get("kind") not in ("rest", "race")]
     long_of = lambda w: max([x["km"] for x in runs_of(w) if (x.get("kind") or "").startswith("long")] or [0.0])
     CAP, STEP, HOLD = 16.0, 14.0, 35.0
 
-    def lay(cap="", step="", easy="0", hold=""):
+    def lay(cap="", step="", easy="0", hold="", kq="0", run_km=10.0):
         E_.set_max_runs("3"); E_.set_long_run_cap(cap); E_.set_more_runs_at(step)
-        E_.set_long_easy(easy); E_.set_volume_hold(hold)
-        fx, td = _race_fixture_db("half", run_km=10.0)
+        E_.set_long_easy(easy); E_.set_volume_hold(hold); E_.set_keep_quality(kq)
+        fx, td = _race_fixture_db("half", run_km=run_km)
         try:
-            return [w for w in weeks_of(S.generate_plan(fx, today=td)) if not w.get("frozen") and not w.get("elapsed")]
+            plan = S.generate_plan(fx, today=td)
+            plans.append(plan)
+            return [w for w in weeks_of(plan) if not w.get("frozen") and not w.get("elapsed")]
         finally:
             fx.close()
 
@@ -16029,6 +16037,47 @@ def _stc_calf_safe():
             fails.append(f"(d) anti-vacuity: off first passes {HOLD:g} km at week {fo}, held at {fh}")
         both = lay(cap=str(CAP), step=str(STEP), easy="1", hold=str(HOLD))
         check_cap(both, "all"); check_step(both, "all"); check_easy(both, "all"); check_hold(both, "all")
+        # (f) keep quality over volume, on top of the four
+        kq = lay(cap=str(CAP), step=str(STEP), easy="1", hold=str(HOLD), kq="1")
+        check_cap(kq, "kq"); check_step(kq, "kq"); check_easy(kq, "kq"); check_hold(kq, "kq")
+        nq = lambda ws: sum(1 for w in ws for x in runs_of(w) if x.get("kind") in E_.QUALITY_KINDS)
+        # the 8 km road: one of its weeks would need 12% of its km to keep its quality — past the limit
+        kq8 = lay(cap=str(CAP), step=str(STEP), easy="1", hold=str(HOLD), kq="1", run_km=8.0)
+        kept = [w for w in kq + kq8 if w.get("kept_quality_km") is not None]
+        seen["kept_weeks"], seen["quality_on_off"] = len(kept), (nq(kq), nq(both))
+        if not kept or nq(kq) <= nq(both):
+            fails.append(f"(f) anti-vacuity: {len(kept)} kept weeks, quality sessions {nq(kq)} on vs {nq(both)} off")
+        off_by = {w.get("start"): w for w in both}
+        for w in kept:
+            wid = f"kq/{w.get('start')}"
+            if not any(x.get("kind") in E_.QUALITY_KINDS for x in runs_of(w)):
+                fails.append(f"(f) {wid}: says it kept its quality but lays none")
+            if (w.get("peak_acwr") or 0) > E_.H1_RESCUE_ACWR + 1e-9:
+                fails.append(f"(f) {wid}: peak {w.get('peak_acwr')} past {E_.H1_RESCUE_ACWR}")
+            if w["kept_quality_km"] > E_.KEEPQ_MAX_TRIM * ((w.get("km") or 0) + w["kept_quality_km"]) + 0.3:
+                fails.append(f"(f) {wid}: gave {w['kept_quality_km']} km of {w.get('km')}, past the {E_.KEEPQ_MAX_TRIM:.0%} limit")
+        kept10 = [w for w in kq if w.get("kept_quality_km") is not None]
+        if kept10:                    # the first kept week: laid off, on the same history, it lost its quality
+            o = off_by.get(kept10[0].get("start"))
+            if o is not None and any(x.get("kind") in E_.QUALITY_KINDS for x in runs_of(o)):
+                fails.append(f"(f) kq/{kept10[0].get('start')}: off, this week had its quality too, so nothing was kept")
+        kept = kept10
+        if kept:
+            sig = lambda w: [(x.get("date"), x.get("kind"), x.get("km")) for x in w.get("sessions") or []]
+            for w in kq:
+                if w.get("start") >= kept[0].get("start"):
+                    break
+                if w.get("start") in off_by and sig(w) != sig(off_by[w["start"]]):
+                    fails.append(f"(f) kq/{w.get('start')}: changed before the first kept week")
+                    break
+        # (g) every field these plans carry is classified for the public view
+        _seen_pv = set()
+        for plan in plans:
+            _seen_pv |= _pv_paths(plan, "plan", set())
+        uncl = [x for x in sorted(_seen_pv) if x != "plan.<phase>"
+                and not (_pv_classified(x, S._PV_PLAN) or _pv_withheld(x))]
+        if uncl:
+            fails.append(f"(g) unclassified for the public view: {uncl[:8]}")
         for key, bad, good in (("long_run_max_km", "9", "17"), ("more_runs_at_long_km", "31", "12"),
                                ("volume_hold_km", "abc", "30")):
             if S.validate_setting(key, bad)[0] or not S.validate_setting(key, good)[0]:
@@ -16037,7 +16086,8 @@ def _stc_calf_safe():
         import traceback
         fails.append(f"raised {type(e).__name__}: {e} {traceback.format_exc()[-300:]}")
     finally:
-        mr, lc, mu, le, vh = keep
+        mr, lc, mu, le, vh, kqv = keep
+        E_.set_keep_quality("1" if kqv else "0")
         E_.set_max_runs("" if mr is None else str(mr)); E_.set_long_run_cap("" if lc is None else str(lc))
         E_.set_more_runs_at("" if mu is None else str(mu)); E_.set_long_easy("1" if le else "0")
         E_.set_volume_hold("" if vh is None else str(vh))
@@ -26024,7 +26074,9 @@ def _pinned_engine_globals():
     E.set_long_first("0")
     # Fork §LRCAP / §STEPUP / §EASYLR — the same class again
     saved_lc, saved_mu, saved_le, saved_vh = E.long_run_cap(), E.more_runs_at(), E.long_easy(), E.volume_hold()
+    saved_kq = E.keep_quality()
     E.set_long_run_cap(""); E.set_more_runs_at(""); E.set_long_easy("0"); E.set_volume_hold("")
+    E.set_keep_quality("0")
     E.reset_calibration()
     # Fork §LOCAL — `auto` would see a developer's `claude` CLI and turn the AI layer on for every
     # det that assumes the keyless test env. The battery keeps the key-only rule it always had;
@@ -26044,6 +26096,7 @@ def _pinned_engine_globals():
         E.set_more_runs_at("" if saved_mu is None else str(saved_mu))
         E.set_long_easy("1" if saved_le else "0")
         E.set_volume_hold("" if saved_vh is None else str(saved_vh))
+        E.set_keep_quality("1" if saved_kq else "0")
         E.apply_calibration(saved_cal)
 
 

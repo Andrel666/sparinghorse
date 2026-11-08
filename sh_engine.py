@@ -206,6 +206,12 @@ SETTINGS_SPEC = [
      "help": "A weekly volume to settle at before going past it, 15–150 km: the plan may lay a week above "
              "it only after 3 weeks at it (one down week between them is allowed). For a volume you got "
              "hurt at before. Empty = off. Regenerate the plan after changing it."},
+    {"key": "keep_quality", "env": "SH_KEEP_QUALITY", "label": "Keep quality over volume", "kind": "flag",
+     "default": "0",
+     "help": "When a week's quality session would push its day-to-day load past the spike limit, the plan "
+             "takes easy km off that week (up to a tenth of it) until the session fits, instead of "
+             "dropping the session and keeping the km. Every other limit still holds; if no lighter week "
+             "fits, the session goes as before. Off = keep the volume. Regenerate the plan after changing it."},
     {"key": "long_run_easy", "env": "SH_LONG_RUN_EASY", "label": "Easy long runs", "kind": "flag", "default": "0",
      "help": "Long runs stay easy from start to finish: no race-pace finish. The race-pace work moves to "
              "a mid-week session, run fresh, unless that week already has a threshold run. Off = the "
@@ -1383,6 +1389,15 @@ set_long_first(os.environ.get("SH_LONG_RUN_FIRST"))
 # HOLD_WEEKS + 1 weeks carried at least HOLD_FRAC of it, so one down week between them is allowed.
 # Lived weeks count through their eq-km. Only ever lowers the allowance; down and taper weeks are
 # never touched; the week in progress keeps its own lay. Unset ⇒ byte-identical.
+# Fork §KEEPQ — keep quality over volume. §H1's rescue answers a quality week whose in-week peak ACWR
+# passes H1_RESCUE_ACWR by stripping the quality and re-laying the week pure easy at the ceiling: volume
+# kept, intensity dropped. With §KEEPQ on, the week is first re-laid WITH its quality at a lower budget,
+# LAY_STEP_FRAC at a time down to KEEPQ_MAX_TRIM below `chosen`; the first lay that passes the governor's
+# judge, the peak bound, the polarized floor and the §3.1 eq ceiling, with a quality session still in it,
+# is the week. Load only ever goes down; every bound is the one the week already answered to. None
+# passes ⇒ §H1's rescue as before. Off ⇒ byte-identical.
+KEEPQ_MAX_TRIM = 0.10
+_KEEP_QUALITY = False
 HOLD_RANGE = (15.0, 150.0)
 HOLD_WEEKS = 3
 HOLD_FRAC = 0.95
@@ -1440,6 +1455,15 @@ def _hold_trimp(history, trimp_per_km):
     return None if held >= HOLD_WEEKS else cap
 
 
+def set_keep_quality(text):
+    global _KEEP_QUALITY
+    _KEEP_QUALITY = str(text or "").strip() == "1"
+
+
+def keep_quality():
+    return _KEEP_QUALITY
+
+
 def set_long_easy(text):
     global _LONG_EASY
     _LONG_EASY = str(text or "").strip() == "1"
@@ -1453,6 +1477,7 @@ set_long_run_cap(os.environ.get("SH_LONG_RUN_MAX_KM"))
 set_more_runs_at(os.environ.get("SH_MORE_RUNS_AT_LONG_KM"))
 set_long_easy(os.environ.get("SH_LONG_RUN_EASY"))
 set_volume_hold(os.environ.get("SH_VOLUME_HOLD_KM"))
+set_keep_quality(os.environ.get("SH_KEEP_QUALITY"))
 
 
 def _step_up_runs(wk, trailing_longs):
@@ -6537,6 +6562,36 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
         # raise load. Self-heals as CTL rebuilds.
         # §PRO17 — the rescue's OWN threshold now, not the governor's. See H1_RESCUE_ACWR.
         breach = bool(zones and peak and peak > H1_RESCUE_ACWR)
+        kept_q_km = None
+        if (breach and _KEEP_QUALITY and wk_zones is not None and chosen > 0
+                and any(s.get("kind") in QUALITY_KINDS for s in sessions)):
+            # Fork §KEEPQ — trim the week's budget with its quality in, before §H1 strips it
+            _km0 = sum((s.get("km") or 0.0) for s in sessions)
+            for _k in range(1, int(round(KEEPQ_MAX_TRIM / LAY_STEP_FRAC)) + 1):
+                _t = chosen * (1 - _k * LAY_STEP_FRAC)
+                _s2, _d2 = _distribute_week(wk, _date(wk_start), _t, easy_pace_sec, wk_zones,
+                                            long_km_cap=long_km_cap, days_override=av_days, av_blocked=av_off,
+                                            ladder=assertive, prev_tail=prev_tail, carve_eq_cap=bio_cap,
+                                            carve_race_offs=_race_offsets(race, wk_start))
+                if _lay_breaches(sess=_s2, dt=_d2, charge=_t, **lay_judge):
+                    continue
+                _s2 = _uncarve_eased(_s2, adjust, wk, easy_pace_sec)
+                _a2 = _apply_adjustment(_s2, _d2, adjust)
+                _s2, _d2 = _a2["sessions"], _a2["dt"]
+                if not any(s.get("kind") in QUALITY_KINDS for s in _s2):
+                    continue
+                _pr = _project_week(ctl, atl, wk_start, _d2, actual_floor=act_floor)
+                if _pr[3] and _pr[3] > H1_RESCUE_ACWR:
+                    continue
+                if _hard_share(_s2, sum(_d2.values())) > 1.0 - POLARIZED_EASY_MIN + 1e-9:
+                    continue
+                if bio_cap and _week_eq_km(_s2) > bio_cap:
+                    continue
+                sessions, dt, chosen, adjusted = _s2, _d2, _t, _a2
+                ctl_n, atl_n, eow, peak, eow_flat, m_ctl_n = _pr
+                lay_stepped, breach = True, False
+                kept_q_km = round(max(0.0, _km0 - sum((s.get("km") or 0.0) for s in sessions)), 1)
+                break
         eroded = bool(zones and not breach
                       and _hard_share(sessions, sum(dt.values())) > 1.0 - POLARIZED_EASY_MIN + 1e-9)
         # §3.1 — biomechanical spike: the week's pace-weighted eq_km jumped past the soft bio ceiling AND
@@ -6691,6 +6746,8 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
         # once the week is lived, §CARD3's elapsed true-up rewrites `runs` to actuals and THIS field
         # keeps the bar the athlete was actually set (what §6e banking judges adherence against).
         week["intent_runs"] = week["runs"]
+        if kept_q_km is not None:                    # fork §KEEPQ — the km the week gave for its quality
+            week["kept_quality_km"] = kept_q_km
         # §REST — the spacing gate refused a day this week wanted (volume held back rather than a
         # streak chained): surfaced so the lighter week says so out loud. Read off the sessions THIS
         # generation laid, like §PRO9's cap flag.
