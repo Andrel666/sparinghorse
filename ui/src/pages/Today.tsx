@@ -14,7 +14,7 @@ import { Banner } from "../components/feedback";
 import { Drawer } from "../components/layout";
 import { DayDetail, type DaySession } from "../components/Session";
 import { Spark } from "../components/charts";
-import { Debrief } from "../components/Debrief";
+import { Debrief, DebriefSummary } from "../components/Debrief";
 
 const VERDICT_WORD = { green: "Good to go", amber: "Go easier", red: "Hold off" } as const;
 const MARKER_TONE = { ok: "ok", watch: "warn" } as const;
@@ -60,6 +60,7 @@ function Hero({ d, onDay }: { d: TodayPage; onDay: (date: string) => void }) {
       </div>
       {s.done && s.actual && <span><span className="mk-ok">✓</span> Ran {km(s.actual.km)}{s.actual.pace ? ` at ${pace(s.actual.pace)}` : ""}{" "}
         {s.activity_id ? <Link to={`/runs?id=${s.activity_id}`} className="linkish">Open ›</Link> : null}</span>}
+      {s.done && s.activity_id ? <DebriefSummary id={s.activity_id} onOpen={() => onDay(d.today)} /> : null}
       <Steps steps={s.steps} />
     </div>);
 }
@@ -148,9 +149,12 @@ export function Today() {
     const daySessions: DaySession[] = !day ? [] : inWeek ? (w!.sessions ?? []).filter(x => x.date === day) : (d.coming ?? []).filter(x => x.date === day);
     const dayInfo = inWeek ? w!.days.find(x => x.date === day) : undefined;
     const ranHere = (dayInfo?.runs ?? []).filter(run => !daySessions.some(s => s.activity_id === run.activity_id && !s.moved_to));
-    // the debrief of the latest run: above the day band on the day the run lands, once today's session is done
-    // or today is a rest day (the moment is "how did it go?"); below the week otherwise
-    const fresh = !!lr && lr.date === d.today && (d.session.done || ["rest", "none", "pre", "post"].includes(d.session.kind));
+    // the debrief of the latest run: on the day the run lands and today's session is done, it is summarised under the
+    // hero and opens in the day drawer (the same door as the day itself); otherwise it sits below the week as a card
+    const fresh = !!lr && lr.date === d.today && !!d.session.done && d.session.activity_id === lr.id;
+    // every run on the open day gets its debrief in the drawer
+    const dayRuns = [...new Set([...daySessions.map(x => x.activity_id), ...ranHere.map(x => x.activity_id)]
+      .filter((x): x is number => typeof x === "number"))];
     const debrief = lr && <Debrief id={lr.id} label={`Debrief · ${lr.date === d.today ? "today's run" : `latest run, ${dateShort(lr.date)}`}`} />;
     return (
       <div className="page">
@@ -158,7 +162,6 @@ export function Today() {
           <span className="aside">{(d.dateline ?? dateLong(d.today)).split(" · ")[0]}</span>
         </PageHead>
         {r.halt && <Banner tone="bad"><b>Plan halted.</b> Clear it with your doctor before resuming.</Banner>}
-        {fresh && <div className="grid">{debrief}</div>}
         <section className={`dayband${verdictTn ? ` tone-${verdictTn}` : ""}`} aria-label="Today">
           <Hero d={d} onDay={setDay} />
           <Verdict d={d} onCheckin={() => setParam("checkin", "1")} />
@@ -180,6 +183,7 @@ export function Today() {
         </div>
         <Drawer title={day ? dateLong(day) : ""} open={!!day} onClose={() => setDay(null)}>
           <DayDetail sessions={daySessions} ranHere={ranHere} movedFrom={dayInfo?.moved_from} onRun={() => setDay(null)} />
+          {dayRuns.map(id => <Debrief key={id} id={id} bare />)}
         </Drawer>
         <Drawer title="Check in" open={checkin} onClose={() => setParam("checkin", null)}>
           <Checkin initial={r.checkin} onSaved={() => setParam("checkin", null)} />

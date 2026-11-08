@@ -655,6 +655,10 @@ body { font-variation-settings: "opsz" 14; font-optical-sizing: auto; }
 @media (min-width: 900px) { .insights { grid-template-columns: 1fr 1fr; column-gap: var(--sp-6); } }
 .insights-wide { grid-column: 1 / -1; }
 .insights-h { font-size: var(--fs-label); color: var(--muted); }
+.drawer .debrief, .drawer .insights { grid-template-columns: 1fr; }   /* 480px: one column, whatever the viewport */
+.drawer #debrief { margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--rule); }
+.debrief-sum { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); margin-top: var(--sp-2); max-width: 60ch; }
+.debrief-sum .pill { white-space: normal; }
 /* Goal: the ranked levers, one door per lever */
 .levers { list-style: none; margin: 0; padding: 0; counter-reset: lever; }
 .levers li + li { border-top: 1px solid var(--line); }

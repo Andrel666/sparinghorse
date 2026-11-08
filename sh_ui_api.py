@@ -306,6 +306,13 @@ def today_page(S, db):
                                       if v in ("hot", "too_hard") else f"Easy, on target: {hr} bpm, under ≤ {ceil}"
                                       if v in ("on", "easy") else None)
     session["activity_id"] = sess.get("activity_id")
+    if session["done"] and not session["activity_id"]:
+        # the readiness session doesn't carry the run: the block log's pairing of today's session does, and failing
+        # that today's latest run (the hero's "Open" and the debrief summary need it)
+        log = S.block_log(db) or {}
+        paired = next((x.get("activity_id") for w in log.get("weeks") or [] for x in w.get("sessions") or []
+                       if x.get("date") == tiso and x.get("activity_id") and not x.get("unplanned")), None)
+        session["activity_id"] = paired or ((latest or {}).get("id") if (latest or {}).get("date") == tiso else None)
     return {"ok": True, "today": tiso, "sync_minutes": sync_min, "race": race, "dateline": dateline,
             "readiness": {"verdict": a.get("verdict"), "halt": bool(a.get("halt")), "action": a.get("action"),
                           "headline": split_action(a.get("action"))[0], "detail": split_action(a.get("action"))[1],

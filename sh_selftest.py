@@ -16602,6 +16602,9 @@ def _stc_ui_today():
         for k in ("readiness", "session", "week", "race"):
             if not d.get(k):
                 fails.append(f"(a) page lacks {k}")
+        sd = d.get("session") or {}
+        if sd.get("done") and not sd.get("activity_id"):
+            fails.append("(a) today's session is done but names no run (the hero's Open and debrief summary need it)")
         w = d.get("week") or {}
         if len(w.get("days") or []) != 7 or S._date(w["days"][0]["date"]) != E.week_start_of(today):
             fails.append(f"(a) week is not 7 days from the week start: {[x['date'] for x in w.get('days') or []][:2]}")

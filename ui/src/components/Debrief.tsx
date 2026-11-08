@@ -79,21 +79,44 @@ function Insights({ d }: { d: D }) {
   </div>;
 }
 
-/** The debrief of one run. `label` names where it sits ("Debrief · latest run" on Now, the run on Log). */
-export function Debrief({ id, label, span = 12 }: { id: number; label?: string; span?: 6 | 8 | 12 }) {
-  return <Query q={useDebrief(id)}>{d => (
-    <Card id="debrief" label={label ?? `Debrief · ${dateLong(d.date)}`} span={span} lede={d.headline} tone={d.tone ?? undefined}
-          aside={<span className="row" style={{ gap: "var(--sp-4)" }}>
-            <Link to={`?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(location.search)), ask: "1",
-              q: `About my run on ${dateLong(d.date)}, ${d.headline[0].toLowerCase()}${d.headline.slice(1)}: ` })}`} className="linkish t-small">Ask about this run ›</Link>
-            <Link to={`/log?id=${d.id}`} className="linkish t-small">The run ›</Link></span>}>
-      <div className="debrief">
+const askLink = (d: D) => `?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(location.search)), ask: "1",
+  q: `About my run on ${dateLong(d.date)}, ${d.headline[0].toLowerCase()}${d.headline.slice(1)}: ` })}`;
+
+/** The run in two lines, under Today's hero: the verdict, the first thing to change (or keep), and the door to the
+ *  whole debrief. */
+export function DebriefSummary({ id, onOpen }: { id: number; onOpen: () => void }) {
+  const q = useDebrief(id), d = q.data;
+  if (!d) return null;
+  const first = d.insights?.change[0] ?? d.insights?.keep[0];
+  const tally = d.insights && [d.insights.keep.length && `${d.insights.keep.length} to keep`,
+    d.insights.change.length && `${d.insights.change.length} to change`].filter(Boolean).join(" · ");
+  return <div className="debrief-sum">
+    <span><Pill tone={d.tone && d.tone !== "ok" ? d.tone : undefined}>{d.headline}</Pill></span>
+    {first && <span className="t-small muted">{first.text}</span>}
+    <button type="button" className="linkish t-small" onClick={onOpen}>Debrief{tally ? ` · ${tally}` : ""} ›</button>
+  </div>;
+}
+
+/** The debrief of one run. `label` names where it sits ("Debrief · latest run" on Now, the run on Log); `bare`
+ *  drops the card, for the day drawer. */
+export function Debrief({ id, label, span = 12, bare = false }: { id: number; label?: string; span?: 6 | 8 | 12; bare?: boolean }) {
+  return <Query q={useDebrief(id)}>{d => {
+    const links = <span className="row" style={{ gap: "var(--sp-4)" }}>
+      <Link to={askLink(d)} className="linkish t-small">Ask about this run ›</Link>
+      <Link to={`/log?id=${d.id}`} className="linkish t-small">The run ›</Link></span>;
+    const body = <div className="debrief">
         <section aria-label="Did I do what was asked"><h3 className="debrief-q">1 Did I do what was asked</h3><Did d={d} /></section>
         <section aria-label="What it cost"><h3 className="debrief-q">2 What it cost</h3><Cost d={d} /></section>
         <section aria-label="What it did to the goal"><h3 className="debrief-q">3 What it did to the goal</h3><Goal d={d} /></section>
         <section aria-label="What changes next"><h3 className="debrief-q">4 What's next</h3><Next d={d} /></section>
         {d.insights && <section aria-label="What to keep and what to change" className="debrief-wide">
           <h3 className="debrief-q">5 What to keep, what to change</h3><Insights d={d} /></section>}
-      </div>
-    </Card>)}</Query>;
+      </div>;
+    if (bare) return <section id="debrief" aria-label="Debrief" className="list" style={{ gap: "var(--sp-3)" }}>
+      <span className="eyebrow">Debrief</span>
+      <b className={d.tone && d.tone !== "ok" ? `tone-${d.tone}` : undefined} style={{ fontSize: "var(--fs-heading)" }}>{d.headline}</b>
+      {body}{links}</section>;
+    return <Card id="debrief" label={label ?? `Debrief · ${dateLong(d.date)}`} span={span} lede={d.headline} tone={d.tone ?? undefined}
+                 aside={links}>{body}</Card>;
+  }}</Query>;
 }
