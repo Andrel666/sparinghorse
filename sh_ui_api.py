@@ -1473,12 +1473,15 @@ CHOICES = {
     "tz": _tz_choices(),
 }
 # fields with a typed control other than a dropdown: whole numbers, and the ranked rest days
-NUMBERS = {"athlete_age": (10, 100, "years"), "manual_lthr": (100, 220, "bpm")}   # the validators' own bounds
+NUMBERS = {"athlete_age": (10, 100, "years"), "manual_lthr": (100, 220, "bpm"),
+           "long_run_max_km": (10, 35, "km"), "more_runs_at_long_km": (6, 30, "km"),
+           "volume_hold_km": (15, 150, "km")}   # the validators' own bounds
 RANKED = {"rest_day_rank": DAYS7}
 
 
 SETTING_GROUPS = [("Athlete", ["athlete_context", "athlete_age", "manual_lthr", "injury_history"]),
-                  ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "long_run_first", "taper_weeks"]),
+                  ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "more_runs_at_long_km",
+                            "long_run_first", "long_run_max_km", "long_run_easy", "volume_hold_km", "taper_weeks"]),
                   ("Display", ["units", "tz"]),
                   ("AI features", ["ai_narration", "ai_parsing", "ai_judgment", "ai_coach"]),
                   ("Links", ["house_url", "house_name", "private_url"])]

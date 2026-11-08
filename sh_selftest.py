@@ -15932,6 +15932,123 @@ def _stc_race_correction_fitness():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_calf_safe():
+    """Fork §LRCAP / §STEPUP / §EASYLR / §HOLD — the four calf-safe settings, each alone and all four
+    together, on the half fixture at a 3-run cap (10 km history: the long run grows 11 → 22 km and the
+    week 29 → 51 km off). Every check has its anti-vacuity: the same road laid with the setting off
+    breaks the limit the setting promises.
+      LRCAP  (a) no long run past the cap; the held note names it; off, a long run passes it.
+      STEPUP (b) a week has at most 3 runs until the long run of one of the 4 weeks before it reached the
+             threshold, at most 4 after; some week lays 4.
+      EASYLR (c) no long run carries a race-pace finish; a half-marathon-pace session is laid mid-week
+             and the VO₂ intervals still appear (they alternate); off, long runs finish at race pace.
+      HOLD   (d) no building week goes past the hold until 3 of the 4 weeks before it carried ≥ 95% of it;
+             off, a week passes it sooner.
+      ALL    (e) the four together keep (a)–(d), and settings validation refuses out-of-range values."""
+    E_ = E
+    fails, seen = [], {}
+    keep = (E_.max_runs(), E_.long_run_cap(), E_.more_runs_at(), E_.long_easy(), E_.volume_hold())
+    weeks_of = lambda plan: [w for v in plan.values() if isinstance(v, dict) and "weeks" in v for w in v["weeks"]]
+    runs_of = lambda w: [x for x in w.get("sessions") or [] if (x.get("km") or 0) > 0 and x.get("kind") not in ("rest", "race")]
+    long_of = lambda w: max([x["km"] for x in runs_of(w) if (x.get("kind") or "").startswith("long")] or [0.0])
+    CAP, STEP, HOLD = 16.0, 14.0, 35.0
+
+    def lay(cap="", step="", easy="0", hold=""):
+        E_.set_max_runs("3"); E_.set_long_run_cap(cap); E_.set_more_runs_at(step)
+        E_.set_long_easy(easy); E_.set_volume_hold(hold)
+        fx, td = _race_fixture_db("half", run_km=10.0)
+        try:
+            return [w for w in weeks_of(S.generate_plan(fx, today=td)) if not w.get("frozen") and not w.get("elapsed")]
+        finally:
+            fx.close()
+
+    def check_cap(ws, tag):
+        for w in ws:
+            if long_of(w) > CAP + 0.15:
+                fails.append(f"(a) {tag}/{w.get('start')}: long {long_of(w)} past the {CAP:g} km cap")
+        return any("your longest long run" in (x.get("note") or "") for w in ws for x in runs_of(w))
+
+    def check_step(ws, tag):
+        n4 = 0
+        for i, w in enumerate(ws):
+            n = len(runs_of(w))
+            prior = [long_of(x) for x in ws[max(0, i - E_.LONG_RUN_STEP_WINDOW):i]]
+            reached = bool(prior) and max(prior) >= STEP - 0.05
+            if n > 4 or (n == 4 and i >= E_.LONG_RUN_STEP_WINDOW and not reached):
+                fails.append(f"(b) {tag}/{w.get('start')}: {n} runs, trailing longest {max(prior or [0]):.1f}")
+            n4 += n == 4
+        return n4
+
+    def check_easy(ws, tag):
+        if any(x.get("kind") == "long_mp" for w in ws for x in runs_of(w)):
+            fails.append(f"(c) {tag}: a long run still finishes at race pace")
+        pace = sum(1 for w in ws for x in runs_of(w) if (x.get("note") or "").startswith("half-marathon-pace intervals"))
+        vo2 = sum(1 for w in ws for x in runs_of(w) if x.get("kind") == "interval")
+        return pace, vo2
+
+    def check_hold(ws, tag):
+        tpk = next((w["trimp_total"] / w["km"] for w in ws if w.get("km") and w.get("trimp_total")
+                    and all(x.get("kind") in ("easy", "long") for x in runs_of(w))), None)
+        cap_t = HOLD * tpk
+        held = 0
+        for i, w in enumerate(ws):
+            if E_._is_down(w) or E_._is_taper(w):
+                continue
+            prior = [x.get("trimp_total") or 0 for x in ws[max(0, i - E_.HOLD_WEEKS - 1):i]]
+            ok_past = sum(1 for t in prior if t >= E_.HOLD_FRAC * cap_t) >= E_.HOLD_WEEKS
+            if (w.get("trimp_total") or 0) > cap_t * 1.01 and not ok_past:
+                fails.append(f"(d) {tag}/{w.get('start')}: {w.get('km')} km ({w.get('trimp_total')} TRIMP) past the hold, "
+                             f"{sum(1 for t in prior if t >= E_.HOLD_FRAC * cap_t)} held weeks before it")
+            held += abs((w.get("trimp_total") or 0) - cap_t) <= 0.03 * cap_t
+        return held
+
+    def first_over(ws):
+        return next((i for i, w in enumerate(ws) if (w.get("km") or 0) > HOLD * 1.01), None)
+
+    try:
+        off = lay()
+        if not any(long_of(w) > CAP + 0.15 for w in off):
+            fails.append("(a) anti-vacuity: off, no long run passes the cap")
+        if not any(x.get("kind") == "long_mp" for w in off for x in runs_of(w)):
+            fails.append("(c) anti-vacuity: off, no long run finishes at race pace")
+        if any(len(runs_of(w)) > 3 for w in off):
+            fails.append("(b) off, a week lays more than the 3-run cap")
+        on = lay(cap=str(CAP))
+        if not check_cap(on, "cap"):
+            fails.append("(a) no held long run names the athlete's cap")
+        seen["step_4run_weeks"] = check_step(lay(step=str(STEP)), "step")
+        if not seen["step_4run_weeks"]:
+            fails.append("(b) anti-vacuity: no week lays a 4th run")
+        seen["pace"], seen["vo2"] = check_easy(lay(easy="1"), "easy")
+        if not seen["pace"] or not seen["vo2"]:
+            fails.append(f"(c) half-pace sessions {seen['pace']}, VO₂ sessions {seen['vo2']}: they must both appear")
+        hold = lay(hold=str(HOLD))
+        seen["held_weeks"] = check_hold(hold, "hold")
+        fo, fh = first_over(off), first_over(hold)
+        if fo is None or (fh is not None and fh <= fo):
+            fails.append(f"(d) anti-vacuity: off first passes {HOLD:g} km at week {fo}, held at {fh}")
+        both = lay(cap=str(CAP), step=str(STEP), easy="1", hold=str(HOLD))
+        check_cap(both, "all"); check_step(both, "all"); check_easy(both, "all"); check_hold(both, "all")
+        for key, bad, good in (("long_run_max_km", "9", "17"), ("more_runs_at_long_km", "31", "12"),
+                               ("volume_hold_km", "abc", "30")):
+            if S.validate_setting(key, bad)[0] or not S.validate_setting(key, good)[0]:
+                fails.append(f"(e) validation of {key}: {bad!r} accepted or {good!r} refused")
+    except Exception as e:
+        import traceback
+        fails.append(f"raised {type(e).__name__}: {e} {traceback.format_exc()[-300:]}")
+    finally:
+        mr, lc, mu, le, vh = keep
+        E_.set_max_runs("" if mr is None else str(mr)); E_.set_long_run_cap("" if lc is None else str(lc))
+        E_.set_more_runs_at("" if mu is None else str(mu)); E_.set_long_easy("1" if le else "0")
+        E_.set_volume_hold("" if vh is None else str(vh))
+    return _st("det", "calf-safe",
+               "Fork §LRCAP/§STEPUP/§EASYLR/§HOLD: the long run stays under the athlete's cap; a 4th run only once "
+               "the long run reached the threshold; long runs stay easy and the race-pace work moves mid-week, "
+               "alternating with VO₂; the weekly volume settles at the hold for 3 weeks before passing it",
+               passed=not fails, expect="each limit holds, and each setting changes the road",
+               got={"failures": fails or "none", **seen})
+
+
 def _stc_long_run_first():
     """Fork §LRF — Long run first. On a half and a marathon road, at 3 runs a week (the cap the share
     ceiling bites hardest at) and uncapped: (a) off, no session is marked and the plan is the one the
@@ -25905,6 +26022,9 @@ def _pinned_engine_globals():
     E.set_max_runs("")
     saved_lf = E.long_first()           # fork §LRF — Long run first is the same class of setting
     E.set_long_first("0")
+    # Fork §LRCAP / §STEPUP / §EASYLR — the same class again
+    saved_lc, saved_mu, saved_le, saved_vh = E.long_run_cap(), E.more_runs_at(), E.long_easy(), E.volume_hold()
+    E.set_long_run_cap(""); E.set_more_runs_at(""); E.set_long_easy("0"); E.set_volume_hold("")
     E.reset_calibration()
     # Fork §LOCAL — `auto` would see a developer's `claude` CLI and turn the AI layer on for every
     # det that assumes the keyless test env. The battery keeps the key-only rule it always had;
@@ -25920,6 +26040,10 @@ def _pinned_engine_globals():
         E.WEEK_START = saved_ws
         E.set_max_runs("" if saved_mr is None else str(saved_mr))
         E.set_long_first("1" if saved_lf else "0")
+        E.set_long_run_cap("" if saved_lc is None else str(saved_lc))
+        E.set_more_runs_at("" if saved_mu is None else str(saved_mu))
+        E.set_long_easy("1" if saved_le else "0")
+        E.set_volume_hold("" if saved_vh is None else str(saved_vh))
         E.apply_calibration(saved_cal)
 
 
@@ -26031,7 +26155,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_long_run_first(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_long_run_first(), lambda: _stc_calf_safe(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

@@ -88,6 +88,8 @@ from sh_engine import (
     TRIMP_PER_MIN, WEEK_TRIMP_SEARCH_MAX, set_day_preferences, set_week_start, week_start_of,
     trimp_per_min,
     MAX_RUNS_RANGE, set_max_runs, max_runs, _cap_runs, set_long_first, long_first,
+    LONG_RUN_CAP_RANGE, STEPUP_LONG_RANGE, set_long_run_cap, set_more_runs_at, set_long_easy,
+    HOLD_RANGE, set_volume_hold,
     LONG_RUN_MAX_BY_RACE, _long_run_max,
     V5K_VVO2MAX_FRAC, _actual_week_caps, _adj_directive, _adj_fingerprint, _adj_summary,
     _apply_adjustment, _athlete_age, _av_blocked_dates, _av_run_days, _build_long_mp,
@@ -2116,6 +2118,16 @@ def validate_setting(key, value):
         lo, hi = MAX_RUNS_RANGE
         if not value.strip().isdigit() or not (lo <= int(value.strip()) <= hi):
             return False, f"a whole number of runs, {lo}–{hi} (or empty for no cap)"
+    for _k, _rng, _what in (("long_run_max_km", LONG_RUN_CAP_RANGE, "the longest long run"),
+                            ("more_runs_at_long_km", STEPUP_LONG_RANGE, "the long run that adds a run"),
+                            ("volume_hold_km", HOLD_RANGE, "the weekly volume to hold at")):
+        if key == _k and value.strip():
+            try:
+                _v = float(value.strip().replace(",", "."))
+            except ValueError:
+                _v = None
+            if _v is None or not (_rng[0] <= _v <= _rng[1]):
+                return False, f"{_what} in km, {_rng[0]:g}–{_rng[1]:g} (or empty for off)"
     if key == "athlete_age" and value.strip():
         v = value.strip()
         if not v.isdigit() or not (10 <= int(v) <= 100):
@@ -2183,6 +2195,10 @@ def apply_settings_overrides(db):
         _resolve_setting(db, SETTINGS_BY_KEY["rest_day_rank"])[0])
     set_max_runs(_resolve_setting(db, SETTINGS_BY_KEY["max_runs_per_week"])[0])   # fork §MAXRUNS
     set_long_first(_resolve_setting(db, SETTINGS_BY_KEY["long_run_first"])[0])     # fork §LRF
+    set_long_run_cap(_resolve_setting(db, SETTINGS_BY_KEY["long_run_max_km"])[0])  # fork §LRCAP
+    set_more_runs_at(_resolve_setting(db, SETTINGS_BY_KEY["more_runs_at_long_km"])[0])   # fork §STEPUP
+    set_long_easy(_resolve_setting(db, SETTINGS_BY_KEY["long_run_easy"])[0])       # fork §EASYLR
+    set_volume_hold(_resolve_setting(db, SETTINGS_BY_KEY["volume_hold_km"])[0])    # fork §HOLD
     set_week_start(_resolve_setting(db, SETTINGS_BY_KEY["week_start"])[0])        # fork §WEEK
     # Fork §CAL — an APPROVED calibration overlays the engine's fitted constants; none ⇒ defaults.
     # Like the day preference it changes how the NEXT plan is laid, not one already generated.
