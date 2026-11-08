@@ -28,6 +28,8 @@ LIMITS = {
                 "held": "the week's speed-weighted load is at its ceiling ({laid} of {ceiling})"},
     "eq_session": {"name": "Impact load, single run",
                    "held": "the biggest single run is at its ceiling ({laid} of {ceiling})"},
+    "vmax": {"name": "Weekly volume ceiling",
+             "held": "your ceiling is {ceiling} km a week; this week lays {laid}"},
     "tissue": {"name": "Weeks near the ceiling",
                "held": "several weeks in a row near the load ceiling force a lighter week"},
 }
@@ -1037,6 +1039,16 @@ def week_flags(S, w):
     if lf:
         add(f"long run +{lf:g} km from the easy runs", "Long run first: the week was held by its weekly limits, so the "
             "long run rose toward its +10% step and the km came out of this week's easy runs.")
+    if w.get("peak_long_km"):                        # fork §PEAKLR — the one longer long run
+        add(f"the longer long run · up to {w['peak_long_km']:g} km", "One longer long run before the taper, in a "
+            "lighter week: past your longest long run, at most 15 % over the longest of the 4 weeks before.")
+    if any(x.get("long_share_capped") for x in w.get("sessions") or []):    # fork §LSHARE
+        add("long run held to its share", "The long run is held to its most of the week's km; the rest went to "
+            "the easy runs.")
+    _vm = (w.get("limits") or {}).get("vmax") or {}
+    if _vm.get("binds"):                             # fork §VMAX
+        add(f"at your weekly ceiling · {_vm.get('ceiling'):g} km", "Weekly volume ceiling: the week is laid at "
+            "the most you set for a week.")
     if w.get("long_held"):
         add("long run kept", f"Kept at its ladder rung ({w['long_held'].get('rung_km')} km): your easy days ran over the sheet.")
     if w.get("run_moved"):
@@ -1494,14 +1506,18 @@ CHOICES = {
 # fields with a typed control other than a dropdown: whole numbers, and the ranked rest days
 NUMBERS = {"athlete_age": (10, 100, "years"), "manual_lthr": (100, 220, "bpm"),
            "long_run_max_km": (10, 35, "km"), "more_runs_at_long_km": (6, 30, "km"),
-           "volume_hold_km": (15, 150, "km")}   # the validators' own bounds
+           "volume_hold_km": (15, 150, "km"), "volume_max_km": (15, 150, "km"),
+           "long_run_share_max": (25, 70, "%"), "easy_days_before_long": (1, 3, "days"),
+           "peak_long_km": (10, 35, "km"), "peak_long_weeks_out": (2, 6, "weeks"),
+           "peak_long_week_pct": (60, 100, "%")}   # the validators' own bounds
 RANKED = {"rest_day_rank": DAYS7}
 
 
 SETTING_GROUPS = [("Athlete", ["athlete_context", "athlete_age", "manual_lthr", "injury_history"]),
                   ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "more_runs_at_long_km",
-                            "long_run_first", "long_run_max_km", "long_run_easy", "volume_hold_km",
-                            "keep_quality", "taper_weeks"]),
+                            "long_run_first", "long_run_max_km", "long_run_share_max", "peak_long_km",
+                            "peak_long_weeks_out", "peak_long_week_pct", "easy_days_before_long", "long_run_easy",
+                            "volume_hold_km", "volume_max_km", "keep_quality", "taper_weeks"]),
                   ("Display", ["units", "tz"]),
                   ("AI features", ["ai_narration", "ai_parsing", "ai_judgment", "ai_coach"]),
                   ("Links", ["house_url", "house_name", "private_url"])]

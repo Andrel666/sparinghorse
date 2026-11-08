@@ -16317,6 +16317,145 @@ def _stc_week_start():
                passed=not fails, got={"failures": fails[:8] or "none"})
 
 
+def _stc_injury_limits():
+    """Fork §VMAX / §LSHARE / §GAP / §PEAKLR — the limits read off the athlete's two calf strains, on the half
+    fixture at a 3-run cap (the long run grows past 20 km and the week past 40 km with them off). Each has its
+    anti-vacuity: the same road with the setting off breaks what the setting promises.
+      VMAX   (a) no training week (taper excepted) lays past the ceiling, a week says the ceiling held it
+             (limits.vmax binds); off, a week passes it.
+      LSHARE (b) no building week's long run takes more than the share of the week; off, one does.
+      GAP    (c) at 5 runs, no quality session falls on the 3 days leading into the long run and the road
+             still lays quality; off, one falls there.
+      PEAKLR (d) with Longest long run 14: exactly one week carries the longer run, the week starting 3
+             weeks before the race's week, a training week; its long run passes 14 and reaches the lesser
+             of 16 and +15 % of the 4 weeks before, never more; its km is at most 90 % of the ceiling; no other long run
+             passes 14; off, none does.
+      (e) settings validation refuses out-of-range values; (f) every field is classified for the public view."""
+    E_ = E
+    fails = []
+    keep = (E_.max_runs(), E_.long_run_cap(), E_.volume_max(), E_.long_share_max(), E_.easy_before_long(), E_.peak_long())
+    plans = []
+    weeks_of = lambda plan: [w for v in plan.values() if isinstance(v, dict) and "weeks" in v for w in v["weeks"]]
+    runs_of = lambda w: [x for x in w.get("sessions") or [] if (x.get("km") or 0) > 0 and x.get("kind") not in ("rest", "race")]
+    long_s = lambda w: max((x for x in runs_of(w) if (x.get("kind") or "").startswith("long")), key=lambda x: x["km"], default=None)
+    long_of = lambda w: (long_s(w) or {}).get("km", 0.0)
+    km_of = lambda w: sum(x["km"] for x in runs_of(w))
+    VMAX, SHARE, GAP, LCAP, PEAK = 30.0, 40.0, 3, 14.0, 16.0
+
+    def lay(vmax="", share="", gap="", lcap="", peak="", runs="3"):
+        E_.set_max_runs(runs); E_.set_long_run_cap(lcap); E_.set_volume_max(vmax)
+        E_.set_long_share_max(share); E_.set_easy_before_long(gap); E_.set_peak_long(peak, "", "")
+        fx, td = _race_fixture_db("half", run_km=10.0)
+        try:
+            plan = S.generate_plan(fx, today=td)
+            plans.append(plan)
+            return plan, [w for w in weeks_of(plan) if not w.get("frozen") and not w.get("elapsed")]
+        finally:
+            fx.close()
+
+    def gap_hits(ws, g):
+        out = []
+        for w in ws:
+            lr = long_s(w)
+            if not lr:
+                continue
+            ld = E_._date(lr["date"]).weekday()
+            out += [f"{w['start']}:{x['date']}" for x in runs_of(w) if x.get("kind") in E_.QUALITY_KINDS
+                    and 1 <= (ld - E_._date(x["date"]).weekday()) % 7 <= g]
+        return out
+    try:
+        # (a) VMAX
+        _, off = lay()
+        _, on = lay(vmax=str(VMAX))
+        train = lambda ws: [w for w in ws if not E_._is_taper(w)]
+        if not any(km_of(w) > VMAX + 0.05 for w in train(off)):
+            fails.append(f"(a) ANTI-VACUITY — off, no week passes {VMAX:g} km, so (a) cannot see the ceiling")
+        over = [(w["start"], round(km_of(w), 1)) for w in train(on) if km_of(w) > VMAX + 0.05]
+        if over:
+            fails.append(f"(a) weeks past the {VMAX:g} km ceiling: {over[:4]}")
+        if not any(((w.get("limits") or {}).get("vmax") or {}).get("binds") for w in on):
+            fails.append("(a) no week says the ceiling held it (limits.vmax.binds)")
+        if any(w.get("km_ceiling") != VMAX for w in train(on)):
+            fails.append("(a) a training week does not publish its km ceiling")
+        # (b) LSHARE
+        build = lambda ws: [w for w in ws if not (E_._is_taper(w) or E_._is_down(w)) and runs_of(w)]
+        sh = lambda w: long_of(w) / km_of(w)
+        if not any(sh(w) > SHARE / 100 + 0.01 for w in build(off)):
+            fails.append(f"(b) ANTI-VACUITY — off, no long run passes {SHARE:g} % of its week")
+        _, on = lay(share=str(SHARE))
+        over = [(w["start"], round(100 * sh(w))) for w in build(on) if long_of(w) > SHARE / 100 * km_of(w) + 0.3]
+        if over:
+            fails.append(f"(b) long runs past {SHARE:g} % of the week: {over[:4]}")
+        if not any(x.get("long_share_capped") for w in on for x in runs_of(w)):
+            fails.append("(b) no long run says the share held it")
+        # (c) GAP — at 5 runs the stock layout seats quality on the Thursday before a Sunday long run
+        _, off5 = lay(runs="5")
+        if not gap_hits(off5, GAP):
+            fails.append(f"(c) ANTI-VACUITY — off, no quality falls in the {GAP} days before a long run")
+        _, on = lay(gap=str(GAP), runs="5")
+        if not any(x.get("kind") in E_.QUALITY_KINDS for w in on for x in runs_of(w)):
+            fails.append("(c) with the gap on, the road lays no quality at all")
+        if gap_hits(on, GAP):
+            fails.append(f"(c) quality in the {GAP} days before the long run: {gap_hits(on, GAP)[:4]}")
+        # (d) PEAKLR
+        _, capped = lay(vmax=str(VMAX), lcap=str(LCAP))
+        if any(long_of(w) > LCAP + 0.15 for w in capped):
+            fails.append(f"(d) ANTI-VACUITY — off, a long run passes {LCAP:g} km")
+        plan, on = lay(vmax=str(VMAX), lcap=str(LCAP), peak=str(PEAK))
+        race = E_._date(plan["objective"]["date"])
+        pk = [w for w in on if w.get("peak_long_km")]
+        if len(pk) != 1:
+            fails.append(f"(d) {len(pk)} weeks carry the longer run, want exactly 1")
+        else:
+            w = pk[0]
+            i = on.index(w)
+            off_days = (race - E_._date(w["start"])).days
+            prior = [long_of(x) for x in on[max(0, i - E_.LONG_RUN_STEP_WINDOW):i]]
+            if not (21 <= off_days < 28) or E_._is_taper(w) or E_._is_down(w):
+                fails.append(f"(d) the longer run's week starts {off_days} days before the race (want 21–27), or is a taper/down week")
+            if not (LCAP + 0.15 < long_of(w) <= PEAK + 0.05):
+                fails.append(f"(d) the longer run is {long_of(w)} km, want past {LCAP:g} and within {PEAK:g}")
+            if prior and long_of(w) > E_.PEAK_LONG_STEP * max(prior) + 0.15:
+                fails.append(f"(d) the longer run {long_of(w)} steps past +15 % of {max(prior)}")
+            _want = min(PEAK, round(E_.PEAK_LONG_STEP * max(prior or [0.0]), 1))
+            if prior and long_of(w) < _want - 0.2:
+                fails.append(f"(d) the longer run is {long_of(w)} km, short of the {_want} km it may reach "
+                             f"(min of {PEAK:g} and +15 % of {max(prior)})")
+            if km_of(w) > VMAX * E_.PEAK_LONG_PCT_DEFAULT / 100 + 0.05:
+                fails.append(f"(d) the longer run's week lays {km_of(w):.1f} km, past {E_.PEAK_LONG_PCT_DEFAULT:g} % of the ceiling")
+        others = [(w["start"], long_of(w)) for w in on if not w.get("peak_long_km") and long_of(w) > LCAP + 0.15]
+        if others:
+            fails.append(f"(d) other long runs pass {LCAP:g} km: {others[:3]}")
+        # (e) validation
+        for key, bad, good in (("volume_max_km", "14", "32"), ("long_run_share_max", "80", "40"),
+                               ("easy_days_before_long", "4", "2"), ("peak_long_km", "9", "16"),
+                               ("peak_long_weeks_out", "1", "3"), ("peak_long_week_pct", "50", "90")):
+            if S.validate_setting(key, bad)[0] or not S.validate_setting(key, good)[0]:
+                fails.append(f"(e) validation of {key}: {bad!r} accepted or {good!r} refused")
+        # (f) PV
+        _seen_pv = set()
+        for plan in plans:
+            _seen_pv |= _pv_paths(plan, "plan", set())
+        uncl = [x for x in sorted(_seen_pv) if x != "plan.<phase>"
+                and not (_pv_classified(x, S._PV_PLAN) or _pv_withheld(x))]
+        if uncl:
+            fails.append(f"(f) unclassified for the public view: {uncl[:8]}")
+    except Exception as e:
+        import traceback
+        fails.append(f"raised {type(e).__name__}: {e} {traceback.format_exc()[-300:]}")
+    finally:
+        mr, lc, vm, ls, gp, (pkm, pkw, pkp) = keep
+        E_.set_max_runs("" if mr is None else str(mr)); E_.set_long_run_cap("" if lc is None else str(lc))
+        E_.set_volume_max("" if vm is None else str(vm))
+        E_.set_long_share_max("" if ls is None else str(round(ls * 100, 6)))
+        E_.set_easy_before_long("" if gp is None else str(gp))
+        E_.set_peak_long("" if pkm is None else str(pkm), str(pkw), str(pkp))
+    return _st("det", "injury-limits",
+               "Fork §VMAX/§LSHARE/§GAP/§PEAKLR: a weekly km ceiling that never lets go, the long run's most of "
+               "the week, easy days before the long run, and one longer long run in a lighter week 3 weeks out",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_session_swap():
     """Fork §SWAP — a session postponed a day or two is that session, moved. On a crafted one-week plan:
     (a) a run the day after a missed session (no session that day) completes it — done, its actual,
@@ -26185,8 +26324,10 @@ def _pinned_engine_globals():
     # Fork §LRCAP / §STEPUP / §EASYLR — the same class again
     saved_lc, saved_mu, saved_le, saved_vh = E.long_run_cap(), E.more_runs_at(), E.long_easy(), E.volume_hold()
     saved_kq = E.keep_quality()
+    saved_lim = (E.volume_max(), E.long_share_max(), E.easy_before_long(), E.peak_long())
     E.set_long_run_cap(""); E.set_more_runs_at(""); E.set_long_easy("0"); E.set_volume_hold("")
     E.set_keep_quality("0")
+    E.set_volume_max(""); E.set_long_share_max(""); E.set_easy_before_long(""); E.set_peak_long("", "", "")
     E.reset_calibration()
     # Fork §LOCAL — `auto` would see a developer's `claude` CLI and turn the AI layer on for every
     # det that assumes the keyless test env. The battery keeps the key-only rule it always had;
@@ -26207,6 +26348,11 @@ def _pinned_engine_globals():
         E.set_long_easy("1" if saved_le else "0")
         E.set_volume_hold("" if saved_vh is None else str(saved_vh))
         E.set_keep_quality("1" if saved_kq else "0")
+        _vm, _ls, _gp, (_pkm, _pkw, _pkp) = saved_lim
+        E.set_volume_max("" if _vm is None else str(_vm))
+        E.set_long_share_max("" if _ls is None else str(round(_ls * 100, 6)))
+        E.set_easy_before_long("" if _gp is None else str(_gp))
+        E.set_peak_long("" if _pkm is None else str(_pkm), str(_pkw), str(_pkp))
         E.apply_calibration(saved_cal)
 
 
@@ -26318,7 +26464,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_long_run_first(), lambda: _stc_calf_safe(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_run_insights(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_long_run_first(), lambda: _stc_calf_safe(), lambda: _stc_injury_limits(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_run_insights(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),
