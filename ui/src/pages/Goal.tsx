@@ -9,6 +9,7 @@ import { Card, PageHead, State, Strip } from "../components/ui";
 import { Endurance } from "./plan/Endurance";
 import { DriftView } from "./plan/Drift";
 import { Query } from "./Query";
+import { Seasons } from "../components/Seasons";
 
 const mmss = (s: number) => { const a = Math.abs(Math.round(s)), m = Math.floor(a / 60), x = a % 60; return m ? `${m}:${String(x).padStart(2, "0")}` : `${x} s`; };
 
@@ -63,6 +64,7 @@ export function Goal() {
           : <Card span={12} label="The contract"><State>No race on the plan yet. <Link to="/road?races=1">Add a race</Link> and the goal, the prediction and the levers appear here.</State></Card>}
         {g.contract && <Levers g={g} />}
         {g.contract && <Holding g={g} />}
+        {g.seasons && <Seasons t={g.seasons} />}
         <Endurance />
         <div id="history" className="span-12" style={{ scrollMarginTop: 80 }}><DriftView /></div>
         <Card label="Deeper" span={12}>

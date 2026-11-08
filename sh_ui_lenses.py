@@ -444,8 +444,14 @@ def goal_page(S, db, today=None):
                     "lo": band.get("lo_hms"), "hi": band.get("hi_hms"), "tone": tone, "words": words, "short": short,
                     "margin_s": (goal_s - ft["seconds"]) if goal_s and ft.get("seconds") else None,
                     "fitness_race": (plan.get("feasibility") or {}).get("projected_ctl")}
+    try:                                         # fork §SEASON — this season against the past ones
+        import sh_seasons
+        seasons = sh_seasons.seasons(S, db, today, obj, plan)
+    except Exception as e:                       # a broken comparison must never take the Goal page down
+        print(f"[seasons] {type(e).__name__}: {e}")
+        seasons = None
     return {"ok": True, "contract": contract, "levers": _levers(S, db, plan) if contract else [],
-            "holding": _holding(S, plan, today), "vs_plan": U.today_vs_plan(S, db, today)}
+            "holding": _holding(S, plan, today), "vs_plan": U.today_vs_plan(S, db, today), "seasons": seasons}
 
 
 def register(app, S, private):

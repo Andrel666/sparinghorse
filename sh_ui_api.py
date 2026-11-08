@@ -332,6 +332,7 @@ def today_page(S, db):
             "where": today_where(S, db, log, week, json.loads(plan_row["plan"]) if plan_row else None, today),
             "why": today_why(S, week, log, json.loads(plan_row["plan"]) if plan_row else None, today),
             "recovery": today_recovery(S, db, a.get("hrv")),
+            "signals": today_signals(S, db, json.loads(plan_row["plan"]) if plan_row else None, today),
             "vs_plan": today_vs_plan(S, db, today),
             "endurance": today_endurance(S, db, today)}
 
@@ -589,6 +590,16 @@ def today_why(S, week, log, plan, today):
     if hd.get("reason"):
         out.append({"key": "posture", "text": f"{hd['label']}: {hd['reason'].replace(' — ', '; ')}.", "link": "/plan#posture"})
     return out
+
+
+def today_signals(S, db, plan, today):
+    """Fork §SEASON — the two training signals the athlete's races track: VO₂max and beats per km."""
+    try:
+        import sh_seasons
+        return sh_seasons.today_signals(S, db, today, (plan or {}).get("objective"))
+    except Exception as e:                       # never take Today down
+        print(f"[signals] {type(e).__name__}: {e}")
+        return []
 
 
 def today_recovery(S, db, hrv):

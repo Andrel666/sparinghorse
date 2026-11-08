@@ -2,7 +2,7 @@
 // this week and why it looks like that, the latest run, the overnight signals. Every number is a door.
 // The check-in and each day's detail open in a drawer (?checkin=1, ?day=), so back closes them.
 import { useSearchParams, Link } from "react-router-dom";
-import { useToday, type TodayPage, type Where } from "../lib/api";
+import { useToday, type MarkerRow, type TodayPage, type Where } from "../lib/api";
 import { dateLong, dateShort, km, minutes, pace, verdictTone } from "../lib/format";
 import { Card, PageHead, Strip } from "../components/ui";
 import { Week } from "../components/Week";
@@ -123,7 +123,7 @@ function Why({ items }: { items: NonNullable<TodayPage["why"]> }) {
     <li key={x.key}><Link to={x.link} title={x.detail}>{x.text}<span className="muted"> ›</span></Link></li>))}</ul>;
 }
 
-function Recovery({ items }: { items: NonNullable<TodayPage["recovery"]> }) {
+function Recovery({ items }: { items: MarkerRow[] }) {
   if (!items.length) return <span className="muted">No overnight data yet.</span>;
   return <div>{items.map(m => (
     <Link key={m.key} to={m.link ?? `/fitness?tab=body#${m.key}`} className="marker-row" aria-label={`${m.label} ${m.value} ${m.unit}. ${m.sub}. Open the marker`}>
@@ -179,6 +179,9 @@ export function Today() {
           {!!d.why?.length && <Card label="Why this week" span={4}><Why items={d.why} /></Card>}
           {!fresh && debrief}
           {lr?.cross_training && <p className="muted t-small span-12">{lr.cross_training}</p>}
+          {!!d.signals?.length && <Card id="signals" label="Training signals" span={12}
+                                       aside={<Link to="/goal#seasons" className="linkish t-small">Seasons ›</Link>}>
+            <Recovery items={d.signals} /></Card>}
           {d.recovery && <Card id="recovery" label="Recovery" span={12}><Recovery items={d.recovery} /></Card>}
         </div>
         <Drawer title={day ? dateLong(day) : ""} open={!!day} onClose={() => setDay(null)}>

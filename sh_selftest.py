@@ -17379,6 +17379,136 @@ def _stc_run_insights():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_seasons():
+    """Fork §SEASON — this season against the past ones (sh_seasons), on a fixture of tagged races and runs.
+    (a) a race's VDOT and the engine's Daniels time invert each other (the race scale is the engine's own);
+    (b) one race per past season: tagged 10k/half within the window of the goal's day of year, the closest when a
+        season has two; a 5k, a race out of the window, the goal's own date and later ones are left out;
+    (c) the signals on a day: VO₂max = mean of the runs' estimates over 30 days, beats per km = median of runs of
+        4 km+ over 28 days (a short run is not counted), windows inclusive of the day;
+    (d) the history check: the goal distance's own gap when it has ≥2 races, the best case at the other distance's
+        smaller gap, the VO₂max the goal needs gives the goal's time at that gap, the fitness note only when the
+        plan's race-day fitness passes every race's;
+    (e) the seasons' lines sit on this season's calendar (last point the day before race day) and the same-point
+        state is read as many days out as today;
+    (f) Today's two rows: VO₂max (Runalyze's snapshot when fresh, else the runs') and beats per km, each linking
+        to the Seasons card, each series ending today; no runs, no rows."""
+    import json
+    import sqlite3 as _sq
+    import sh_seasons as SS
+    from datetime import date as _d, timedelta as _td
+    fails = []
+    mem = _sq.connect(":memory:"); mem.row_factory = _sq.Row
+    mem.executescript(S.SCHEMA)
+    aid = [0]
+
+    def add(day, km, sec, hr=150, vo2=None, race=None):
+        aid[0] += 1
+        raw = {"vo2max": vo2, "use_vo2max": True}
+        if race:
+            raw["race_result"] = {"official_distance": race[0], "official_time": race[1]}
+        mem.execute("INSERT INTO activities (id, date_time, date, sport, distance, duration, elapsed_time, hr_avg, trimp, raw) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)", (aid[0], day.isoformat() + "T07:00:00", day.isoformat(), "Running",
+                                                     km, sec, sec, hr, 60.0, json.dumps(raw)))
+    try:
+        # (a)
+        for km, typ in ((10.0, "10k"), (21.0975, "half")):
+            for secs in (3290, 3700) if typ == "10k" else (7767, 8800):
+                v = SS.race_vdot(km, secs)
+                back = E._ft_daniels_time(v, typ)
+                if abs(back - secs) > 1.0:
+                    fails.append(f"(a) {typ} {secs}s → VDOT {v:.2f} → {back:.1f}s: not the engine's Daniels inverse")
+        goal = _d(2027, 2, 26)
+        races = [(_d(2019, 2, 22), 21097.5, 7767), (_d(2022, 2, 25), 10000, 3693), (_d(2022, 3, 6), 10000, 3626),
+                 (_d(2023, 2, 24), 10000, 3581), (_d(2023, 6, 1), 10000, 3500), (_d(2024, 2, 20), 5000, 1700),
+                 (_d(2025, 2, 28), 21097.5, 8050), (_d(2026, 2, 27), 21097.5, 8767),
+                 (_d(2021, 3, 23), 10000, 3600)]          # 25 days past the anniversary: outside the window
+        for rd, dist, secs in races:
+            add(rd, dist / 1000.0, secs, hr=165, vo2=36.0, race=(dist, secs))
+        # training runs before 2025's race (for c) and this season (e, f)
+        base = _d(2025, 2, 27)
+        for k, (km, sec, hr, vo2) in enumerate([(8.0, 3200, 150, 36.0), (6.0, 2400, 148, 38.0), (3.0, 1200, 120, 50.0),
+                                                 (10.0, 4000, 152, 37.0)]):
+            add(base - _td(days=3 + 7 * k), km, sec, hr=hr, vo2=vo2)
+        add(base - _td(days=40), 8.0, 3200, hr=150, vo2=20.0)   # 40 days out: outside the 30-day VO₂max window
+        today = _d(2026, 11, 8)
+        for k in range(12):
+            add(today - _td(days=2 * k), 7.0, 2800, hr=150, vo2=37.0 + 0.1 * k)
+        mem.commit()
+        # (b)
+        got = [(r["season"], r["date"], r["type"]) for r in SS.season_races(mem, goal.isoformat(), "half")]
+        want = [(2019, "2019-02-22", "half"), (2022, "2022-02-25", "10k"), (2023, "2023-02-24", "10k"),
+                (2025, "2025-02-28", "half"), (2026, "2026-02-27", "half")]
+        if got != want:
+            fails.append(f"(b) seasons {got}, want {want}")
+        # (c) 2025 race eve: 30-day VO₂max over the four runs before it, beats per km without the 3 km run
+        runs = SS._runs(S, mem)
+        eve = SS.state_at(runs, {}, _d(2025, 2, 27))
+        ins = [r for r in runs if "2025-01-29" <= r["date"] <= "2025-02-27"]
+        vo_want = round(sum(r["vo2"] for r in ins if r["vo2"]) / len([r for r in ins if r["vo2"]]), 1)
+        if eve["vo2"] != vo_want:
+            fails.append(f"(c) VO₂max {eve['vo2']} on race eve, want the 30-day mean {vo_want}")
+        b28 = sorted(r["hr_avg"] * r["duration"] / 60 / r["distance"] for r in mem.execute(
+            "SELECT hr_avg, duration, distance FROM activities WHERE date BETWEEN '2025-01-31' AND '2025-02-27' AND distance >= 4"))
+        if eve["bpk"] != round(b28[len(b28) // 2] if len(b28) % 2 else (b28[len(b28) // 2 - 1] + b28[len(b28) // 2]) / 2):
+            fails.append(f"(c) beats per km {eve['bpk']} is not the 28-day median of runs of 4 km+ ({[round(x) for x in b28]})")
+        if any(r["km"] < SS.BPK_MIN_KM and r["bpk"] is not None for r in runs):
+            fails.append("(c) a run under 4 km carries beats per km")
+        # (d)
+        rows = [{"type": "half", "gap": -5.0, "eve": {"ctl": 30}}, {"type": "half", "gap": -6.0, "eve": {"ctl": 40}},
+                {"type": "10k", "gap": -3.0, "eve": {"ctl": 35}}]
+        c = SS.history_check(rows, "half", 37.0, "1:59", {"feasibility": {"finish_time": {"hms": "1:58:40"}, "projected_ctl": 65}})
+        exp = SS.hms(E._ft_daniels_time(37.0 - 5.5, "half"))
+        if not c or c["expected"] != exp or c["gap_basis"] != "half":
+            fails.append(f"(d) expected {c and c.get('expected')} at the half's own gap, want {exp}")
+        if not c or c["best_case"] != SS.hms(E._ft_daniels_time(37.0 - 3.0, "half")):
+            fails.append(f"(d) best case {c and c.get('best_case')} is not the 10k gap's")
+        if not c or abs(E._ft_daniels_time(c["vo2_for_goal"] - 5.5, "half") - (3600 + 59 * 60)) > 15:
+            fails.append(f"(d) VO₂max for the goal {c and c.get('vo2_for_goal')} does not give 1:59 at the expected gap")
+        if not c or "fitness 65" not in c["summary"] or "30–40" not in c["summary"]:
+            fails.append(f"(d) the summary does not name the fitness past every race: {c and c.get('summary')}")
+        c2 = SS.history_check(rows, "half", 37.0, None, {"feasibility": {"finish_time": {"hms": "2:10:00"}, "projected_ctl": 38}})
+        if "fitness" in (c2 or {}).get("summary", ""):
+            fails.append("(d) the fitness note shows though the plan's fitness is inside the raced range")
+        # (e)
+        page = SS.seasons(S, mem, today, {"date": goal.isoformat(), "type": "half", "target": "1:59"}, {})
+        days_out = (goal - today).days
+        last = page["seasons"][-1]
+        if last["series"][-1]["date"] != (goal - _td(days=1)).isoformat():
+            fails.append(f"(e) a season's line ends {last['series'][-1]['date']}, want race eve on this calendar")
+        sp = SS.state_at(runs, {}, _d(2026, 2, 27) - _td(days=days_out))
+        if last["same_point"]["vo2"] != sp["vo2"] or page["race"]["days_out"] != days_out:
+            fails.append("(e) the same-point state is not read as many days out as today")
+        # (f)
+        rows_t = SS.today_signals(S, mem, today, {"date": goal.isoformat(), "type": "half", "target": "1:59"})
+        keys = [r["key"] for r in rows_t]
+        if keys != ["vo2max", "beats_per_km"] or any(r["link"] != "/goal#seasons" or r["series"][-1]["date"] != today.isoformat()
+                                                      for r in rows_t):
+            fails.append(f"(f) Today's rows {keys}: wrong keys, door or series end")
+        if rows_t and "30-day mean of your runs" not in rows_t[0]["sub"]:
+            fails.append("(f) with no snapshot the VO₂max row does not say it is the runs' mean")
+        mem.execute("INSERT INTO shape_snapshots (snapshot_date, captured_at, effective_vo2max) VALUES (?,?,?)",
+                    (today.isoformat(), today.isoformat() + "T06:00:00", 39.9))
+        mem.commit()
+        rows_t = SS.today_signals(S, mem, today, {"date": goal.isoformat(), "type": "half"})
+        if not rows_t or rows_t[0]["value"] != "39.9" or "Runalyze" not in rows_t[0]["sub"]:
+            fails.append(f"(f) a fresh Runalyze snapshot is not today's VO₂max: {rows_t and rows_t[0]}")
+        empty = _sq.connect(":memory:"); empty.row_factory = _sq.Row; empty.executescript(S.SCHEMA)
+        if SS.today_signals(S, empty, today, {"date": goal.isoformat(), "type": "half"}):
+            fails.append("(f) rows with no runs")
+        empty.close()
+    except Exception as e:
+        import traceback
+        fails.append(f"raised {type(e).__name__}: {e} {traceback.format_exc()[-300:]}")
+    finally:
+        mem.close()
+    return _st("det", "seasons",
+               "This season against the past ones, aligned on race day: races from the race corpus on Daniels' scale, "
+               "VO₂max and beats per km read the same way every season, and the personal-history check of the "
+               "prediction (own-distance gap, the goal's VO₂max, the fitness the model counts on)",
+               passed=not fails, got={"failures": fails or "none"})
+
+
 def _stc_marathon_shape():
     """Fork §ENDU — Runalyze's marathon shape, ported and projected along the plan. (a) Runalyze's OWN unit
     tests (tests/inc/core/Calculation/BasicEnduranceTest.php, Prognosis/VO2maxTest.php) hold on the port:
@@ -26468,7 +26598,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_long_run_first(), lambda: _stc_calf_safe(), lambda: _stc_injury_limits(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_run_insights(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_long_run_first(), lambda: _stc_calf_safe(), lambda: _stc_injury_limits(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_run_insights(), lambda: _stc_seasons(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

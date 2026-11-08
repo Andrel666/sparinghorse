@@ -52,8 +52,8 @@ export interface TodayPage {
   // added with the day drawer and the glance row — optional, so a backend that predates them still renders
   coming?: (Omit<SessionDetail, "mark" | "activity_id" | "reflection" | "component" | "moved_dow" | "runs"> & { dow: string; days: number })[];
   glance?: { key: string; label: string; value: string; sub: string; hint?: string | null; tone: "ok" | "warn" | "bad" | null; link: string }[];
-  recovery?: { key: string; label: string; value: string; unit: string; sub: string; state: "ok" | "watch" | null;
-              series: { date: string; v: number }[]; link?: string }[];
+  recovery?: MarkerRow[];
+  signals?: MarkerRow[];                 // fork §SEASON — VO₂max and beats per km, the signals the races track
   where?: Where | null;
   why?: { key: string; text: string; detail?: string; link: string }[];
   vs_plan?: VsPlan | null;
@@ -247,6 +247,22 @@ export interface GoalPage {
   levers: Lever[];
   holding: { key: string; name: string; weeks: number; of: number; text: string | null; first: string; link: string }[];
   vs_plan: VsPlan | null;
+  seasons?: Seasons | null;
+}
+export interface MarkerRow { key: string; label: string; value: string; unit: string; sub: string; state: "ok" | "watch" | null;
+  series: { date: string; v: number }[]; link?: string }
+export interface SeasonPoint { date: string; vo2: number | null; bpk: number | null; km_week: number; ctl: number | null }
+export interface SeasonState { vo2: number | null; bpk: number | null; km_week: number; km_week_12: number; long_12: number; ctl: number | null }
+export interface SeasonRow { season: number; date: string; type: string; time: string; seconds: number; vdot: number | null;
+  equivalent: string | null; gap: number | null; eve: SeasonState; same_point: SeasonState; series: SeasonPoint[] }
+export interface Seasons {
+  ok: boolean; reason?: string;
+  race?: { date: string; type: string; label: string | null; days_out: number };
+  now?: SeasonState & { vo2_source: string; series: SeasonPoint[] };
+  seasons: SeasonRow[];
+  tracked?: { key: string; label: string; r: number; better: string; text: string }[];
+  check?: { summary: string; expected: string | null; best_case: string | null; vo2: number; vo2_for_goal?: number; goal?: string;
+            model?: string; ctl_plan?: number; ctl_raced?: [number, number]; gap: number; gaps: Record<string, number> } | null;
 }
 export const useGoal = () => q<GoalPage>(["ui", "goal"], "/api/ui/goal");
 
