@@ -16720,6 +16720,10 @@ def _stc_ui_today():
         fails.append("(b) the target does not follow the threshold's trust (HR when trusted, else pace)")
     if U.strides_of({"note": "easy run + 2×4–6 strides"}) != 2 or U.strides_of({"strides": 3}) != 3:
         fails.append("(c) strides_of misses the flag or the note")
+    for _n in (2, 4):                     # the marker's count is not a number of sets: one set of 4–6, ~6 min
+        _sx = [x for x in U.workout_steps({"strides": _n}) if "strides" in x["label"]]
+        if len(_sx) != 1 or not _sx[0]["label"].startswith("4–6 strides") or "×" in _sx[0]["label"] or _sx[0]["minutes"] != 6:
+            fails.append(f"(c) the strides step for a count of {_n} reads {[(x['label'], x['minutes']) for x in _sx]}")
     steps = U.workout_steps({"reps": [{"effort": "warmup", "minutes": 10, "km": 1.5, "zone": "easy"},
                                       *[{"effort": "work", "minutes": 4, "km": 1.0, "zone": "interval"},
                                         {"effort": "recovery", "minutes": 2, "km": 0.3, "zone": "easy"}] * 4,

@@ -41,7 +41,7 @@ function Hero({ d, onDay }: { d: TodayPage; onDay: (date: string) => void }) {
           <span>{n.days === 1 ? "Tomorrow" : `${DOW_LONG[n.dow] ?? n.dow} ${dateShort(n.date)}`}</span>
           {n.target && <span className="target" title={n.target.hint}>{n.target.text}</span>}
           {n.minutes ? <span className="muted">~{minutes(n.minutes)}</span> : null}
-          {n.strides ? <span className="muted">+ {n.strides}× strides</span> : null}
+          {n.strides ? <span className="muted">+ strides</span> : null}
         </div>
       </> : <div className="hero-v">Recovery</div>}
     </div>);

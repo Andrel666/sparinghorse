@@ -48,6 +48,10 @@ def _pace(sec_per_km):
     return f"{s // 60}:{s % 60:02d}"
 
 
+STRIDES_STEP = "4–6 strides of ~20 s after the run, walk back between"
+STRIDES_MIN = 6                  # 4–6 strides of ~20 s with the walk back: about a minute each
+
+
 def strides_of(session):
     """How many strides a session carries: the engine's flag, or (plans laid before it) its note."""
     n = (session or {}).get("strides")
@@ -106,7 +110,8 @@ def workout_steps(session):
     add("Cool-down, easy", by("cooldown"), "easy")
     st = strides_of(session)
     if st:
-        steps.append({"label": f"{st} × 4–6 strides of ~20 s, walk back between", "minutes": st * 3, "km": None,
+        # the session's count is the engine's stride marker, not a number of sets: what to run is one set
+        steps.append({"label": STRIDES_STEP, "minutes": STRIDES_MIN, "km": None,
                       "zone": "interval", "pace": None})
     return steps
 
