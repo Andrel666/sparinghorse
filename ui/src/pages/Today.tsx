@@ -31,20 +31,26 @@ function Hero({ d, onDay }: { d: TodayPage; onDay: (date: string) => void }) {
     return <div><div className="hero-v">{t.h}</div>
       <Link to={t.to} className="btn primary" style={{ alignSelf: "flex-start" }}>{t.a}</Link></div>;
   }
-  if (s.kind === "rest") return (
-    <div>
-      <span className="eyebrow">Rest day</span>
-      {n ? <>
-        <button type="button" className="hero-link" onClick={() => onDay(n.date)} aria-label={`${n.title} ${km(n.km)}: show the session`}>
-          <span className="hero-v">{n.race ? "Race" : n.title} {km(n.km)}</span></button>
-        <div className="meta">
-          <span>{n.days === 1 ? "Tomorrow" : `${DOW_LONG[n.dow] ?? n.dow} ${dateShort(n.date)}`}</span>
-          {n.target && <span className="target" title={n.target.hint}>{n.target.text}</span>}
-          {n.minutes ? <span className="muted">~{minutes(n.minutes)}</span> : null}
-          {n.strides ? <span className="muted">+ strides</span> : null}
-        </div>
-      </> : <div className="hero-v">Recovery</div>}
-    </div>);
+  if (s.kind === "rest") {
+    // a rest day's action is recovering: the overnight signals take the hero, the next run steps down to one line
+    const rec = d.recovery ?? [];
+    const next = n && <>
+      <button type="button" className="hero-link" onClick={() => onDay(n.date)} aria-label={`${n.title} ${km(n.km)}: show the session`}>
+        <span className={rec.length ? "second" : "hero-v"}>{n.race ? "Race" : n.title} {km(n.km)}</span></button>
+      <div className="meta">
+        <span>{n.days === 1 ? "Tomorrow" : `${DOW_LONG[n.dow] ?? n.dow} ${dateShort(n.date)}`}</span>
+        {n.target && <span className={rec.length ? undefined : "target"} title={n.target.hint}>{n.target.text}</span>}
+        {n.minutes ? <span className="muted">~{minutes(n.minutes)}</span> : null}
+        {n.strides ? <span className="muted">+ strides</span> : null}
+      </div></>;
+    if (!rec.length) return <div><span className="eyebrow">Rest day</span>{next ?? <div className="hero-v">Recovery</div>}</div>;
+    return (
+      <div>
+        <span className="eyebrow">Rest day · recovery</span>
+        <div className="recovery-hero"><Recovery items={rec} /></div>
+        {next && <div className="next-up"><span className="eyebrow">Next run</span>{next}</div>}
+      </div>);
+  }
   const title = `${s.race ? "Race" : s.title} ${s.km != null ? km(s.km) : ""}`;
   return (
     <div>
@@ -182,7 +188,7 @@ export function Today() {
           {!!d.signals?.length && <Card id="signals" label="Training signals" span={12}
                                        aside={<Link to="/goal#seasons" className="linkish t-small">Seasons ›</Link>}>
             <Recovery items={d.signals} /></Card>}
-          {d.recovery && <Card id="recovery" label="Recovery" span={12}><Recovery items={d.recovery} /></Card>}
+          {d.recovery && !(d.session.kind === "rest" && d.recovery.length) && <Card id="recovery" label="Recovery" span={12}><Recovery items={d.recovery} /></Card>}
         </div>
         <Drawer title={day ? dateLong(day) : ""} open={!!day} onClose={() => setDay(null)}>
           <DayDetail sessions={daySessions} ranHere={ranHere} movedFrom={dayInfo?.moved_from} onRun={() => setDay(null)} />
