@@ -29,8 +29,8 @@ export function Seasons({ t }: { t: T }) {
   return (
     <Card id="seasons" label="This season against the past ones" span={12} lede={c?.summary}>
       <Strip items={[
-        ...(n?.vo2 != null ? [{ k: "VO₂max now", v: `${n.vo2}`, s: c?.vo2_for_goal ? `goal needs ≈${c.vo2_for_goal} on race eve` : undefined, to: "#seasons" }] : []),
-        ...(n?.bpk != null ? [{ k: "Beats per km", v: `${n.bpk}`, s: "median, last 4 weeks", to: "#seasons" }] : []),
+        ...(n?.vo2 != null ? [{ k: "VO₂max now", v: `${n.vo2}`, s: [n.latest_vo2, c?.vo2_for_goal ? `goal needs ≈${c.vo2_for_goal} on race eve` : null].filter(Boolean).join(" · ") || undefined, to: "#seasons" }] : []),
+        ...(n?.bpk != null ? [{ k: "Beats per km", v: `${n.bpk}`, s: [n.latest_bpk, "median, last 4 weeks"].filter(Boolean).join(" · "), to: "#seasons" }] : []),
         ...(c?.expected ? [{ k: "Your history says", v: c.expected, s: c.best_case ? `${c.best_case} at best` : undefined, to: "#seasons" }] : []),
         ...(c?.model ? [{ k: "The model says", v: c.model, s: c.ctl_plan ? `at fitness ${c.ctl_plan}` : undefined, to: "/road?view=race" }] : []),
       ]} />

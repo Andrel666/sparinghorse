@@ -178,6 +178,12 @@ def run_debrief(S, db, aid):
     if pb and pa:
         d = S.diff_plans(pb, pa) or {}
         changed = [c for c in d.get("changes") or [] if not c.startswith("The plan already matched")][:3]
+    try:                                         # §SEASON — the run's own VO₂max and beats per km
+        import sh_seasons
+        goal["signals"] = sh_seasons.run_signals(S, db, aid, day)
+    except Exception as e:
+        print(f"[debrief signals] {type(e).__name__}: {e}")
+        goal["signals"] = None
     insights = run_insights(S, db, act, asked, did, ed, verdict)
     return {"ok": True, "id": aid, "date": act["date"], "headline": headline, "tone": tone, "asked": asked, "did": did,
             "checks": checks, "cost": cost, "insights": insights, "goal": goal, "note": (note["note"] if note else None) or None,

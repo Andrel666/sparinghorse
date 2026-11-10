@@ -17497,6 +17497,33 @@ def _stc_seasons():
         if SS.today_signals(S, empty, today, {"date": goal.isoformat(), "type": "half"}):
             fails.append("(f) rows with no runs")
         empty.close()
+        # (g) the single latest run beside the windows that smooth it, and one run's own signals for its debrief
+        nxt = today + _td(days=1)
+        add(nxt, 5.0, 1800, hr=140, vo2=41.0)                  # 840 beats a km, VO₂max 41.0
+        mem.commit()
+        runs = SS._runs(S, mem)
+        lr = SS.latest_run(runs, nxt)
+        if not lr or (lr["date"], lr["vo2"], lr["bpk"]) != (nxt.isoformat(), 41.0, 840):
+            fails.append(f"(g) the latest run {lr}, want {nxt} at 41.0 and 840")
+        if (SS.latest_run(runs, today) or {}).get("date") != today.isoformat():
+            fails.append("(g) the latest run on a day reaches past that day")
+        pg = SS.seasons(S, mem, nxt, {"date": goal.isoformat(), "type": "half"}, {})["now"]
+        if pg.get("latest_vo2") != "today's run 41.0" or pg.get("latest_bpk") != "today's run 840":
+            fails.append(f"(g) Seasons' latest-run words {pg.get('latest_vo2')!r}, {pg.get('latest_bpk')!r}")
+        later = SS.seasons(S, mem, nxt + _td(days=2), {"date": goal.isoformat(), "type": "half"}, {})["now"]
+        if not (later.get("latest_bpk") or "").startswith(f"latest run ({nxt.strftime('%b %-d')})"):
+            fails.append(f"(g) two days on the latest run is not dated: {later.get('latest_bpk')!r}")
+        rt = SS.today_signals(S, mem, nxt, {"date": goal.isoformat(), "type": "half"})
+        if [r["sub"].split(" · ")[0] for r in rt] != ["today's run 41.0", "today's run 840"]:
+            fails.append(f"(g) Today's rows do not lead with today's run: {[r['sub'] for r in rt]}")
+        rs = SS.run_signals(S, mem, aid[0], nxt)
+        med = SS.state_at(runs, {}, nxt)["bpk"]
+        want_pct = round(100 * (840 - med) / med)
+        if not rs or rs["vo2"] != 41.0 or rs["bpk"] != 840 or rs["bpk_median"] != med \
+                or rs["bpk_text"] != f"{abs(want_pct)} % under your 4-week median {med}":
+            fails.append(f"(g) the run's own signals {rs}, want 41.0, 840 and {abs(want_pct)} % under {med}")
+        if SS.run_signals(S, mem, 999999, nxt) is not None:
+            fails.append("(g) signals for a run that does not exist")
     except Exception as e:
         import traceback
         fails.append(f"raised {type(e).__name__}: {e} {traceback.format_exc()[-300:]}")

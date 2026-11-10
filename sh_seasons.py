@@ -69,6 +69,42 @@ def _runs(S, db):
     return out
 
 
+def latest_run(runs, day=None):
+    """The last run (on or before `day`) with a VO₂max or a beats-per-km: the single run the 30-day and 4-week
+    windows smooth away, shown next to them so a good run is visible the day it happens."""
+    d = day.isoformat() if day else None
+    r = next((x for x in reversed(runs) if (d is None or x["date"] <= d) and (x["vo2"] or x["bpk"])), None)
+    return {"id": r["id"], "date": r["date"], "km": round(r["km"], 1), "vo2": round(r["vo2"], 1) if r["vo2"] else None,
+            "bpk": round(r["bpk"]) if r["bpk"] else None} if r else None
+
+
+def run_signals(S, db, aid, day):
+    """One run's VO₂max and beats per km against the windows they feed, for its debrief; None if it has neither."""
+    runs = _runs(S, db)
+    r = next((x for x in runs if x["id"] == aid), None)
+    if not r or not (r["vo2"] or r["bpk"]):
+        return None
+    w = state_at(runs, {}, day)
+    vo2_now, src = current_vo2(db, runs, day) if day == datetime.now().date() else (w["vo2"], "runs")
+    vo2, bpk, med = (round(r["vo2"], 1) if r["vo2"] else None), (round(r["bpk"]) if r["bpk"] else None), w["bpk"]
+    vo2_text = (f"your VO₂max {'today' if src == 'runalyze' else 'over 30 days'} is {vo2_now:g}, the blend of runs like this one"
+                if vo2 is not None and vo2_now is not None else None)
+    bpk_text = None
+    if bpk is not None and med:
+        pct = round(100 * (bpk - med) / med)
+        bpk_text = (f"{abs(pct)} % {'under' if pct < 0 else 'over'} your 4-week median {med}" if pct else f"at your 4-week median {med}")
+    return {"vo2": vo2, "vo2_now": vo2_now, "vo2_source": src, "vo2_text": vo2_text,
+            "bpk": bpk, "bpk_median": med, "bpk_text": bpk_text}
+
+
+def _latest_words(lr, key, today):
+    """'today's run 39' / 'latest run 39, Nov 8' for a strip or a row."""
+    if not lr or lr.get(key) is None:
+        return None
+    when = "today's run" if lr["date"] == today.isoformat() else f"latest run ({E._date(lr['date']).strftime('%b %-d')})"
+    return f"{when} {lr[key]:.1f}" if key == "vo2" else f"{when} {lr[key]:g}"
+
+
 def state_at(runs, hist, day):
     """The season signals on `day` (end of day), from the runs before it and the fitness curve."""
     d = day.isoformat()
@@ -185,7 +221,9 @@ def seasons(S, db, today=None, objective=None, plan=None):
                                       ("long_12", "Longest run (12 weeks)", "higher"), ("ctl", "Fitness (CTL)", "higher"))]
     tracked = [dict(t, text=_tracked_words(t["label"], t["r"], t["better"])) for t in tracked if t["r"] is not None]
     return {"ok": True, "race": {"date": goal_date, "type": goal_type, "label": obj.get("label"), "days_out": days_out},
-            "now": {**cur, "vo2_source": vo2_src, "series": cur_series},
+            "now": {**cur, "vo2_source": vo2_src, "series": cur_series, "latest": latest_run(runs, today),
+                    "latest_vo2": _latest_words(latest_run(runs, today), "vo2", today),
+                    "latest_bpk": _latest_words(latest_run(runs, today), "bpk", today)},
             "seasons": out, "tracked": tracked, "n_with_data": sum(1 for x in out if x["eve"]["vo2"]),
             "check": history_check(out, goal_type, vo2_now, obj.get("target"), plan)}
 
@@ -312,7 +350,9 @@ def today_signals(S, db, today=None, objective=None):
     out = []
     if vo2 is not None:
         ref = [f"{e['vo2']:g} on the eve of your {r['season']} race" for vd, r, e in best if e["vo2"]]
+        lr = latest_run(runs, today)
         sub = " · ".join(x for x in [
+            _latest_words(lr, "vo2", today),
             ("Runalyze's effective VO₂max" if src == "runalyze" else "30-day mean of your runs"),
             f"goal needs ≈{chk['vo2_for_goal']:g} on race eve" if chk and chk.get("vo2_for_goal") else None,
             f"best: {ref[0]}" if ref else None] if x)
@@ -321,7 +361,8 @@ def today_signals(S, db, today=None, objective=None):
                     "series": vo_series, "link": "/goal#seasons"})
     if now["bpk"] is not None:
         bb = [e["bpk"] for vd, r, e in best if e["bpk"]]
-        sub = " · ".join(x for x in ["median of the last 4 weeks, runs of 4 km+",
+        sub = " · ".join(x for x in [_latest_words(latest_run(runs, today), "bpk", today),
+                                     "median of the last 4 weeks, runs of 4 km+",
                                      f"your best races came at {min(bb)}–{max(bb)}" if len(bb) >= 2 else
                                      (f"your best race came at {bb[0]}" if bb else None)] if x)
         out.append({"key": "beats_per_km", "label": "Beats per km", "value": f"{now['bpk']}", "unit": "beats",

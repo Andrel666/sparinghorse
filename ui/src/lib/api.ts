@@ -229,6 +229,8 @@ export interface Debrief {
           fitness: { before: number; after: number; delta: number } | null;
           endurance: { before: number; after: number; delta: number; label: string } | null;
           prediction: { before: string | null; after: string; delta_s: number | null; delta: string } | null;
+          signals?: { vo2: number | null; vo2_now: number | null; vo2_text: string | null;
+                      bpk: number | null; bpk_median: number | null; bpk_text: string | null } | null;
           contract?: { predicted: string; margin_s: number | null; tone: "ok" | "warn" | "bad" | null; words: string | null; days: number } };
   next: { date: string; dow: string; title: string; km: number | null; target: Target | null } | null;
   changed: string[]; plan_reacted: boolean;
@@ -258,7 +260,7 @@ export interface SeasonRow { season: number; date: string; type: string; time: s
 export interface Seasons {
   ok: boolean; reason?: string;
   race?: { date: string; type: string; label: string | null; days_out: number };
-  now?: SeasonState & { vo2_source: string; series: SeasonPoint[] };
+  now?: SeasonState & { vo2_source: string; series: SeasonPoint[]; latest_vo2?: string | null; latest_bpk?: string | null };
   seasons: SeasonRow[];
   tracked?: { key: string; label: string; r: number; better: string; text: string }[];
   check?: { summary: string; expected: string | null; best_case: string | null; vo2: number; vo2_for_goal?: number; goal?: string;

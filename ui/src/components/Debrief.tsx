@@ -38,6 +38,8 @@ function Cost({ d }: { d: D }) {
 function Goal({ d }: { d: D }) {
   const g = d.goal;
   return <div className="list">
+    {g.signals?.vo2 != null && <ListItem k="VO₂max of this run"><Link to="/goal#seasons" className="kv-link"><span className="num">{g.signals.vo2.toFixed(1)}</span>{g.signals.vo2_text && <span className="muted"> · {g.signals.vo2_text}</span>}</Link></ListItem>}
+    {g.signals?.bpk != null && <ListItem k="Beats per km"><Link to="/goal#seasons" className="kv-link"><span className="num">{g.signals.bpk}</span>{g.signals.bpk_text && <span className="muted"> · {g.signals.bpk_text}</span>}</Link></ListItem>}
     {g.fitness && <ListItem k="Fitness that day"><Link to="/fitness#fitness-fatigue" className="kv-link"><span className="num">{g.fitness.before} → {g.fitness.after}</span> <span className="muted">({sign(g.fitness.delta)})</span></Link></ListItem>}
     {g.endurance && <ListItem k="Endurance that day"><Link to="/goal#endurance" className="kv-link"><span className="num">{g.endurance.before} → {g.endurance.after} %</span> <span className="muted">of what the race needs</span></Link></ListItem>}
     {g.prediction
