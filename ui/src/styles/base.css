@@ -713,3 +713,5 @@ body { font-variation-settings: "opsz" 14; font-optical-sizing: auto; }
   .road-dates .full { display: none; }
   .road-dates .m .short { display: inline; }
 }
+
+.planned { color: var(--signal); }

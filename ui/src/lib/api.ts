@@ -257,11 +257,16 @@ export interface SeasonPoint { date: string; vo2: number | null; bpk: number | n
 export interface SeasonState { vo2: number | null; bpk: number | null; km_week: number; km_week_12: number; long_12: number; ctl: number | null }
 export interface SeasonRow { season: number; date: string; type: string; time: string; seconds: number; vdot: number | null;
   equivalent: string | null; gap: number | null; eve: SeasonState; same_point: SeasonState; series: SeasonPoint[] }
+/** This season as a row: today's real figures at the days-out point, the model's and the plan's for the rest. */
+export interface ThisSeasonRow { season: number; date: string; type: string; planned: true; label: string; note: string;
+  time: string | null; seconds: number | null; vdot: number | null; equivalent: string | null;
+  eve: { vo2: number | null; bpk: null; km_week_12: number; long_12: number }; same_point: { vo2: number | null; bpk: number | null } }
 export interface Seasons {
   ok: boolean; reason?: string;
   race?: { date: string; type: string; label: string | null; days_out: number };
   now?: SeasonState & { vo2_source: string; series: SeasonPoint[]; latest_vo2?: string | null; latest_bpk?: string | null };
   seasons: SeasonRow[];
+  this_season?: ThisSeasonRow | null;
   tracked?: { key: string; label: string; r: number; better: string; text: string }[];
   check?: { summary: string; expected: string | null; best_case: string | null; vo2: number; vo2_for_goal?: number; goal?: string;
             model?: string; ctl_plan?: number; ctl_raced?: [number, number]; gap: number; gaps: Record<string, number> } | null;

@@ -1,7 +1,8 @@
 // Fork §SEASON — this season against the past ones, aligned on race day (sh_seasons.py). The words, the races and
 // every number come from /api/ui/goal's `seasons`; this lays out the check, the lines and the table.
 // The lines put every season on THIS season's calendar (race day minus the days out), so "today" lines up.
-import { type Seasons as T, type SeasonRow, type SeasonPoint } from "../lib/api";
+import { type Seasons as T, type SeasonRow, type SeasonPoint, type ThisSeasonRow } from "../lib/api";
+import type { ReactNode } from "react";
 import { Card, Strip, Table } from "./ui";
 import { Lines, type Series } from "./charts";
 
@@ -22,6 +23,10 @@ function lines(t: T, key: "vo2" | "bpk"): Series[] {
   ].filter(s => s.pts.length > 1);
 }
 
+type Row = SeasonRow | ThisSeasonRow;
+/** A planned figure (the model's, the plan's) reads apart from a real one. */
+const pl = (r: Row, v: ReactNode) => ("planned" in r ? <span className="planned">{v}</span> : v);
+
 export function Seasons({ t }: { t: T }) {
   if (!t.seasons.length) return <Card id="seasons" label="This season against the past ones" span={12}>
     <span className="muted">{t.reason}</span></Card>;
@@ -40,18 +45,20 @@ export function Seasons({ t }: { t: T }) {
         <figure><figcaption className="muted t-label">Beats per km, by days to race (lower is better)</figcaption>
           <Lines series={lines(t, "bpk")} height={180} fmt={v => v.toFixed(0)} /></figure>
       </div>
-      <Table phone="scroll" keyOf={r => `${r.season}`} rows={t.seasons} cols={[
-        { head: "Season", cell: r => `${r.season} ${r.type}` },
-        { head: "Time", cell: r => r.time, num: true },
-        { head: "VDOT", cell: r => r.vdot ?? "—", num: true },
-        { head: `As a ${t.race?.type ?? "race"}`, cell: r => r.equivalent ?? "—", num: true },
+      <Table<Row> phone="scroll" keyOf={r => `${r.season}`} rows={[...t.seasons, ...(t.this_season ? [t.this_season] : [])]} cols={[
+        { head: "Season", cell: r => "planned" in r ? <b>{r.label}</b> : `${r.season} ${r.type}` },
+        { head: "Time", cell: r => pl(r, r.time ?? "—"), num: true },
+        { head: "VDOT", cell: r => pl(r, r.vdot ?? "—"), num: true },
+        { head: `As a ${t.race?.type ?? "race"}`, cell: r => pl(r, r.equivalent ?? "—"), num: true },
         { head: `VO₂max ${t.race?.days_out ?? ""} d out`, cell: r => r.same_point.vo2 ?? "—", num: true },
-        { head: "VO₂max race eve", cell: r => r.eve.vo2 ?? "—", num: true },
+        { head: `Beats/km ${t.race?.days_out ?? ""} d out`, cell: r => r.same_point.bpk ?? "—", num: true },
+        { head: "VO₂max race eve", cell: r => pl(r, r.eve.vo2 ?? "—"), num: true },
         { head: "Beats/km race eve", cell: r => r.eve.bpk ?? "—", num: true },
-        { head: "km/week, 12 wk", cell: r => r.eve.km_week_12, num: true },
-        { head: "Longest, 12 wk", cell: r => r.eve.long_12, num: true },
+        { head: "km/week, 12 wk", cell: r => pl(r, r.eve.km_week_12), num: true },
+        { head: "Longest, 12 wk", cell: r => pl(r, r.eve.long_12), num: true },
       ]} />
-      {n && <p className="t-small muted">This season, {t.race?.days_out} days out: VO₂max {n.vo2 ?? "—"}, beats per km {n.bpk ?? "—"}, {n.km_week} km a week, longest {n.long_12} km.</p>}
+      {t.this_season && <p className="t-small muted"><span className="planned">Blue</span>: planned. {t.this_season.note}</p>}
+      {!t.this_season && n && <p className="t-small muted">This season, {t.race?.days_out} days out: VO₂max {n.vo2 ?? "—"}, beats per km {n.bpk ?? "—"}, {n.km_week} km a week, longest {n.long_12} km.</p>}
       {!!t.tracked?.length && <ul className="bullets t-small">{t.tracked.map(x => <li key={x.key}>{x.text}</li>)}</ul>}
     </Card>);
 }

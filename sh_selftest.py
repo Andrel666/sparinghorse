@@ -17524,6 +17524,34 @@ def _stc_seasons():
             fails.append(f"(g) the run's own signals {rs}, want 41.0, 840 and {abs(want_pct)} % under {med}")
         if SS.run_signals(S, mem, 999999, nxt) is not None:
             fails.append("(g) signals for a run that does not exist")
+        # (h) this season as a row: the model's finish and race-eve VO₂max, the plan's sessions ahead, the runs behind
+        t_h = goal - _td(days=30)
+        add(goal - _td(days=40), 9.0, 3600, hr=150, vo2=38.0)           # done, inside the 12 weeks
+        add(goal - _td(days=90), 30.0, 12000, hr=150, vo2=38.0)         # done, before the 12 weeks
+        mem.commit()
+        plan_h = {"feasibility": {"finish_time": {"hms": "1:59:00", "seconds": 7140, "curve": [
+                      {"plus_weeks": 4, "evo2": 44.0}, {"plus_weeks": 0, "evo2": 40.5}]}},
+                  "build": {"weeks": [{"start": (goal - _td(days=40)).isoformat(), "sessions": [
+                      {"date": (goal - _td(days=40)).isoformat(), "km": 25.0},       # planned but past: the run counts
+                      {"date": (goal - _td(days=10)).isoformat(), "km": 14.0},
+                      {"date": (goal - _td(days=5)).isoformat(), "km": 0},
+                      {"date": goal.isoformat(), "km": 21.1, "race": True}]}]}}
+        pg_h = SS.seasons(S, mem, t_h, {"date": goal.isoformat(), "type": "half"}, plan_h)
+        ts = pg_h.get("this_season") or {}
+        want_vd = round(SS.race_vdot(21.0975, 7140), 1)
+        if (ts.get("time"), ts.get("vdot"), (ts.get("eve") or {}).get("vo2")) != ("1:59:00", want_vd, 40.5):
+            fails.append(f"(h) this season's planned finish {ts.get('time')}, VDOT {ts.get('vdot')}, race eve "
+                         f"{(ts.get('eve') or {}).get('vo2')}; want 1:59:00, {want_vd}, 40.5 (the race-day point)")
+        if (ts.get("eve") or {}).get("long_12") != 14.0 or (ts.get("eve") or {}).get("km_week_12") != round((9.0 + 14.0) / 12, 1):
+            fails.append(f"(h) the 12 weeks {ts.get('eve')}: want the run done (9) and the session ahead (14), "
+                         "not the past session, the race or the run before the window")
+        nw = pg_h["now"]
+        if ts.get("same_point") != {"vo2": nw["vo2"], "bpk": nw["bpk"]}:
+            fails.append(f"(h) this season's days-out figures {ts.get('same_point')} are not today's")
+        if any(r.get("planned") for r in pg_h["seasons"]):
+            fails.append("(h) the planned row joins the past seasons (it would enter the correlations)")
+        if any("bpk" not in (r.get("same_point") or {}) for r in pg_h["seasons"]):
+            fails.append("(h) a season without its days-out beats per km")
     except Exception as e:
         import traceback
         fails.append(f"raised {type(e).__name__}: {e} {traceback.format_exc()[-300:]}")

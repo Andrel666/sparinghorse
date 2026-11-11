@@ -173,6 +173,34 @@ def current_vo2(db, runs, today):
     return state_at(runs, {}, today)["vo2"], "runs"
 
 
+def this_season_row(S, runs, cur, plan, goal_date, goal_type, today):
+    """This season as one more row of the table: what is real so far (today's VO₂max and beats per km, the runs
+    already in the 12-week window) and what is planned (the model's finish and race-day VO₂max, the plan's sessions
+    for the rest of the window). Kept out of the correlations: it has no result yet."""
+    g = E._date(goal_date)
+    ft = ((plan or {}).get("feasibility") or {}).get("finish_time") or {}
+    eve_day, lo = g - timedelta(days=1), g - timedelta(days=84)
+    days = {}                                    # km by day: done runs to today, planned sessions after
+    for r in runs:
+        if lo.isoformat() <= r["date"] <= min(today, eve_day).isoformat():
+            days.setdefault(r["date"], []).append(r["km"])
+    for w in (S._plan_weeks(plan) if plan else []):
+        for x in w.get("sessions") or []:
+            d = x.get("date") or ""
+            if today.isoformat() < d <= eve_day.isoformat() and d >= lo.isoformat() and x.get("km") and not x.get("race"):
+                days.setdefault(d, []).append(float(x["km"]))
+    kms = [k for v in days.values() for k in v]
+    vd = race_vdot(E.RACE_KM[goal_type], ft["seconds"]) if ft.get("seconds") and goal_type in E.RACE_KM else None
+    evo2 = next((c.get("evo2") for c in ft.get("curve") or [] if c.get("plus_weeks") == 0), None)
+    return {"season": g.year, "date": goal_date, "type": goal_type, "planned": True,
+            "label": f"{g.year} {goal_type} · this season", "time": ft.get("hms"), "seconds": ft.get("seconds"),
+            "vdot": round(vd, 1) if vd else None, "equivalent": ft.get("hms"),
+            "note": ("Time, VDOT and race-eve VO₂max are the model's; the 12 weeks before the race are the plan's "
+                     "sessions, and your runs once you have run them; the days-out figures are today's."),
+            "eve": {"vo2": evo2, "bpk": None, "km_week_12": round(sum(kms) / 12, 1), "long_12": round(max(kms or [0.0]), 1)},
+            "same_point": {"vo2": cur.get("vo2"), "bpk": cur.get("bpk")}}
+
+
 def seasons(S, db, today=None, objective=None, plan=None):
     """The Seasons view: every past season read like this one, the lines on this season's calendar, what tracked the
     results, and the personal-history check of the prediction."""
@@ -224,7 +252,8 @@ def seasons(S, db, today=None, objective=None, plan=None):
             "now": {**cur, "vo2_source": vo2_src, "series": cur_series, "latest": latest_run(runs, today),
                     "latest_vo2": _latest_words(latest_run(runs, today), "vo2", today),
                     "latest_bpk": _latest_words(latest_run(runs, today), "bpk", today)},
-            "seasons": out, "tracked": tracked, "n_with_data": sum(1 for x in out if x["eve"]["vo2"]),
+            "seasons": out, "tracked": tracked,
+            "this_season": this_season_row(S, runs, cur, plan, goal_date, goal_type, today) if goal_type in E.RACE_KM else None, "n_with_data": sum(1 for x in out if x["eve"]["vo2"]),
             "check": history_check(out, goal_type, vo2_now, obj.get("target"), plan)}
 
 
