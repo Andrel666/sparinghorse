@@ -23,6 +23,163 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of emoji. Contrast: dark ink on the teal (4.6:1+), `--accent-ink` `#2b705c` for small teal text
   (≥4.4:1 on every light surface). The theme background moves in the shell, app.js, the manifest and
   `det/` together.
+- **The four lenses (new UI): Now, Road, Goal, Log** (`docs/design/FOUR_LENSES_DESIGN.md`). Navigation becomes
+  four lenses plus You (Music, Settings). The coach is a chat opened by Ask over any page (the desktop button, the
+  phone's fifth tab), with suggestions for the page it was opened over and "Ask about this run" on every debrief;
+  old addresses redirect (`/plan` → `/road`, `/runs` → `/log`, `/plan?view=history` → `/goal#history`, `/coach` →
+  the chat). **The run debrief** (`GET /api/ui/debrief/<id>`,
+  `sh_ui_lenses.run_debrief`): asked vs did with a verdict per check, what it cost, what it did to the goal
+  (fitness, endurance, prediction before → after, the goal as it stands) and what's next; on Now for the latest
+  run (above the day band on the day it lands) and on Log for every run. **Goal** (`GET /api/ui/goal`): the
+  contract (goal, predicted, margin, days), ranked levers with computed effects (`endurance_road` what-ifs, new
+  `extra_week_km` / `long_extra_km`), the limits that bind the next four weeks, endurance and the plan's history.
+  A run shorter than asked is marked the same way everywhere (week strip, Log row, the consistency lever).
+  `det/lenses` covers it; `sh_ui_lenses.py` ships in the image (Dockerfile, `.dockerignore`).
+
+- **The road to marathon shape (Runalyze's), along the plan.** Runalyze's marathon shape is ported number for
+  number (`sh_engine.marathon_shape`: 67 % weekly km over 182 days against VO₂max^1.135, 33 % long runs over
+  13 km, squared and fading over 70 days) and projected along the plan's sessions to race morning, at the plan's
+  rising VO₂max. A race needs distance^1.23 % (Runalyze's prognosis): 100 % for the marathon, **42.5 % for the
+  half**, so the figure reads as a share of that need ("Half endurance 65 % · 100 % by 3 Jan"). Today shows it in
+  "Where you are"; Plan → Race day has the card: now, race morning, the day it reaches 100 %, how much comes from
+  weekly km and from long runs, and the curve against the 100 % line. Our number is checked against the
+  `marathonShape` Runalyze reports daily (stored since day one, unused until now). Shown only: the plan is not
+  built to reach it. `/api/ui/endurance` (private); `det/marathon-shape` holds Runalyze's own unit tests,
+  mutation-tested. Reference, assumptions and ideas to build on: `docs/MARATHON_SHAPE.md`.
+- **Fixed (new UI):** a line chart's y-axis values sat on its caption when the legend wrapped on a phone.
+- **Rest days on Today (Runalyze's).** The new UI's Recovery card opens with **rest days**: how many days of
+  full rest bring form (TSB = CTL − ATL) back to 0, as Runalyze's calculations panel defines it, with the day
+  it gets there, today's TSB and a 30-day TSB sparkline; amber at the "tired" line (TSB ≤ −20). Read off the
+  app's own de-duplicated reconstruction (the same EWMA as Runalyze, matching its snapshots), so today's run
+  counts and duplicate uploads don't. It links to the fitness chart. Informational: the plan still decides
+  what to run. `sh_ui_api.today_rest_days`; `det/ui-rest-days`, mutation-tested.
+- **You vs. the original plan, on Today.** A card under readiness compares the race's ORIGINAL plan with
+  today on fitness (CTL), VO₂max and the week's long run. Each tile shows both numbers, the gap in its
+  units and the gap as a % of the planned value. CTL is seam-corrected like the drift scorecard; the planned
+  VO₂max pro-rates the original projection by the share of TRIMP laid so far; the long run reads last week
+  until this week's long-run day arrives. The original plan is now **pinned** on the race
+  (`objectives.baseline_plan_id`, migrated) the first time it is saved, and `/api/plandrift` reads the same
+  pin, so the baseline cannot move when the matching rules change. A pin that no longer reaches race day
+  falls back to the live search and is re-pinned; a chain's earlier leg keeps the live search (SH-85).
+  `/api/vsplan` is private; the pin id is withheld from the public objectives view. Distances follow the
+  km/mi setting. In the new UI it is a "Vs. the original plan" card on Today under "Where you are": a strip
+  of three figures (you vs plan, gap and % in the sub line), each a door (fitness chart, Fitness, plan
+  history), worded once in `sh_ui_api.today_vs_plan`. A ▲ / ▼ before your number reads above / below the plan at a
+  glance, in the figure's tone. `det/vs-original`, mutation-tested.
+- **New UI: full parity with Classic.** Every Classic feature was inventoried (`ui/PARITY.md`) and carried
+  over: the frame (Sync now, auto-sync, freshness, theme, units, first-run guide, data-quality banner with
+  delete/restore, toasts, confirm dialog, help bubbles, offline shell); Today (HRV and AI lines, halt banner,
+  why-this-session, deload line, live gun-time countdown in the race's zone, cross-training note); Plan
+  (generate + re-plan diff, stale banners, races drawer with priority/date/gun time/zone/remove/put back/add/
+  past results, race chain, adjustment banner and Tell the horse, road flags and today, every week flag, deload
+  retire/keep, session marks/doubles/reflections, races tile with the finish band, posture and paces sources,
+  full drift with Conservative vs Assertive); Runs (multi-run days, other sports, load totals, profile chart,
+  ignore/delete); Fitness (form and load ratio on hover, durability chart/table/compare, zone anchors, the
+  whole track record); Body (charts with the reference band, ranges, stopped-data banner, add a reading);
+  Settings (Athlete / Connections / Console: sources, per-field errors, away days, keys, Suunto, COROS,
+  passphrase, system, backup/export, backfill); Music (playlists, ramp, build/preview, read-back verdicts,
+  Spotify/last.fm/ListenBrainz, matching, library). New `/api/ui/shell` and `/api/ui/adjust/propose`; flags,
+  deload, adjustment effect, race bands, posture, track record, zone anchors and staleness are worded once in
+  `sh_ui_api.py`. `det/ui-parity`, mutation-tested.
+- **Fixed:** the dev proxy rewrote `Host`, so the CSRF guard refused every POST from the new UI (check-in,
+  coach, every action); it now keeps the browser's Host — the guard itself is unchanged. Calendar dates in the
+  new UI no longer shift a day east of UTC.
+- **New UI: every page.** Plan (the road coloured by phase; Week with days, sessions, the limits that size it
+  and paces; Month; Race day; History, each day opening in a drawer), Runs (calendar with totals; a run's
+  numbers, read-back, verdict and map), Body (markers grouped with their state against the reference range;
+  injury history), Coach (full-page chat) and Settings (typed pickers and switches through the server's own
+  validation; calibration). New endpoints `/api/ui/{plan,run/<id>,body,settings}` (private) build on
+  `block_log`, the plan's limits, `training_zones`, the activity tile, `MARKERS` and `SETTINGS_SPEC`;
+  existing backend-decided endpoints (plan calendar, race plan, plan drift, coach, calibration) are read as
+  they are. Shared tabs, drawer, one month grid (plan and run calendars), road and session components.
+  Pages load on demand. Installable (manifest, the server's icons). `ui/Dockerfile` (Node build → nginx) and a
+  `sparinghorse-ui` compose service on 5180. `det/ui-pages`, mutation-tested.
+- **New UI: the Fitness page** — Classic's dashboard numbers on one page: VO₂max, fitness, fatigue and form
+  tiles with 6-month sparklines and the 4-week change; fitness & fatigue over 6 months; the load ratio on a
+  gauge with its meaning and the 7-day ramp; 26 weeks of distance; zones; the easy-run check per run;
+  durability, aerobic efficiency and the prediction track record. `/api/ui/fitness` (private) reuses
+  `reconstruct_history`, `vo2max_trend`, `training_zones`, `effort_discipline`, `durability_signal`,
+  `efficiency_signal`, `track_record`; the gauge band, ramp word and form word Classic's browser computed are
+  decided server-side (`load_state`, `ramp_word`, `FORM_WORDS`). One charts module (sparkline, lines, bars,
+  gauge) from one scale helper. `det/ui-fitness`, mutation-tested.
+- **New UI, step 1: the shell and Today** (`ui/`, React + Vite + TypeScript, its own port 5180). A sidebar on
+  desktop and a tab bar with a More sheet on phones, both built from one page list; a 12-column grid; 16px body
+  type with a 13px floor; one token file for colour, type and space, light and dark. Today puts the readiness
+  verdict, the session with its target and steps, a three-tap check-in, the week strip with what holds the
+  week, and the latest run on the first screen. Its data comes from one new endpoint, `/api/ui/today`
+  (`sh_ui_api.py`, private), assembled from the engine's own readers; the plain names of the plan's limits
+  live there once and the coach uses them too. Other pages link to Classic until built.
+  `det/ui-today` (mutation-tested), unit tests for the formatter.
+- **Coach chat.** A Coach button on every page opens a chat about the athlete's own training, answered by the
+  existing AI layer (API key or the local Claude Code CLI). New module `sh_coach.py` builds the context from
+  what the engine already computed — the race, target, prediction and race-day pacing; readiness and today's
+  session; this week and the next two with every limit and the one that holds the week; the last 14 days
+  of runs with HR; LTHR, settings, injury history, the effort check and calibration — and the system prompt
+  keeps the engine the authority (never more than the plan lays, settings changes only suggested) with a
+  stop-and-get-care rule for cardiac symptoms. Behind a new switch, **AI — coach chat** (`ai_coach`, off by
+  default); routes `/api/coach/{messages,chat,clear}` are private; the conversation lives only in the
+  athlete's database (`coach_messages`). `det/coach-chat` (model stubbed), mutation-tested.
+- **Race-day plan.** The race-day session opens (week list, plan calendar) into a pacing plan for the A race,
+  computed server-side (`/api/race/plan`, private): the target — the objective's goal, else the prediction, or
+  a typed override — split into settle-in (first ~14 %, +8 s/km), goal pace and finish (last ~15 %, −5 s/km)
+  that add up to it exactly; clock times at every km and at 5/10/15/20 km; HR guardrails from LTHR at the
+  distance's fractions (a half: ≤ 95 % for the settle, 95–100 % through the middle); how the target sits
+  against the prediction range and the athlete's best at the distance; warm-up, heat and fuelling notes.
+  `det/race-day-plan`, mutation-tested.
+- **Plan calendar.** Under the plan, a month grid (the run browser's, opening on the chosen week start)
+  shows every planned session on its day — kind and distance, ✓ done / ✕ missed / ↷ moved / + extra — with
+  each day striped in its phase's colour and race day outlined; a day opens its target and instruction card.
+  `/api/plan/calendar?month=` returns the days already merged from `block_log` (thin page); private only.
+- **The week shows what to aim for and what you ran.** A planned easy or long run carries its target — the
+  easy HR ceiling (≤ N bpm, the same boundary the effort check grades against) when the threshold is
+  trusted, else the easy pace bar ("slower than 6:21") — and a logged run shows its average heart rate next
+  to its pace. The HR is private (`log.weeks[].sessions[].actual.hr` is withheld from the public view);
+  `moved_to` joins the public session allowlist.
+- **A postponed session counts as done.** A run 1–2 days AFTER a missed session (on a day with no session
+  of its own, same week) now completes that session in the training log: done, its actual, adherence, and a
+  "↷ Mon" mark — instead of "✕ missed" plus "+ unplanned". Pairing is globally nearest-first. A run BEFORE a
+  session stays bonus volume (it can't be told from an extra run). `det/session-swap`;
+  `det/prescribed-restore`'s bonus run moved from the day after a missed session to a day that follows none.
+- **The effort card says what it judges by.** With no trusted LTHR it judges easy runs by pace; the note no
+  longer claims "judged by heart rate" then, and says how to get the HR read back (Manual LTHR, field test).
+- **LTHR is no longer read off easy runs.** The derived LTHR pooled every 20–70 min run at ≥ 85 % of HRmax,
+  so a runner whose EASY runs sit that high (a restart, heat, a high-HR physiology) got an LTHR set by those
+  same runs, and the effort monitor then called them threshold days (circular: one real history read 159
+  from 5 easy runs at 6:17–7:05/km; its races point to ~168–172). An effort now qualifies only with
+  evidence beyond HR: a Runalyze-tagged race (not a fun race), or a pace at or under that day's marathon
+  pace (+3 %). Rows with no distance keep the HR-only rule. With nothing recent, the last 3 years are
+  preferred over the whole history (HRmax falls with age). With no trusted LTHR the monitor falls back to
+  its pace anchor, as before; a Manual LTHR in Settings restores the HR read. `det/lthr` (6)–(7),
+  mutation-tested; goldens unchanged.
+- **Strides open like a workout.** A run with strides used to show them only as a hover tooltip; it now
+  expands, in the week list and on Today, into the same instruction card as an interval session: the easy
+  run, the strides block (count × 4–6, ~20″ each, at about interval pace, relaxed) and walk-back recovery.
+- **Week start** (Settings → Athlete → *Week starts on*: `mon`, `sun` or `sat`; `SH_WEEK_START`). Like
+  Runalyze's "Beginning of the week". Every week anchor goes through one helper (`week_start_of`): plan
+  weeks, the re-base anchor (re-gridded back-only, as before), race week, weekly load and ramp series,
+  the eVO₂/TRIMP weekly calibration, the COROS week grid, away-day windows, the weekly-volume chart
+  (a non-Monday week is keyed by its first day's date) and the run calendar's grid. In-week positions are
+  offsets from the week's first day, so the house layouts keep their shape (on a Sunday week the house
+  long run falls on Saturday); a named `long_run_day` / `rest_day_rank` keeps meaning the calendar day.
+  Monday stays the default and is byte-identical (goldens unchanged). Covered by `det/week-start`
+  (mutation-tested); the battery pins Monday.
+- **Calibration: only injuries that followed unusual load tighten a limit.** Every listed injury used to
+  tighten the session-step and CTL-ramp limits to just under whatever preceded it, so an injury after
+  ordinary running (a knee that went in a race after a 1.9/wk ramp) pinned the ramp at its 3.0 floor. Now an
+  injury implicates the step only after a spike over 1.10× the 30-day longest (Frandsen et al. 2025), and the
+  ramp only after a peak above the runner's own median building week; the report marks each injury
+  implicated or not and says why. On one real history: ramp 3.0 → 4.72/wk (just under the 5.2/wk ramp
+  before a calf injury). `det/calibration` (i), mutation-tested.
+- **The race correction follows race-day fitness** (§FTS). The per-runner correction was one number at
+  every fitness level, so a runner whose races fall further behind the model the fitter they were got an
+  over-optimistic prediction for a build projected above anything they had raced at. The correction is
+  now read at each point's own CTL: a slope fit on the de-tilted race residuals (a distance mix can't read
+  as a trend), with outliers past 3 robust SDs left out of the slope, shrunk toward 0 (`FTS_SHRINK_K`),
+  only on a corpus of ≥ 6 races spanning ≥ 10 CTL, and clamped to the raced range (no extrapolation past
+  the fittest race). Small or narrow corpora keep the flat correction exactly; goldens unchanged. Races
+  marked as a **fun race** in Runalyze (`race_result.is_funrace`) leave the corpus. Covered by
+  `det/race-correction-fitness` (mutation-tested). On one real 18-race corpus the half prediction moved
+  1:55:41 → 1:58–2:00 against a healthy-race best of 2:09.
 - **Activities through the Runalyze MCP when the REST list is refused** (`SH_ACTIVITY_SOURCE`, default
   `auto`). A token that reads statistics and metrics but gets 403 on `GET /activity` now syncs: activities
   are listed by date window through the MCP (`get_activities`, a window that fills the 200 limit is split),

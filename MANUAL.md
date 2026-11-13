@@ -491,6 +491,40 @@ When you chain ≥ 2 A-races, the Races tile shows each race with its **role**, 
 its own **feasibility verdict** and finish range, so you see where *each* peak lands, not just the final one. With a
 single A-race the tile shows that one race.
 
+### You vs. the original plan (Today)
+*Where the first plan for this race said you would be today.* On the Today view, under readiness, three
+tiles compare you with your race's **original plan**: **fitness (CTL)** today, **VO₂max** today and the
+**long run** this week. Each tile shows your number and the plan's number, the gap in its own units and
+the gap as a percent of the plan's number (for example `66 vs 73 · −7 (−9.6%)`). VO₂max moves slowly, so
+a 1 % gap there is a lot; that is why the units are always printed beside the percent.
+
+- **The original plan is pinned.** The first time a plan for the race is saved, the race remembers
+  that plan (the same "founding road" the drift charts use), so later releases and new matching rules
+  cannot quietly change which plan the comparison uses. If the race moves so far that the pinned plan no
+  longer reaches race day, the next plan save re-pins it.
+- **CTL** is the original plan's projected curve at today against your rebuilt curve, minus the fixed
+  offset the two start with (as on the scorecard). **VO₂max** pro-rates the original plan's projected
+  rise by the share of its training load that should be done by today. **Long run** compares the
+  plan's long run for the week with your longest run that week. Until that day arrives it shows
+  **last week**, because a long run that hasn't happened yet is not −100 %.
+- The tile shows the plan's numbers with **no gap** on the day the original plan was set, and the card
+  hides itself once the race is run (the scorecard then takes over). It is private (it reads your
+  runs) and is not on the public box.
+
+### Endurance for the race (Runalyze's marathon shape)
+*Is the plan giving you the endurance the race asks for?* Runalyze's **marathon shape** scores two things:
+your weekly km over the last 182 days (67 %, against a target that grows with VO₂max: ~92 km/week at 54) and
+your long runs over the last 70 days (33 %; only the km **past 13** count, squared, so one 30 km run beats
+two 20 km runs, and each run fades over 70 days). Runalyze's race prediction expects distance^1.23 % of it:
+**100 % for a marathon, 42.5 % for a half**, 17 % for a 10k. Below that it slows your prediction.
+
+The app works the same number out from your runs (and checks it against the value Runalyze reports), then
+runs it forward over your plan's sessions to race morning. **Today** shows it in *Where you are* as a share
+of what your race needs (for example *Half endurance 65 % · 100 % by 3 Jan*). **Plan → Race day** has the
+card: now, race morning, the day it reaches 100 %, how much comes from weekly km and how much from long
+runs, and the curve against the 100 % line. For a half, weekly km carries most of it: long runs only add a
+few points unless they go well past 13 km. This is information only: the plan is not built to reach it.
+
 ### Plan drift / the scorecard
 *The road vs. the road as it stands.* Five charts (distance, effort/TRIMP, CTL, race-outcome, and the
 **prediction ledger**) compare your **founding road** (the first plan saved for this goal) to where it

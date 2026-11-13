@@ -23,6 +23,7 @@ document.querySelector('meta[name="theme-color"]').setAttribute("content",window
 document.querySelector('link[rel="manifest"]').setAttribute("href","/manifest.webmanifest?theme="+t);</script>
 <script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/sw.js").catch(function(){})})}</script>
 <link rel="stylesheet" href="/static/app.css?v=__SH_VER__">
+<link rel="stylesheet" href="/static/chat.css?v=__SH_VER__">
 __SH_MUSIC_CSS__</head>
 <body data-mtab="today" data-page="__SH_PAGE__">
 __SH_DEMOBAR__
@@ -78,6 +79,7 @@ __SH_DEMOBAR__
         <button type="button" class="ghost" id="racesBtn" aria-expanded="false" aria-controls="racesDrawer" style="float:right;font-size:12px;padding:6px 12px;margin-left:8px">Edit races</button>
         <button class="primary" id="planBtn" style="float:right;font-size:12px;padding:6px 12px">Generate plan</button></h2>
       <div class="panel" id="plan"><div class="empty">No plan yet.</div></div>
+      <div class="panel pcal-panel" id="plancal" hidden></div>
     </div>
 
     <div class="section" id="sec-load" role="region" aria-labelledby="h-load" data-mtab="today">
@@ -234,5 +236,6 @@ __SH_DEMOBAR__
 
 <script>window.SH={readonly:__SH_READONLY__,demo:__SH_DEMO__,privateUrl:__SH_PRIVATE_URL__,staleHours:__SH_STALE_HOURS__,units:__SH_UNITS__};</script>
 <script nonce="__SH_NONCE__" src="/static/app.js?v=__SH_VER__"></script>
+<script nonce="__SH_NONCE__" src="/static/chat.js?v=__SH_VER__"></script>
 __SH_MUSIC_JS__
 </body></html>

@@ -246,7 +246,10 @@ function isoWeekMonday(year, wk){
 // are comparable across the whole span).
 const WEEKLY_WIN=26;
 let WEEKLY_ALL=[], WEEKLY_END=0, WEEKLY_MAX=1, WEEKLY_WIRED=false;
-function weekLabel(wk){ const [y,w]=wk.split("-W").map(Number); const mon=isoWeekMonday(y,w);
+// fork §WEEK — a Monday week arrives as an ISO "YYYY-Www" key; any other start as its first day's date
+function weekStartDate(wk){ if(!wk.includes("-W")) return new Date(wk+"T00:00:00Z");
+  const [y,w]=wk.split("-W").map(Number); return isoWeekMonday(y,w); }
+function weekLabel(wk){ const mon=weekStartDate(wk);
   return mon.toLocaleDateString(undefined,{month:"short",year:"2-digit"}); }
 function renderWeekly(){
   const chart=$("#chart");
@@ -261,8 +264,7 @@ function renderWeekly(){
   // month/year ruler below: mark where the month changes
   let lastMonth="", ticks="";
   rows.forEach((x,i)=>{
-    const [y,w]=x.week.split("-W").map(Number);
-    const mon=isoWeekMonday(y,w);
+    const mon=weekStartDate(x.week);
     const key=mon.getUTCFullYear()+"-"+mon.getUTCMonth();
     if(key!==lastMonth){ lastMonth=key;
       const lbl=mon.toLocaleDateString(undefined,{month:"short"})+
@@ -670,14 +672,16 @@ async function loadRunsCal(month){
   if(!d || !d.ok){ host.innerHTML=`<div class="empty">${esc((d&&d.error)||"Calendar unavailable.")}</div>`; return; }
   RCAL.month=d.month;
   const [y,m]=d.month.split("-").map(Number);
-  const firstDow=(new Date(y,m-1,1).getDay()+6)%7;              // Monday-first grid
+  const ws=d.week_start||0;                                      // fork §WEEK — Python weekday, 0=Mon
+  const firstDow=((new Date(y,m-1,1).getDay()+6)%7-ws+7)%7;      // the grid opens on the week's first day
   const dim=new Date(y,m,0).getDate();
   const now=new Date(), pad=n=>String(n).padStart(2,"0");
   const todayIso=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
   const other=new Set(d.other||[]);
   const title=new Date(y,m-1,1).toLocaleDateString(undefined,{month:"long",year:"numeric"});
   const mAdd=k=>{ const t=new Date(y,m-1+k,1); return `${t.getFullYear()}-${pad(t.getMonth()+1)}`; };
-  const dows=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(w=>`<div class="rcal-dow">${w}</div>`).join("");
+  const DOW=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const dows=DOW.slice(ws).concat(DOW.slice(0,ws)).map(w=>`<div class="rcal-dow">${w}</div>`).join("");
   let cells="";
   for(let i=0;i<firstDow;i++) cells+=`<div class="rcal-day blank"></div>`;
   for(let day=1;day<=dim;day++){
@@ -872,7 +876,7 @@ function plannedSession(s, easyPace){
       ${metric("Target load", s.trimp!=null?Math.round(s.trimp):"—", "TRIMP")}
     </div>
     ${actLine}
-    ${noteLine}${q?workoutCard(s,true):""}</div>`;
+    ${noteLine}${q?workoutCard(s,true):stridesCard(s,true)}</div>`;
 }// §3 status card — "lead with the verdict": gradient panel (state-coloured), glass pill, big verdict.
 // UX-4 — how old is the data behind this verdict? The readiness card was happy to render a confident
 // green off a sync that failed two nights ago, and the only hint was a timestamp in the page footer
@@ -1358,7 +1362,37 @@ document.addEventListener("click", e=>{
   if(!c) return;
   e.stopPropagation();
   t.classList.toggle("open", c.classList.toggle("open"));
+  if(c.dataset.rday && !c.dataset.loaded) loadRaceCard(c);   // fork §RDAY — fetched on first open
 });
+// ── Fork §RDAY — the race-day plan card (data from /api/race/plan; computed server-side) ──────────
+function raceCardShell(open){ return SH_READONLY?"":`<div class="wcard rdaycard${open?" open":""}" data-rday="1"><div class="wcue">Loading the race-day plan…</div></div>`; }
+async function loadRaceCard(c, target){
+  c.dataset.loaded="1";
+  let r; try{ r=await getJSON("/api/race/plan"+(target?`?target=${encodeURIComponent(target)}`:"")); }
+  catch(e){ c.innerHTML=`<div class="wcue">Race plan unavailable.</div>`; return; }
+  c.innerHTML=raceCardHtml(r);
+  const f=c.querySelector(".rday-try");
+  if(f) f.addEventListener("submit", ev=>{ ev.preventDefault(); const v=f.querySelector("input").value.trim(); if(v) loadRaceCard(c, v); });
+}
+function raceCardHtml(r){
+  if(!r||!r.ok) return `<div class="wcue">${esc((r&&r.error)||"Race plan unavailable.")}</div>`;
+  const tg=r.target, pr=r.prediction, src={goal:"your goal",prediction:"the engine's prediction",override:"the target you entered"}[tg.source];
+  const head=`Target <b>${esc(tg.hms)}</b> · ${esc(U.p(tg.pace))}/${U.unit} average (${src})`+
+    (pr&&pr.hms?` · prediction ${esc(pr.hms)} (${esc(pr.lo||"?")}–${esc(pr.hi||"?")})`:"")+
+    (r.best?` · your best ${esc(r.best.hms)} (${esc(r.best.date.slice(0,4))})`:"");
+  const verdict=pr&&pr.verdict?`<div class="rday-v">This target is ${esc(pr.verdict)}.</div>`:"";
+  const hrTxt=h=>!h?"—":h.lo?`${h.lo}–${h.hi} bpm`:`≤ ${h.hi} bpm`;
+  const rows=r.segments.map(sg=>`<tr><td><b>${esc(sg.label)}</b></td><td>${U.d(sg.from_km).toFixed(1)}–${U.d(sg.to_km).toFixed(1)}${U.k}</td>`+
+    `<td>${esc(U.p(sg.pace))}/${U.unit}</td><td>${hrTxt(sg.hr)}</td><td class="rday-cue">${esc(sg.cue)}</td></tr>`).join("");
+  const cps=r.splits.filter(x=>x.checkpoint).map(x=>`<span><b>${x.km%1?U.d(x.km).toFixed(1):U.d(x.km).toFixed(0)}${U.k}</b> ${esc(x.clock)}</span>`).join("");
+  const all=r.splits.map(x=>`<span>${x.km%1?U.d(x.km).toFixed(1):U.d(x.km).toFixed(0)} · ${esc(x.clock)}</span>`).join("");
+  return `<div class="wcue">${head}</div>${verdict}
+    <div class="wctbl-wrap"><table class="wctbl"><thead><tr><th>Segment</th><th>Dist</th><th>Pace</th><th>HR</th><th>How</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="rday-cp">${cps}</div>
+    <details class="rday-all"><summary>Every split (clock time at each ${U.unit})</summary><div class="rday-splits">${all}</div></details>
+    <ul class="rday-notes">${r.notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul>
+    <form class="rday-try"><label>Try another target <input type="text" inputmode="numeric" placeholder="e.g. 2:05" size="8"></label> <button type="submit" class="ghost">Show</button></form>`;
+}
 let AI={narration:true,parsing:true,judgment:false};   // 0.56.0 §S5 — the switches, from /healthz
 let OBJECTIVES=[], LASTDIFF=null, LLM_OK=false, LOG=null, RDY=null,
     ZONESD=null;   // §W1 — current training_zones payload (rides /api/readiness + /api/zones); null on public
@@ -1811,7 +1845,9 @@ function logLine(s,today,planLabel){
     : s.done ? '<span class="smk done">✓</span>'
     : s.missed ? '<span class="smk missed">✕</span>'
     : (s.date===today ? '<span class="smk today">•</span>' : '<span class="smk">○</span>');
-  const act = s.actual ? `<span class="sact">${U.d(s.actual.km)}${U.k}${s.actual.pace?` @ ${U.p(s.actual.pace)}`:''}</span>` : "";
+  // fork §SWAP — a session run on a nearby day: say where it went, the run completes it
+  const mv = s.moved_to ? ` <span class="smoved" title="Run on ${esc(s.moved_to)}, ${s.moved_to>s.date?"a day or two later":"a day or two early"} — counted as this session">↷ ${esc(new Date(s.moved_to+"T00:00:00Z").toLocaleDateString(undefined,{weekday:"short",timeZone:"UTC"}))}</span>` : "";
+  const act = s.actual ? `<span class="sact">${U.d(s.actual.km)}${U.k}${s.actual.pace?` @ ${U.p(s.actual.pace)}`:''}${s.actual.hr?` <span class="shr" title="average heart rate">· ${s.actual.hr} bpm</span>`:''}${mv}</span>` : "";
   const refl = s.reflection ? `<div class="srefl">📓 ${esc(s.reflection)}</div>` : "";
   const clk = !SH_READONLY && (s.done||s.unplanned) && s.activity_id;   // a completed/extra run → view its run + map
   const plan = s.unplanned ? '<span class="splan exu">unplanned</span>' : planLabel;
@@ -1885,6 +1921,35 @@ function workoutCard(s, open){
     <tbody>${rows.join("")}</tbody></table></div>
     <div class="wctot">Total ${U.d(s.km)} ${U.unit} · ~${s.minutes}′ · load ${s.trimp!=null?Math.round(s.trimp):"—"} TRIMP${ZONESD?"":" · paces from plan"+(SH_READONLY?"":"; HR bands load with zones")}</div></div>`;
 }
+// fork — the target on a planned easy/long run: its HR ceiling when the threshold is trusted
+// (the same Z1/Z2 boundary the effort monitor grades against), else the easy pace bar.
+function sessTarget(s){
+  if(s.done||s.missed||s.unplanned||s.race||(s.reps&&s.reps.length)) return "";
+  if(s.kind!=="easy"&&s.kind!=="long") return "";
+  const z=zrow("easy"), ha=ZONESD&&ZONESD.hr_anchor;
+  if(z&&z.hr&&z.hr.hi&&ha&&ha.anchor==="lthr")
+    return ` <span class="stgt" title="Keep the average heart rate at or under this — the easy ceiling the effort check uses">≤ ${z.hr.hi} bpm</span>`;
+  const p=z&&z.pace_slower_than&&z.pace_slower_than.fmt;
+  return p?` <span class="stgt" title="Easy: slower than this pace (no trusted threshold heart rate yet — set Manual LTHR in Settings)">slower than ${esc(U.p(p))}</span>`:"";
+}
+// fork — strides open like an interval session: an easy run with a strides block at its end.
+// The engine publishes the count (`s.strides`, or the legacy note text); the shape is the one the
+// tooltip always described — ~20″ relaxed-fast accelerations, full walk-back recovery.
+function stridesOf(s){ return s.strides || +(((s.note||"").match(/(\d+)×4–6 strides/)||[])[1]||0); }
+function stridesCard(s, open){
+  const st=stridesOf(s); if(!st) return "";
+  const rows=[
+    `<tr><td>Easy run</td><td>${s.minutes!=null?s.minutes+"′":"—"}</td><td>~${U.d(s.km).toFixed(1)}${U.k}</td>`+
+      `<td>${esc(segPace("easy",s))}</td><td>${esc(segHR("easy"))||"—"}</td></tr>`,
+    `<tr><td>${st} × 4–6 strides · ~20″ each</td><td>~${st*3}′</td><td>—</td>`+
+      `<td>${esc(segPace("interval"))} or a touch quicker, relaxed</td><td>— (too short for HR)</td></tr>`,
+    `<tr><td>Recovery between strides</td><td>walk back</td><td>—</td><td>full rest</td><td>—</td></tr>`];
+  const cue=`${s.minutes!=null?s.minutes+"′ ":""}easy  →  ${st} × 4–6 strides of ~20″, walk back between each`;
+  return `<div class="wcard${open?" open":""}"><div class="wcue">${esc(cue)}</div>
+    <div class="wctbl-wrap"><table class="wctbl"><thead><tr><th>Segment</th><th>Time</th><th>Dist</th><th>Pace</th><th>HR</th></tr></thead>
+    <tbody>${rows.join("")}</tbody></table></div>
+    <div class="wctot">Total ${U.d(s.km)} ${U.unit} · ~${s.minutes}′ · strides are a neuromuscular touch-up: fast but relaxed, never a sprint; they add no training load</div></div>`;
+}
 // §6f Step F — compact label for a planned session. Structured quality sessions (intervals / MP
 // long run / tempo, carried as `reps`) read their structure; plain runs show distance.
 function sessSummary(s){
@@ -1904,12 +1969,12 @@ function sessSummary(s){
   // they're executed, instead of the old orphaned "strides×2" note floating under the week.
   // Plans stored before the s.strides flag carry the fact only in the engine-authored note text,
   // so fall back to that until the nightly re-plan refreshes the JSON.
-  const st = s.strides || +(((s.note||"").match(/(\d+)×4–6 strides/)||[])[1]||0);
+  const st = stridesOf(s);
   if(st) return `${U.d(s.km)}${U.k} <span class="strid" title="Finish this run with ${st} × 4–6 strides: ~20-second relaxed-fast accelerations with full walk-back recovery. A neuromuscular touch-up, not a workout — it adds no training load.">+ ${st}× strides</span>`;
   // §RACE — the race is a session now, and it must READ as one. Without this the row printed a bare
   // distance, indistinguishable from a long run, on the day the whole block points at; the flag is
   // published for exactly this (§PV `sessions[].race`) and nothing was reading it.
-  if(s.race) return `${U.d(s.km)}${U.k} <span class="racemk" title="${esc(s.note||"Race day")} — the race itself, at ${esc(U.t(s.pace_zone||"race pace"))}. A fixed prescription: the distance and the pace are the race's, so the governor sizes the training around it rather than trimming it.">· race day</span>`;
+  if(s.race) return `${U.d(s.km)}${U.k} <span class="racemk" title="${esc(s.note||"Race day")} — the race itself. ${SH_READONLY?"":"Open it for the race-day plan: pace segments, splits, heart-rate guardrails and race-morning notes. "}A fixed prescription: the governor sizes the training around it rather than trimming it.">· race day</span>`;
   return `${U.d(s.km)}${U.k}`;
 }
 // One plan week (used for every phase but the re-base, which carries the journal/actuals overlay).
@@ -2136,8 +2201,8 @@ function weekHtml(w,p,today){
   const lines=w.sessions.map(s=>{
     // §W1 — a quality session expands to its instruction card on click (skip done sessions:
     // their line is already the click-to-map affordance, and the prescription moment is past)
-    const q=s.reps&&s.reps.length, card=(q&&!s.done)?workoutCard(s):"";
-    const label=`<span class="wsi${q?' qs':''}${card?' wsx':''}"${card?' tabindex="0" role="button" title="Show the workout instructions"':''}>${sessSummary(s)}${card?' <span class="wsxc" aria-hidden="true">▸</span>':''}</span>${compChip(s)}${card}`;
+    const q=s.reps&&s.reps.length, card=s.done?"":(q?workoutCard(s):s.race?raceCardShell():stridesCard(s));
+    const label=`<span class="wsi${q?' qs':''}${card?' wsx':''}"${card?' tabindex="0" role="button" title="Show the workout instructions"':''}>${sessSummary(s)}${card?' <span class="wsxc" aria-hidden="true">▸</span>':''}</span>${sessTarget(s)}${compChip(s)}${card}`;
     return {d:s.date, html:(('done' in s) ? logLine(s,today,label)
       : `<div class="sline"><span class="sdate">${sessDate(s.date)}</span>${label}</div>`)};
   });
@@ -2825,6 +2890,81 @@ async function refreshPlan(p){
   try{ LOG = await getJSON("/api/log"); }catch(e){ LOG=null; }
   renderPlan(p || await getJSON("/api/plan"));
   loadDrift();   // the plan (or its history) may have moved — refresh the drift view
+  loadPlanCal(PCAL.month);   // fork §PCAL — the month view follows every plan refresh
+}
+// ── Fork §PCAL — the plan as a month ───────────────────────────────────────────────────────────
+// The backend (/api/plan/calendar) hands back each day already merged: planned session, its status
+// against what was run, the actual, the phase. This only lays it on the same grid as the run
+// browser and opens a day's instruction card on click.
+let PCAL={month:null, sel:null, data:null};
+const PCAL_KIND={easy:"Easy",long:"Long",interval:"Intervals",tempo:"Tempo",threshold:"Threshold",
+  race_pace:"Race pace",progression:"Progression",fartlek:"Fartlek",hills:"Hills",recovery:"Recovery"};
+const PCAL_MARK={done:"✓",moved:"✓",missed:"✕",planned:"",unplanned:"+",moved_in:"↷"};
+const pcalDow=iso=>new Date(iso+"T00:00:00Z").toLocaleDateString(undefined,{weekday:"short",timeZone:"UTC"});
+function pcalLabel(x){
+  if(x.kind==="moved_in") return `from ${pcalDow(x.from)}`;
+  if(x.unplanned) return x.actual?`${U.d(x.actual.km)}${U.k}`:"run";
+  let k = x.race ? "Race" : x.kind==="long_mp" ? (x.zone==="half"?"Long+HM":"Long+MP") : (PCAL_KIND[x.kind]||x.kind);
+  if(stridesOf(x)) k+="+str";
+  return `${k}${x.km!=null?` ${U.d(x.km)}${U.k}`:""}`;
+}
+async function loadPlanCal(month){
+  const host=$("#plancal"); if(!host) return;
+  if(SH_READONLY){ host.hidden=true; return; }
+  let d; try{ d=await getJSON("/api/plan/calendar"+(month?`?month=${encodeURIComponent(month)}`:"")); }
+  catch(e){ host.hidden=true; return; }
+  if(!d||!d.ok){ host.hidden=true; return; }
+  host.hidden=false; PCAL.data=d; PCAL.month=d.month;
+  const [y,m]=d.month.split("-").map(Number), pad=n=>String(n).padStart(2,"0");
+  const ws=d.week_start||0, dim=new Date(y,m,0).getDate();
+  const firstDow=((new Date(y,m-1,1).getDay()+6)%7-ws+7)%7;
+  const DOW=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const dows=DOW.slice(ws).concat(DOW.slice(0,ws)).map(w=>`<div class="rcal-dow">${w}</div>`).join("");
+  const title=new Date(y,m-1,1).toLocaleDateString(undefined,{month:"long",year:"numeric"});
+  let cells="";
+  for(let i=0;i<firstDow;i++) cells+=`<div class="rcal-day blank"></div>`;
+  for(let day=1;day<=dim;day++){
+    const date=`${d.month}-${pad(day)}`, xs=d.days[date]||[];
+    const inPlan=date>=d.start&&date<=d.end, race=d.race&&d.race.date===date;
+    const pk=(d.phase||{})[date]||(xs.find(x=>x.pk)||{}).pk||"";
+    const lines=xs.map(x=>`<div class="pcal-s st-${x.status}${x.reps&&x.reps.length?" q":""}">`+
+      `${PCAL_MARK[x.status]?`<span class="pcal-mk">${PCAL_MARK[x.status]}</span>`:""}${esc(pcalLabel(x))}</div>`).join("");
+    const cls=["rcal-day","pcal-day",xs.length?"has":"",inPlan?"":"out",race?"race":"",
+               date===d.today?"today":"",date===PCAL.sel?"sel":""].filter(Boolean).join(" ");
+    const kb=xs.length?` role="button" tabindex="0" aria-label="${day}: ${esc(xs.map(pcalLabel).join(", "))}"`:"";
+    cells+=`<div class="${cls}" data-date="${date}"${pk?` data-pk="${esc(pk)}"`:""}${kb}><span class="pcal-n">${day}</span>${lines}`+
+           `${!xs.length&&inPlan?'<div class="pcal-s st-rest">Rest</div>':""}</div>`;
+  }
+  const sel=PCAL.sel&&PCAL.sel.slice(0,7)===d.month?PCAL.sel:null;
+  host.innerHTML=`<div class="rcal-head">
+      <button class="rcal-nav" id="pcprev" ${d.month<=d.first?"disabled":""} aria-label="Previous month">‹</button>
+      <b>${esc(title)}${d.race?` <span class="pcal-race">· ${esc(d.race.label||"race")} ${esc(d.race.date)}</span>`:""}</b>
+      <button class="rcal-nav" id="pcnext" ${d.month>=d.last?"disabled":""} aria-label="Next month">›</button></div>
+    <div class="rcal-grid">${dows}${cells}</div>
+    <div class="rcal-legend"><span>✓ done</span><span>✕ missed</span><span>↷ moved</span><span>+ extra run</span><span>colour = phase</span></div>
+    <div id="pcaldetail">${sel?pcalDetail(sel):""}</div>`;
+  const go=k=>{ const t=new Date(y,m-1+k,1); loadPlanCal(`${t.getFullYear()}-${pad(t.getMonth()+1)}`); };
+  $("#pcprev").onclick=()=>go(-1); $("#pcnext").onclick=()=>go(1);
+  host.querySelectorAll(".pcal-day.has").forEach(el=>{
+    const open=()=>{ PCAL.sel=el.dataset.date;
+      host.querySelectorAll(".pcal-day.sel").forEach(e=>e.classList.remove("sel")); el.classList.add("sel");
+      $("#pcaldetail").innerHTML=pcalDetail(PCAL.sel);
+      const rc=$("#pcaldetail .rdaycard"); if(rc) loadRaceCard(rc); };
+    el.addEventListener("click",open);
+    el.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); open(); } });
+  });
+}
+function pcalDetail(date){
+  const xs=(PCAL.data&&PCAL.data.days[date])||[];
+  return `<div class="pcal-detail"><div class="pcal-dtitle">${esc(new Date(date+"T00:00:00Z").toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long",timeZone:"UTC"}))}</div>`+
+    xs.map(x=>{
+      if(x.kind==="moved_in") return `<div class="pcal-dline muted">↷ ${esc(pcalDow(x.from))}'s session, run today</div>`;
+      const act=x.actual?` → ran ${U.d(x.actual.km)}${U.k}${x.actual.pace?` @ ${U.p(x.actual.pace)}`:""}${x.actual.hr?` · ${x.actual.hr} bpm`:""}`:"";
+      const st={done:"done",moved:`done on ${pcalDow(x.moved_to)}`,missed:"missed",unplanned:"extra run",planned:""}[x.status]||"";
+      const card=x.status==="planned"?(x.reps&&x.reps.length?workoutCard(x,true):x.race?raceCardShell(true):stridesCard(x,true)):"";
+      return `<div class="pcal-dline"><b>${esc(pcalLabel(x))}</b>${x.unplanned?"":sessTarget(x)}${act?`<span class="sact">${esc(act)}</span>`:""}`+
+             `${st?` <span class="muted">· ${esc(st)}</span>`:""}</div>${card}`;
+    }).join("")+`</div>`;
 }
 async function loadPlan(){ try{ await refreshPlan(); }catch(e){ tileFail($("#plan"), "Training plan", loadPlan, e);
   // refreshPlan() is what normally fires loadDrift(), so a failed plan load would leave #drift parked on
@@ -3192,7 +3332,9 @@ async function loadEffort(){
       ? `easy-pace ceiling ≈ <b>${esc(U.p(d.easy_pace_ceiling||"—"))}</b>/${U.unit} ${basis}`
       : `easy-HR ceiling ≈ <b>${d.easy_hr_ceiling}</b> bpm ${basis}`;
     capLine=`Last ${d.window_days} days · <b>${c.on}/${c.judged}</b> easy runs stayed aerobic · ${ceil}.${c.too_hard?` <b style="color:var(--danger)">${c.too_hard}</b> ran at threshold effort.`:""}`;
-    note=`Judged by heart rate, not pace — terrain &amp; heat already live in your HR. Pace shown is grade-adjusted (GAP). Each run is matched to its nearest prescribed session within a couple of days, so an anticipated or postponed session is judged against its real prescription, not the day it landed on; a run with no session in range falls back to the easy default. One mismatch is an observation, not a verdict.`;
+    note=(d.anchor==="lt1_pace"
+      ? `Judged by pace for now: no trusted threshold heart rate yet (set Manual LTHR in Settings, or run a 30-min field test), so each easy run is held to the LT1 pace ceiling. Pace shown is grade-adjusted (GAP).`
+      : `Judged by heart rate, not pace — terrain &amp; heat already live in your HR. Pace shown is grade-adjusted (GAP).`)+` Each run is matched to its nearest prescribed session within a couple of days, so an anticipated or postponed session is judged against its real prescription, not the day it landed on; a run with no session in range falls back to the easy default. One mismatch is an observation, not a verdict.`;
   }
   let cohLine="";   // pace↔HR coherence — private diagnostic; surfaces the two-model divergence, never the plan
   if(!d.public){
@@ -3581,8 +3723,8 @@ if(_hform) _hform.addEventListener("submit", async e=>{
 // touches Connections. The AI switches sit next to the Claude key they gate; a key the app adds later
 // lands on Athlete until this table names its tab.
 const SETTINGS_TABS = {
-  athlete: ["athlete_context","athlete_age","manual_lthr","units","long_run_day","rest_day_rank","max_runs_per_week","taper_weeks","injury_history"],
-  connections: ["ai_narration","ai_parsing","ai_judgment"],
+  athlete: ["athlete_context","athlete_age","manual_lthr","units","week_start","long_run_day","rest_day_rank","max_runs_per_week","taper_weeks","injury_history"],
+  connections: ["ai_narration","ai_parsing","ai_judgment","ai_coach"],
   console: ["house_url","house_name","private_url"]
 };
 function settingField(s){
