@@ -74,7 +74,7 @@ const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"
 
 // theme switcher — 0.57.0: one button cycling auto (follow the system) → dark → light. "auto" stores
 // nothing and re-reads prefers-color-scheme; a saved choice wins until the cycle returns to auto.
-const SH_THEME_BG = window.SH_THEME_BG || {light:"#f4f1ea",dark:"#191a1d"};   // each theme's --bg
+const SH_THEME_BG = window.SH_THEME_BG || {light:"#f6f5f0",dark:"#070b10"};   // each theme's --bg
 const themeBtn = $("#themeBtn");
 const systemTheme = () => (window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
 function themeChoice(){ try{ const s=localStorage.getItem("sh-theme"); return (s==="dark"||s==="light") ? s : "auto"; }catch(e){ return "auto"; } }
@@ -801,7 +801,7 @@ async function showActivityMap(aid){
   host.innerHTML="";
   try{ await ensureLeaflet(); }catch(e){ host.innerHTML=`<div class="mapempty">Map unavailable (offline?).</div>`; return; }
   const cs=getComputedStyle(document.documentElement);
-  const accent=cs.getPropertyValue("--accent").trim()||"#b9542c";   // route line follows the theme
+  const accent=cs.getPropertyValue("--accent").trim()||"#3a8870";   // route line follows the theme
   const okc=cs.getPropertyValue("--ok").trim()||"#4f8c5f";          // start marker = good (semantic)
   const dangerc=cs.getPropertyValue("--danger").trim()||"#b5563f";  // end marker = stop (semantic)
   ACTMAP=L.map(host,{zoomControl:true, scrollWheelZoom:false});

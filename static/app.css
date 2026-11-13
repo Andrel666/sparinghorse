@@ -4,32 +4,43 @@
      Aurora, is gone — follow-system plus one alternate). The
      inline <head> script restores the saved preference per origin before first paint. Legacy aliases
      (--surface-2/--terra/--ok-bright) map onto the canonical tokens so existing rules keep working. */
-  :root{   /* Daylight — warm paper, terracotta */
-    --bg:#f4f1ea; --surface:#fbf9f4; --surface2:#ece7db; --line:#ddd6c7;
-    --text:#2a2620; --muted:#5f5848; --accent:#b9542c;   /* 0.56.1: muted darkened 6f6857→5f5848 — 4.49:1 on surface2 was under the 4.5 line */
-    --accent-ink:#a3441f; --warn-ink:#7f5a12; --ok-ink:#3a6b49;   /* 0.56.1: the accent/warn/ok hues used as SMALL TEXT — the paint hues stay for fills and gradients */
-    --ok:#4f8c5f; --warn:#a9781f; --danger:#b5563f;
+  /* Fork (run-coach look): run-coach's palette — warm off-white / deep ink-blue, refined teal. */
+  :root{   /* Daylight — off-white, teal */
+    --bg:#f6f5f0; --surface:#ffffff; --surface2:#eeeee8; --line:#e0dcd4;
+    --text:#141412; --muted:#5a5a55; --accent:#3a8870;   /* 0.56.1: muted darkened 6f6857→5f5848 — 4.49:1 on surface2 was under the 4.5 line */
+    --accent-ink:#2b705c; --warn-ink:#7f5a12; --ok-ink:#3a6b49;   /* 0.56.1: the accent/warn/ok hues used as SMALL TEXT — the paint hues stay for fills and gradients */
+    --ok:#4f8c5f; --warn:#a9781f; --danger:#cc4444;
     --readybg:#4d8a5c; --readybg2:#3c6a48;   /* spec greens (DESIGN.md §2.3) — deep enough for white */
     --readyamber:var(--warn); --readyamber2:color-mix(in oklab,var(--warn),#000 30%);   /* amber/red ride the theme signals (mockup mapping) */
     --readyred:var(--danger); --readyred2:color-mix(in oklab,var(--danger),#000 32%);
     --onready:#fff;   /* ink on the readiness gradient (det/readiness-contrast pins ≥3:1 verdict, ≥4.5:1 footer) */
-    --onacc:#fff;
+    --onacc:#070b10;   /* fork: dark ink on the teal — white on #3a8870 is 4.2:1, dark is 4.6:1+ */
+    --ondanger:#fff;
+    --accent-grad:linear-gradient(135deg,#4ca088,#3a8870);
+    --accent-subtle:rgba(76,160,136,.12);
+    --shadow1:0 2px 6px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+    --shadow2:0 8px 24px rgba(0,0,0,.08),0 2px 6px rgba(0,0,0,.05);
     --z1:#7c8597; --z2:#3f7fd0; --z3:var(--ok); --z4:var(--warn); --z5:var(--danger);   /* HR intensity bands (UX-6) */
     --focus:var(--accent);   /* keyboard focus ring — a reference, so it follows the theme's accent (UX-9) */
     --surface-2:var(--surface2); --terra:var(--accent); --ok-bright:var(--ok);   /* legacy aliases */
-    --serif:'Fraunces',Georgia,serif; --sans:'Inter',system-ui,sans-serif;
+    --serif:'Outfit',system-ui,sans-serif; --sans:'DM Sans','Outfit',system-ui,sans-serif;   /* fork: run-coach type */
     --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
   }
-  [data-theme="dark"]{   /* Charcoal — neutral graphite, brighter terracotta so it reads as a glow */
-    --bg:#191a1d; --surface:#222327; --surface2:#2a2b30; --line:#3a3c43;
-    --text:#edeef1; --muted:#9b9da5; --accent:#fa7d42;
-    --accent-ink:#fa7d42; --warn-ink:#f7b32b; --ok-ink:#33d98a;   /* 0.56.1: already ≥5:1 on every dark surface */
-    --ok:#33d98a; --warn:#f7b32b; --danger:#fc6a55;
+  [data-theme="dark"]{   /* Charcoal — deep ink-blue, soft teal glow */
+    --bg:#070b10; --surface:#0e141b; --surface2:#141c24; --line:#243040;
+    --text:#f4f2ed; --muted:#8fa0b0; --accent:#6eb8a8;
+    --accent-ink:#6eb8a8; --warn-ink:#e8c547; --ok-ink:#33d98a;   /* 0.56.1: already ≥5:1 on every dark surface */
+    --ok:#33d98a; --warn:#e8c547; --danger:#e05555;
     --readybg:#2f9760; --readybg2:#1d6240;   /* green already passes vs white — unchanged */
     --readyamber:color-mix(in oklab,var(--warn),#000 22%); --readyamber2:color-mix(in oklab,var(--warn),#000 46%);   /* neon amber darkened to white-legible */
     --readyred:color-mix(in oklab,var(--danger),#000 10%); --readyred2:color-mix(in oklab,var(--danger),#000 40%);
     --onready:#fff;
-    --onacc:#191a1d;   /* 0.56.1: white on the Charcoal accent was 2.6:1 — dark ink on the glow reads at 6.7:1 */
+    --onacc:#070b10;   /* dark ink on the teal glow: 6.3:1+ */
+    --ondanger:#070b10;
+    --accent-grad:linear-gradient(135deg,#6eb8a8,#4ca088);
+    --accent-subtle:rgba(110,184,168,.12);
+    --shadow1:0 2px 6px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.25);
+    --shadow2:0 8px 24px rgba(0,0,0,.40),0 2px 6px rgba(0,0,0,.30);
     --z1:#7c8597; --z2:#3f7fd0; --z3:var(--ok); --z4:var(--warn); --z5:var(--danger);   /* HR intensity bands (UX-6) */
     --surface-2:var(--surface2); --terra:var(--accent); --ok-bright:var(--ok);
   }
@@ -49,7 +60,7 @@
   *{box-sizing:border-box}
   html,body{margin:0}
   body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;min-height:100dvh;
-    font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;
+    font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
     transition:background .25s ease,color .25s ease}
   body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
     background:radial-gradient(60% 45% at 50% 0%, color-mix(in oklab,var(--terra),transparent 88%), transparent 70%);}
@@ -60,39 +71,43 @@
   .brand{display:grid;grid-template-columns:auto 1fr;grid-template-areas:". eyebrow" "logo title";align-items:center;column-gap:14px}
   .dotmark{grid-area:logo;width:38px;height:38px;flex:none;display:grid;place-items:center}
   .dotmark svg{width:100%;height:100%;display:block}
-  h1{font-family:var(--serif);font-weight:600;font-size:30px;letter-spacing:-.01em;margin:0}
-  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+  h1{font-family:var(--serif);font-weight:800;font-size:30px;letter-spacing:-.02em;margin:0}
+  .eyebrow{font-family:var(--sans);font-weight:600;font-size:12px;letter-spacing:.22em;text-transform:uppercase;
     color:var(--muted);margin:0 0 3px;grid-area:eyebrow}
   .titlerow{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;grid-area:title}
   .motto{font-family:var(--mono);font-size:11px;color:var(--accent-ink)}   /* 0.56.1: no opacity — it was the contrast that was decorative */
   .motto small{color:var(--muted)}
   .bar{display:flex;align-items:center;gap:12px;margin-left:auto}
   .ro-badge{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
-    color:var(--muted);border:1px solid var(--line);border-radius:20px;padding:3px 9px}
+    color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
   .adminlink{font-family:var(--sans);font-size:12px;font-weight:500;color:var(--accent);text-decoration:none;
-    border:1px solid color-mix(in oklab,var(--accent),transparent 50%);border-radius:9px;padding:6px 11px;
+    border:1px solid color-mix(in oklab,var(--accent),transparent 50%);border-radius:16px;padding:6px 12px;
     transition:border-color .15s,background .15s}
   .adminlink:hover{border-color:var(--accent);background:color-mix(in oklab,var(--accent),transparent 92%)}
-  button{font-family:var(--sans);font-size:13px;font-weight:500;color:var(--text);cursor:pointer;
-    background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:8px 14px;
+  button{font-family:var(--sans);font-size:14px;font-weight:500;color:var(--text);cursor:pointer;
+    background:var(--surface-2);border:1px solid var(--line);border-radius:16px;padding:8px 15px;
     transition:border-color .15s,transform .1s}
   button:hover{border-color:var(--accent)} button:active{transform:translateY(1px)}
   button:disabled,input:disabled{opacity:.5;cursor:not-allowed}
-  button.primary{background:var(--accent);border-color:var(--accent);color:var(--onacc)}
+  button.primary{background:var(--accent-grad);border-color:transparent;color:var(--onacc);font-weight:600}
+  button.primary:hover{border-color:transparent;filter:brightness(1.06)}
   /* §CG — the COROS sign-in link is an <a> wearing the primary-button clothes (same as a.ghost) */
-  a.primary{font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;
-    background:var(--accent);border:1px solid var(--accent);border-radius:9px;padding:8px 14px;
+  a.primary{font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;
+    background:var(--accent-grad);border:1px solid transparent;border-radius:16px;padding:8px 15px;
     color:var(--onacc);text-decoration:none;display:inline-block;transition:border-color .15s,transform .1s}
   a.primary:active{transform:translateY(1px)}
-  button.ghost{background:transparent;color:var(--muted);font-size:12px;padding:8px 12px}
+  button.ghost{background:transparent;color:var(--muted);font-size:13.5px;padding:8px 13px}
   button.ghost:hover{color:var(--text)}
   /* §RB — the header Runs/Dashboard link is an <a> wearing the ghost-button clothes */
-  a.ghost{font-family:var(--sans);font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;
-    background:transparent;border:1px solid var(--line);border-radius:9px;padding:8px 12px;
+  a.ghost{font-family:var(--sans);font-size:13.5px;font-weight:500;color:var(--muted);cursor:pointer;
+    background:transparent;border:1px solid var(--line);border-radius:16px;padding:8px 13px;
     text-decoration:none;display:inline-block;transition:border-color .15s}
   a.ghost:hover{color:var(--text);border-color:var(--accent)}
   a.mnav-btn{text-decoration:none}
-  button.danger{background:var(--danger);border-color:var(--danger);color:var(--onacc)}
+  /* fork (run-coach look): line icons in the header buttons, in place of the emoji */
+  .hicon{width:15px;height:15px;vertical-align:-3px;margin-right:6px;fill:none;stroke:currentColor;
+    stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  button.danger{background:var(--danger);border-color:var(--danger);color:var(--ondanger)}
   button.danger:hover{border-color:var(--danger);filter:brightness(1.08)}
   /* Consequence-explaining confirm dialog (destructive actions) — reuses dialog.modal chrome */
   dialog.modal.confirm-modal{width:min(460px,92vw)}  /* .modal sets 680px at equal specificity + later — qualify to win */
@@ -128,11 +143,11 @@
     .tilecap{font-size:10px;right:10px;bottom:8px;max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .modal-head h2 .muted{display:none}   /* the Settings subtitle wrapped to three lines beside the close button */
   }
-  .tile{background:linear-gradient(180deg,var(--surface),var(--surface-2));
-    border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px;position:relative;overflow:hidden}
+  .tile{background:var(--surface);box-shadow:var(--shadow1);
+    border:1px solid var(--line);border-radius:20px;padding:18px 18px 16px;position:relative;overflow:hidden}
   .tile::before{content:"";position:absolute;left:0;top:0;height:3px;width:100%;background:linear-gradient(90deg,var(--accent),var(--accent2,var(--accent)));opacity:.9}
-  .tile .k{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-  .tile .v{font-family:var(--serif);font-weight:600;font-size:34px;line-height:1.05;margin-top:8px}
+  .tile .k{font-family:var(--sans);font-weight:600;font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .tile .v{font-family:var(--serif);font-weight:800;font-size:34px;line-height:1.05;letter-spacing:-1px;margin-top:8px}
   .tile .v small{font-size:15px;color:var(--muted);font-family:var(--sans);font-weight:400}
   .tile .sub{font-size:12px;color:var(--muted);margin-top:2px}
   /* caption tiles: lift the title/value/subtitle up and reserve a clear band at the bottom
@@ -276,7 +291,7 @@
   .up{color:var(--ok)} .down{color:var(--danger)}
 
   .section{margin-top:30px}
-  .section h2{font-family:var(--serif);font-weight:600;font-size:19px;margin:0 0 14px}
+  .section h2{font-family:var(--serif);font-weight:700;font-size:21px;letter-spacing:-.3px;margin:0 0 14px}
   /* Collapsible sections (Plan drift, Fitness & fatigue, Weekly volume) load EXPANDED (`open`) by
      default; the runner can still collapse them and the chevron rotates on [open] */
   details.section > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px}
@@ -288,8 +303,8 @@
   details.section[open] > summary::before{transform:rotate(45deg)}
   details.section > summary:hover::before{border-color:var(--accent)}
   details.section > .panel{margin-top:14px}
-  .panel{background:linear-gradient(180deg,var(--surface),var(--surface-2));
-    border:1px solid var(--line);border-radius:14px;padding:20px}
+  .panel{background:var(--surface);box-shadow:var(--shadow1);
+    border:1px solid var(--line);border-radius:20px;padding:20px}
 
   /* ACWR gauge */
   .gauge{position:relative;height:34px;border-radius:8px;border:1px solid var(--line);
@@ -341,7 +356,7 @@
   .ready .rhrv{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:4px}
   .ready .raisrc{font-family:var(--mono);font-size:11px;color:var(--accent);margin-top:5px;letter-spacing:.04em}
   /* §3 status card — "lead with the verdict" (DESIGN.md Almanac). The bg swaps with the state. */
-  .statuscard{position:relative;overflow:hidden;border-radius:16px;padding:20px 22px;color:var(--onready);
+  .statuscard{position:relative;overflow:hidden;border-radius:28px;padding:22px 24px;color:var(--onready);
     background:linear-gradient(155deg,var(--readybg),var(--readybg2));
     box-shadow:0 8px 22px color-mix(in oklab,var(--readybg),transparent 60%)}
   .statuscard.amber{background:linear-gradient(155deg,var(--readyamber),var(--readyamber2));
@@ -895,7 +910,7 @@
 
   /* effort discipline (§6m) — are your easy days actually easy? */
   .effort-head{display:flex;gap:18px;align-items:center;margin-bottom:14px}
-  .effort-score{font-family:var(--serif);font-weight:600;font-size:46px;line-height:1;flex:none}
+  .effort-score{font-family:var(--serif);font-weight:800;font-size:46px;line-height:1;letter-spacing:-1.5px;flex:none}
   .effort-score .pct{font-size:20px;opacity:.7}
   .effort-cap .big{font-family:var(--serif);font-size:16px;margin-bottom:3px}
   .effort-cap .muted{font-size:12px;line-height:1.5}
@@ -1110,16 +1125,20 @@
     .efftbl-rot{margin-top:7px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--muted)}
     /* bottom tab bar */
     .mobnav{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;position:fixed;left:0;right:0;bottom:0;z-index:50;
-      background:color-mix(in oklab,var(--surface),transparent 6%);border-top:1px solid var(--line);
+      background:color-mix(in oklab,var(--bg),transparent 6%);border-top:1px solid var(--line);
       backdrop-filter:saturate(1.4) blur(12px);-webkit-backdrop-filter:saturate(1.4) blur(12px);
       padding-bottom:max(env(safe-area-inset-bottom),22px);user-select:none;-webkit-user-select:none}
     .mnav-btn{appearance:none;-webkit-appearance:none;background:none;border:0;cursor:pointer;
       display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
       padding:8px 0 7px;min-height:54px;color:var(--muted);-webkit-tap-highlight-color:transparent;
-      -webkit-touch-callout:none;font-family:var(--mono);font-size:11px;letter-spacing:.04em}
+      -webkit-touch-callout:none;font-family:var(--sans);font-size:11px;font-weight:500;letter-spacing:.02em}
     .mnav-btn svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.7;
       stroke-linecap:round;stroke-linejoin:round}
-    .mnav-btn[aria-current="page"]{color:var(--accent)}
+    .mnav-btn[aria-current="page"]{color:var(--accent-ink);font-weight:600}
+    /* fork (run-coach look): the active icon sits in a soft teal pill with a glow */
+    .mnav-btn svg{width:40px;height:28px;padding:2.5px 8.5px;border-radius:16px;transition:background .15s,box-shadow .15s}
+    .mnav-btn[aria-current="page"] svg{background:var(--accent-subtle);
+      box-shadow:0 0 14px color-mix(in oklab,var(--accent),transparent 78%)}
   }
   /* Effort table column trim is gated on PORTRAIT, not width — some mobile browsers (Orion) keep a
      <=760px CSS viewport even in landscape, so a width-only rule would never reveal the hidden columns.
@@ -1141,18 +1160,18 @@
      var(--accent) (tile chart shade, re-base segment) uncoloured. --accent stays aliased to it so the
      brand default is unchanged. */
   :root{
-    --accent1: oklch(0.575 0.185 45);    /* terracotta — brand */
+    --accent1: #3a8870;                  /* teal — brand (fork: run-coach; was terracotta oklch(.575 .185 45)) */
     --accent:  var(--accent1);
-    --accent2: oklch(0.575 0.185 135);   /* green */
-    --accent3: oklch(0.575 0.185 225);   /* blue */
-    --accent4: oklch(0.575 0.185 315);   /* magenta */
+    --accent2: oklch(0.56 0.12 262);     /* blue  (square palette rotated onto the teal, 90° apart) */
+    --accent3: oklch(0.56 0.14 352);     /* rose */
+    --accent4: oklch(0.62 0.12 82);      /* amber */
   }
   [data-theme="dark"]{
-    --accent1: oklch(0.72 0.17 45);
+    --accent1: #6eb8a8;
     --accent:  var(--accent1);
-    --accent2: oklch(0.72 0.17 135);
-    --accent3: oklch(0.72 0.17 225);
-    --accent4: oklch(0.72 0.17 315);
+    --accent2: oklch(0.74 0.11 262);
+    --accent3: oklch(0.74 0.12 352);
+    --accent4: oklch(0.78 0.12 82);
   }  /* Current shape tiles: VO2max(terracotta) / Fitness(green) / Fatigue(blue) / Form(magenta).
      Keyed by the tile's data-m METRIC IDENTITY (ratified 0.30.0) — not :nth-child, which silently
      re-hued every tile the day a tile was added, dropped or reordered. */

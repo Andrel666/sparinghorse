@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **run-coach look** (CSS/token level, so it rebases cleanly). Both themes take run-coach's palette
+  (Daylight `#f6f5f0`/white/teal `#3a8870`, Charcoal `#070b10`/`#0e141b`/teal `#6eb8a8`), the square category
+  palette is rotated onto the teal, Outfit (headings, heavy numbers) + DM Sans (text) replace
+  Fraunces/Inter, cards and panels are flat with a soft shadow at radius 20 (the readiness card 28), buttons
+  are radius 16 with the teal gradient on primary, the phone tab bar marks the active tab with a glowing
+  pill, section headings are 21px Outfit, body text is 16px with sans labels, and the header uses line icons
+  instead of emoji. Contrast: dark ink on the teal (4.6:1+), `--accent-ink` `#2b705c` for small teal text
+  (≥4.4:1 on every light surface). The theme background moves in the shell, app.js, the manifest and
+  `det/` together.
 - **The four lenses (new UI): Now, Road, Goal, Log** (`docs/design/FOUR_LENSES_DESIGN.md`). Navigation becomes
   four lenses plus You (Music, Settings). The coach is a chat opened by Ask over any page (the desktop button, the
   phone's fifth tab), with suggestions for the page it was opened over and "Ask about this run" on every debrief;
