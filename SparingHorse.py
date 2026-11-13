@@ -995,7 +995,69 @@ def _rd_fmt_range(vals, fmt):
     return a if a == b else f"{a}–{b}"
 
 
+RD_EASY_PART_MIN_S = 20 * 60   # §EP — an easy run before the strides: at least this long to be "the run"
+RD_EASY_PART_LATE = 0.5        # … and the strides set starts past this share of the recording
+
+
+def _rd_easy_part(frames, reps, sets, halved):
+    """§EP — the easy run on its own, cut where the LAST set of strides starts. Strides and their walk-back
+    recoveries are a separate effort: inside the run's totals they stretch the distance and the time, drag the
+    cadence down and make the second half read as a fade. Returns {sec, km, pace, hr, cad, halves, decoupling}
+    over the frames before that set, or None when there is no late set after a real run (strides mid-run,
+    or a strides-only session)."""
+    if not frames or not reps or not sets:
+        return None
+    first = sorted(r["t"] for r in reps)[-sets[-1]]
+    cut = max(0, int(first // RD_FRAME_S) - 1)     # the frame before the first stride's run-up
+    if cut * RD_FRAME_S < RD_EASY_PART_MIN_S or cut < RD_EASY_PART_LATE * len(frames):
+        return None
+    part = frames[:cut]
+    km = sum(f["km"] for f in part)
+    if km <= 0:
+        return None
+    sec = cut * RD_FRAME_S
+    hrs = [f["hr"] for f in part if f.get("hr")]
+    cads = [f["cad"] for f in part if f.get("cad")]
+    # the halves by distance: pace and heart rate in each, for the fade and the drift
+    half, acc, a, b = km / 2, 0.0, [0.0, 0, []], [0.0, 0, []]
+    for f in part:
+        side = a if acc + f["km"] / 2 < half else b
+        side[0] += f["km"]; side[1] += RD_FRAME_S
+        if f.get("hr"):
+            side[2].append(f["hr"])
+        acc += f["km"]
+    halves = dc = None
+    if a[0] > 0 and b[0] > 0:
+        halves = [round(a[1] / a[0]), round(b[1] / b[0])]
+        if a[2] and b[2]:
+            ef1, ef2 = (a[0] / a[1]) / (sum(a[2]) / len(a[2])), (b[0] / b[1]) / (sum(b[2]) / len(b[2]))
+            dc = round(100 * (ef1 - ef2) / ef1, 1)        # Pa:HR, Runalyze's sign: + = heart rate drifted up
+    return {"sec": sec, "km": round(km, 2), "pace": round(sec / km),
+            "hr": round(sum(hrs) / len(hrs)) if hrs else None,
+            "cad": round(sum(cads) / len(cads) * (2 if halved else 1)) if cads else None,
+            "halves": halves, "decoupling": dc}
+
+
 def classify_structure(streams, zones, min_s=RD_MIN_RUN_S):
+    """§RD entry point (see _classify_structure), plus §EP: an easy run with a late set of strides carries the
+    easy part on its own (`easy_part`), and reads as an easy run with strides, not a strides session."""
+    st = _classify_structure(streams, zones, min_s)
+    if not st.get("ok") or st.get("n_work") or not st.get("strides"):
+        return st
+    frames, _v = _rd_frames(streams, min_s)
+    ep = _rd_easy_part(frames, st.get("stride_reps") or [], st.get("stride_sets") or [],
+                       cadence_is_halved(streams.get("cadence") or []))
+    st["easy_part"] = ep
+    if ep:
+        n = (st.get("stride_sets") or [0])[-1]
+        kind = "long" if ep["sec"] >= RD_LONG_MIN * 60 else "easy"
+        st.update(kind=kind, kind_label="Long run" if kind == "long" else "Easy run",
+                  summary=f"{_rd_fmt_dur(ep['sec'])} @{fmt_pace(ep['pace'])}/km · {n}× strides"
+                          + (f" @{fmt_pace(st['stride_pace'])}/km" if st.get("stride_pace") else ""))
+    return st
+
+
+def _classify_structure(streams, zones, min_s=RD_MIN_RUN_S):
     """§RD entry point: raw activity streams + that-date pace zones → the detected workout.
     Returns {"v", "ok", "kind", "kind_label", "summary", "segments", "n_work", "strides",
     "confidence"} — or ok=False with a reason when the run is honestly unreadable (never force a
@@ -1288,7 +1350,9 @@ def _structure_cached(db, aid, date_iso=None, fetch=True, min_s=RD_MIN_RUN_S, st
     except sqlite3.OperationalError:
         return None, None
     cached = json.loads(row["structure"]) if row else None
-    if cached and cached.get("v") == STRUCT_VERSION:
+    if cached and cached.get("v") == STRUCT_VERSION and not (fetch and cached.get("ok") and cached.get("strides")
+                                                             and not cached.get("n_work") and "easy_part" not in cached):
+        # (§EP: an easy run with strides read before the easy part existed re-reads once when it can fetch)
         # A refusal is a verdict only when the streams it refused were actually there to read (§RD2).
         # 'no usable pace/distance streams' over an EMPTY read is the read failing, not the run being
         # unreadable — and the read-back line would stay missing on a row nothing revisits.
@@ -7088,7 +7152,8 @@ def llm_readiness(hrv, energy, sleep, note, session=None):
         "legs, sleep, and especially their free-text note — that's where nuance the numbers miss shows "
         "up. You may only ESCALATE caution beyond the obvious; a separate deterministic floor already "
         "enforces the minimums (one poor signal ⇒ at least amber, two ⇒ at least red), so don't be "
-        "afraid to be cautious. Set stop_symptom_detected=true if the note hints at having to stop "
+        "afraid to be cautious, but escalate only on what the note says: HRV ABOVE its band is not a poor "
+        "signal, and a signal that was not reported is not a poor signal. Set stop_symptom_detected=true if the note hints at having to stop "
         "mid-run / can't sustain easy effort, or any chest pain/dizziness/fainting; err toward true "
         "for cardiac/exertional signs. Never diagnose; you flag and defer to their doctor. Keep action "
         "to one sentence."
@@ -7501,8 +7566,12 @@ def assess_readiness(db, checkin, session=None):
     note = (checkin or {}).get("note", "")
     # §H7 — "not reported" rather than a fabricated "ok": handing the narrator an undeclared value
     # is the §H6 defect again (a narrator told something that is not a fact will state it as one).
+    # §RD1 — the judgment layer reads the NOTE: that is the nuance the numbers miss and the only input the
+    # engine can't score. With no note it has nothing to add, and on 12 Nov 2026 it filled the gap by
+    # reading an HRV 0.9 ms over its band and an absent check-in as two poor signals, turning the
+    # engine's green into "Go easier" over a page whose every signal read fine. No note → the engine speaks.
     llm = (llm_readiness(hrv, energy or "not reported", sleep or "not reported", note, session)
-           if (llm_available() and ai_enabled(db, "judgment")) else None)   # §S5 — off by default
+           if (note or "").strip() and llm_available() and ai_enabled(db, "judgment") else None)   # §S5 — off by default
     if not (llm and llm.get("ok")):
         return base
     if llm.get("stop_symptom_detected"):  # free-text safety catch — the §H2 backstop to the check-in stop control

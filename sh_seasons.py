@@ -55,6 +55,16 @@ def hms(sec):
 def _runs(S, db):
     drop = S.dropped_ids(db)
     out = []
+    # §EP — a run with a late set of strides counts its easy part only: the strides and their walk-backs would
+    # add distance and time at a heart rate the easy running never had
+    easy = {}
+    try:
+        for row in db.execute("SELECT activity_id, structure FROM structcache WHERE structure LIKE '%\"easy_part\": {%'"):
+            ep = (json.loads(row["structure"]) or {}).get("easy_part")
+            if ep and ep.get("hr") and ep.get("km"):
+                easy[row["activity_id"]] = ep
+    except Exception:
+        pass
     for r in db.execute("SELECT id, date, distance, duration, hr_avg, raw FROM activities WHERE " + E.RUN_FAMILY_SQL +
                         " AND distance > 0 AND duration > 0 AND date IS NOT NULL ORDER BY date").fetchall():
         if r["id"] in drop:
@@ -64,7 +74,9 @@ def _runs(S, db):
         except (ValueError, TypeError):
             j = {}
         vo2 = j.get("vo2max") if j.get("use_vo2max", True) else None
-        bpk = (r["hr_avg"] * r["duration"] / 60.0 / r["distance"]) if r["hr_avg"] and r["distance"] >= BPK_MIN_KM else None
+        ep = easy.get(r["id"])
+        hr, sec, km = (ep["hr"], ep["sec"], ep["km"]) if ep else (r["hr_avg"], r["duration"], r["distance"])
+        bpk = (hr * sec / 60.0 / km) if hr and km >= BPK_MIN_KM else None
         out.append({"id": r["id"], "date": r["date"], "km": r["distance"], "vo2": vo2, "bpk": bpk})
     return out
 

@@ -64,26 +64,42 @@ function Hero({ d, onDay }: { d: TodayPage; onDay: (date: string) => void }) {
         {s.minutes ? <span className="muted">~{minutes(s.minutes)}</span> : null}
         <ComponentChip k={s.component} />
       </div>
-      {s.done && s.actual && <span><span className="mk-ok">✓</span> Ran {km(s.actual.km)}{s.actual.pace ? ` at ${pace(s.actual.pace)}` : ""}{" "}
+      {s.done && s.actual && <span><span className="mk-ok">✓</span> Ran {km(s.actual.km)}{s.actual.pace ? ` at ${pace(s.actual.pace)}` : ""}{s.actual.strides ? ` + ${s.actual.strides}× strides` : ""}{" "}
         {s.activity_id ? <Link to={`/runs?id=${s.activity_id}`} className="linkish">Open ›</Link> : null}</span>}
       {s.done && s.activity_id ? <DebriefSummary id={s.activity_id} onOpen={() => onDay(d.today)} /> : null}
       <Steps steps={s.steps} />
+      {s.skipped === "strides" && <span className="muted t-small">Strides skipped today.</span>}
     </div>);
 }
 
-/** The right of the day band: the verdict (hero-sized when it asks for caution), and the check-in as one quiet line. */
+/** The right of the day band: the verdict, then what it read (HRV, legs, sleep) on the card itself, the
+ *  overnight markers beside them as context, and the check-in. "Why" opens only for the model's own reasons. */
 function Verdict({ d, onCheckin }: { d: TodayPage; onCheckin: () => void }) {
   const r = d.readiness, s = d.session;
   const caution = r.halt || r.verdict === "amber" || r.verdict === "red";
   const word = r.headline || (r.verdict ? VERDICT_WORD[r.verdict] : "No read yet");
   const line = checkinLine(r.checkin, r.saved_at);
+  // on a rest day the overnight markers are the hero (left); otherwise they sit here, under what the verdict read
+  const context = s.kind === "rest" ? [] : (d.recovery ?? []).filter(m => m.key !== "hrv");
   return (
     <div>
       <span className="eyebrow">Readiness</span>
       <span className={`${caution && !["rest", "pre", "post", "none"].includes(s.kind) ? "hero-v" : "second"} toned`}>{word}</span>
       <span>{r.for_label || r.detail}</span>
-      <details className="why"><summary>Why</summary>
-        <ul>{r.reasons.map((x, i) => <li key={i}>{x}</li>)}<li>{r.hrv_line}</li>{r.ai_line && <li>{r.ai_line}</li>}</ul></details>
+      {!!r.inputs?.length && <dl className="reads" aria-label="What the verdict read">
+        {r.inputs.map(x => <div key={x.key}>
+          <dt>{x.label}</dt>
+          <dd>{x.value && <span className={`num${x.tone ? " tone-warn toned" : ""}`}>{x.value}</span>}
+            {x.word && <span className="muted">{x.value ? " · " : ""}{x.word}</span>}</dd></div>)}
+      </dl>}
+      {!!context.length && <dl className="reads" aria-label="Overnight">
+        {context.map(m => <div key={m.key}>
+          <dt><Link to={m.link ?? `/fitness?tab=body#${m.key}`}>{m.label}</Link></dt>
+          <dd><span className="num">{m.value}{m.unit ? ` ${m.unit}` : ""}</span>
+            {m.sub && <span className="muted"> · {m.sub}</span>}</dd></div>)}
+      </dl>}
+      {r.judged && !!r.reasons.length && <details className="why"><summary>Why</summary>
+        <ul>{r.reasons.map((x, i) => <li key={i}>{x}</li>)}{r.ai_line && <li>{r.ai_line}</li>}</ul></details>}
       <button type="button" className="checkin-open" onClick={onCheckin}>
         {line ? <><span className="mk-ok" aria-hidden="true">✓</span> {line}</> : "Check in"}</button>
     </div>);
@@ -188,7 +204,6 @@ export function Today() {
           {!!d.signals?.length && <Card id="signals" label="Training signals" span={12}
                                        aside={<Link to="/goal#seasons" className="linkish t-small">Seasons ›</Link>}>
             <Recovery items={d.signals} /></Card>}
-          {d.recovery && !(d.session.kind === "rest" && d.recovery.length) && <Card id="recovery" label="Recovery" span={12}><Recovery items={d.recovery} /></Card>}
         </div>
         <Drawer title={day ? dateLong(day) : ""} open={!!day} onClose={() => setDay(null)}>
           <DayDetail sessions={daySessions} ranHere={ranHere} movedFrom={dayInfo?.moved_from} onRun={() => setDay(null)} />

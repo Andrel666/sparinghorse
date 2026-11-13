@@ -91,10 +91,24 @@ def run_debrief(S, db, aid):
         asked = {"kind": kind, "title": U.KIND_TITLE.get(kind, kind), "km": sess.get("km"), "minutes": sess.get("minutes"),
                  "date": sess.get("date"), "target": U.session_target(S, db, kind, zones), "strides": U.strides_of(sess),
                  "moved": sess.get("date") != act["date"]}
-    km = round(act["distance"] or 0.0, 1)
-    did = {"km": km, "minutes": round(act["duration"] / 60) if act["duration"] else None,
-           "pace": U._pace(act["duration"] / act["distance"]) if act["distance"] and act["duration"] else None,
-           "hr": act["hr_avg"], "hr_max": act["hr_max"], "trimp": round(act["trimp"]) if act["trimp"] else None}
+    # §EP — an easy run with a late set of strides is judged on the easy part alone: the strides and their
+    # walk-backs are their own effort, and inside the totals they lengthen the run and fake a fade
+    try:
+        st, _e = S._structure_cached(db, aid, date_iso=act["date"], fetch=False)
+    except Exception:
+        st = None
+    ep = (st or {}).get("easy_part")
+    if ep:
+        km = round(ep["km"], 1)
+        did = {"km": km, "minutes": round(ep["sec"] / 60), "pace": U._pace(ep["pace"]), "hr": ep["hr"],
+               "hr_max": act["hr_max"], "trimp": round(act["trimp"]) if act["trimp"] else None,
+               "easy_part": True, "strides": (st.get("stride_sets") or [0])[-1],
+               "total_km": round(act["distance"] or 0.0, 2)}
+    else:
+        km = round(act["distance"] or 0.0, 1)
+        did = {"km": km, "minutes": round(act["duration"] / 60) if act["duration"] else None,
+               "pace": U._pace(act["duration"] / act["distance"]) if act["distance"] and act["duration"] else None,
+               "hr": act["hr_avg"], "hr_max": act["hr_max"], "trimp": round(act["trimp"]) if act["trimp"] else None}
     ed = S.effort_discipline(db) or {}
     er = next((x for x in ed.get("runs") or [] if x.get("date") == act["date"]), {})
     verdict = er.get("verdict")
@@ -184,7 +198,7 @@ def run_debrief(S, db, aid):
     except Exception as e:
         print(f"[debrief signals] {type(e).__name__}: {e}")
         goal["signals"] = None
-    insights = run_insights(S, db, act, asked, did, ed, verdict)
+    insights = run_insights(S, db, act, asked, did, ed, verdict, ep)
     return {"ok": True, "id": aid, "date": act["date"], "headline": headline, "tone": tone, "asked": asked, "did": did,
             "checks": checks, "cost": cost, "insights": insights, "goal": goal, "note": (note["note"] if note else None) or None,
             "next": ({"date": nxt["date"], "dow": U._dow(S, nxt["date"]), "title": U.KIND_TITLE.get(nxt.get("kind"), nxt.get("kind")),
@@ -197,7 +211,7 @@ def _pace_s(sec_per_km):
     return f"{m}:{x:02d}"
 
 
-def run_insights(S, db, act, asked, did, ed, verdict):
+def run_insights(S, db, act, asked, did, ed, verdict, ep=None):
     """What to keep and what to change after a run, each read against the athlete's own recent runs.
     Returns {keep, change, next, context}: keep, change and context are {key, text} (context is what the run met,
     such as heat, not something to change); next is the advice for the next run. A signal with no data stays
@@ -208,6 +222,8 @@ def run_insights(S, db, act, asked, did, ed, verdict):
     except Exception:
         raw = {}
     km, dur, hr = act["distance"] or 0.0, act["duration"] or 0.0, act["hr_avg"]
+    if ep:                                      # §EP — the easy part only: the strides are not the run
+        km, dur, hr = ep["km"], ep["sec"], ep["hr"] or hr
     long_run = (asked or {}).get("kind") == "long"
     easy = (asked or {}).get("kind") in EASY_KINDS or verdict is not None
     # — the recent runs this one is compared with —
@@ -229,6 +245,21 @@ def run_insights(S, db, act, asked, did, ed, verdict):
 
     # 2 pacing: halves and the last km, from the 1 km splits
     sp = [x for x in raw.get("splits") or [] if x.get("distance") and x.get("duration")]
+    if ep:                                      # the 1 km splits run on into the strides: read the easy part's halves
+        sp = []
+        if ep.get("halves") and km >= INS_MIN_KM:
+            p1, p2 = ep["halves"]
+            delta = 100 * (p2 - p1) / p1
+            if abs(delta) <= INS_EVEN_PCT:
+                keep.append({"key": "pacing", "text": f"Even pacing: {_pace_s(p1)} then {_pace_s(p2)}/km, "
+                                                      f"the second half {'+' if delta >= 0 else '−'}{abs(delta):.0f} % on the first."})
+            elif delta < 0:
+                keep.append({"key": "pacing", "text": f"Negative split: the second half {abs(delta):.0f} % faster "
+                                                      f"({_pace_s(p1)} → {_pace_s(p2)}/km)."})
+            elif delta >= INS_FADE_PCT:
+                change.append({"key": "pacing", "text": f"The run faded: the second half {delta:.0f} % slower "
+                                                        f"({_pace_s(p1)} → {_pace_s(p2)}/km)."})
+                nxt.append("Start slower: the first two km should feel too easy.")
     if len(sp) >= 4 and km >= INS_MIN_KM:
         tot = sum(x["distance"] for x in sp)
         half, acc, first, second = tot / 2, 0.0, [0.0, 0.0], [0.0, 0.0]
@@ -263,7 +294,7 @@ def run_insights(S, db, act, asked, did, ed, verdict):
                                                       f"history warns about."})
 
     # 3 aerobic decoupling (heart rate drifting up against pace), against the recent median
-    dc = raw.get("aerobic_decoupling_pace")
+    dc = ep.get("decoupling") if ep else raw.get("aerobic_decoupling_pace")
     if dc is not None and km >= INS_MIN_KM:
         rdc = [json.loads(r["raw"] or "{}").get("aerobic_decoupling_pace") for r in recent]
         m = med([x for x in rdc if x is not None])
@@ -313,13 +344,15 @@ def run_insights(S, db, act, asked, did, ed, verdict):
 
     # 6 cadence against the recent median
     cad = raw.get("cadence")
+    f = raw.get("cadence_display_factor") or 1
+    if ep and ep.get("cad"):                    # the easy part's cadence, in the same one-leg/two-leg unit as raw
+        cad = ep["cad"] / f
     if cad:
-        f = raw.get("cadence_display_factor") or 1
         rc = [json.loads(r["raw"] or "{}").get("cadence") for r in recent]
         m = med([x for x in rc if x])
         if m and abs(cad - m) * f >= INS_CADENCE_SPM:
             word = "higher" if cad > m else "lower"
-            (keep if cad > m else change).append({"key": "cadence", "text": f"Cadence {cad * f} spm, {word} than your "
+            (keep if cad > m else change).append({"key": "cadence", "text": f"Cadence {round(cad * f)} spm, {word} than your "
                                                                              f"usual {m * f}."})
 
     # 7 conditions: warm air lifts heart rate, so a high reading on a hot day reads differently

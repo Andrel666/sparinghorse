@@ -4725,6 +4725,11 @@ def _stc_readiness_provenance():
         S.llm_json = lambda system, user, schema, **kw: (seen.update(user=user)
                                                          or {"ok": True, "verdict": "green"})
         S.assess_readiness(m, None)
+        # §RD1 — with no note the narrator has nothing to read and is not called: the engine's call stands
+        if seen:
+            fails.append("the readiness narrator was called with no note (§RD1: no note, the engine speaks)")
+        seen.clear()
+        S.assess_readiness(m, {"note": "felt a bit flat"})   # a note-only day: legs and sleep still unreported
     finally:
         S.llm_available, S.llm_json, S.ai_enabled = real_av, real_json, real_ai
     u = (seen.get("user") or "")

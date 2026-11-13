@@ -21,7 +21,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export type Verdict = "green" | "amber" | "red" | null;
 export interface Target { kind: "hr" | "pace"; text: string; hint: string }
 export interface Step { label: string; minutes: number | null; km: number | null; zone: string | null; pace: string | null }
-export interface Actual { km: number; pace: string | null; hr?: number | null }
+export interface Actual { km: number; pace: string | null; hr?: number | null; strides?: number; total_km?: number | null }
 export interface Day {
   date: string; dow: string; kind: string; title: string; km: number | null; race: boolean; strides: number;
   status: "rest" | "planned" | "today" | "done" | "moved" | "missed" | "extra"; actual: Actual | null; moved_to: string | null;
@@ -30,6 +30,8 @@ export interface Day {
   moved_from?: string | null; moved_dow?: string | null;
 }
 export interface Held { key: string; name: string; text: string; short?: string }
+/** One thing the readiness verdict read (HRV, legs, sleep), with its value and a plain word. */
+export interface ReadinessInput { key: string; label: string; value: string; word: string | null; tone: "warn" | null }
 export interface TodayPage {
   ok: true; today: string; sync_minutes: number | null; dateline?: string;
   race: { label: string; date: string; type: string; days: number; target: string | null; start_time: string | null;
@@ -37,11 +39,12 @@ export interface TodayPage {
           pred?: { hms: string; tone: "ok" | "warn" | "bad" | null; words: string } } | null;
   readiness: { verdict: Verdict; halt: boolean; action: string; headline: string | null; detail: string;
                reasons: string[]; hrv: string | null; hrv_line: string; ai_line: string | null;
-               checkin: Checkin | null; for_label?: string | null; saved_at?: string | null };
+               checkin: Checkin | null; for_label?: string | null; saved_at?: string | null;
+               inputs?: ReadinessInput[]; judged?: boolean };
   session: { kind: string; title: string; km: number | null; minutes: number | null; note: string | null; done: boolean;
              actual: Actual | null; race: boolean; target: Target | null; steps: Step[]; phase: string | null;
              week: number | null; trimp: number | null; optional: boolean; start: string | null; component: string | null;
-             pace_zone: string | null; why: string | null; activity_id?: number | null };
+             pace_zone: string | null; why: string | null; activity_id?: number | null; skipped?: string };
   next: { date: string; dow: string; kind: string; title: string; km: number | null; minutes: number | null;
           strides: number; race: boolean; target: Target | null; days: number } | null;
   week: { start: string; phase: string | null; km: number; runs: number; days: Day[]; deload: string | null;
@@ -152,6 +155,7 @@ export interface PlanPage {
 }
 export interface RunPage { ok: true; id: number; date: string; title: string; sport: string;
   stats: { k: string; v: string | null; primary?: boolean }[];
+  parts?: { key: string; label: string; km: number; figures: string; note: string | null }[];
   readback: { kind: string | null; summary: string | null; rough: boolean; composite: number | null; strides: string | null } | null;
   verdict: string | null; verdict_text: string | null; time: string | null; ignored: boolean;
   split: { index: number; parts: number; km: number; min: number } | null }
@@ -211,7 +215,7 @@ export const useCalendar = (month?: string) => q<CalendarMonth>(["ui", "calendar
 export const usePlanCalendar = (month?: string) => q<PlanCalendar>(["ui", "plancal", month], `/api/plan/calendar${month ? `?month=${month}` : ""}`);
 export interface RunsLog { ok: true; month: string; range: string | null; km: number;
   runs: { id: number; date: string; dow: string; time: string | null; km: number; pace: string | null; z: number | null; hr: number | null;
-          min: number | null; kind: string; verdict: string | null; verdict_text: string | null }[];
+          bpk: number | null; min: number | null; kind: string; verdict: string | null; verdict_text: string | null }[];
   weeks: { start: string; km: number; runs: number; ids: number[] }[] }
 export const useRunsLog = (month?: string, range?: string | null) =>
   q<RunsLog>(["ui", "runslog", month, range], `/api/ui/runs?${new URLSearchParams(Object.entries({ month, range }).filter(([, v]) => v) as [string, string][])}`);
