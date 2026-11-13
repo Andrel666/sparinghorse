@@ -22,7 +22,8 @@ export function SessionBlock({ s }: { s: SessionDetail }) {
       </div>
       <div className="row"><TargetChip t={s.target} />{s.minutes ? <span className="muted">about {minutes(s.minutes)}</span> : null}</div>
       {s.actual && <span>Ran <span className="num">{km(s.actual.km)}</span> at <span className="num">{pace(s.actual.pace)}</span>
-        {s.actual.hr ? <> · <span className="num">{s.actual.hr} bpm</span></> : null}</span>}
+        {s.actual.hr ? <> · <span className="num">{s.actual.hr} bpm</span></> : null}
+        {s.actual.strides ? <span className="muted"> + {s.actual.strides}× strides ({km(s.actual.total_km ?? null)} in all)</span> : null}</span>}
       <Steps steps={s.steps} />
     </div>
   );
@@ -44,7 +45,9 @@ export function DayDetail({ sessions, onRun, ranHere = [], movedFrom }: { sessio
   return (
     <div className="list" style={{ gap: "var(--sp-5)" }}>
       {sessions.map((s, i) => {
-        const runs = s.runs?.length ? s.runs : s.activity_id ? [{ km: s.actual?.km ?? null, pace: s.actual?.pace ?? null, activity_id: s.activity_id }] : [];
+        // §EP — one run that ended with strides: the link reads the easy part, the line above says the rest
+        const runs = s.runs?.length === 1 && s.actual?.strides ? [{ ...s.runs[0], km: s.actual.km, pace: s.actual.pace }]
+          : s.runs?.length ? s.runs : s.activity_id ? [{ km: s.actual?.km ?? null, pace: s.actual?.pace ?? null, activity_id: s.activity_id }] : [];
         return (
           <div key={`${s.kind}${i}`} className="list" style={{ gap: "var(--sp-3)" }}>
             <SessionBlock s={s as SessionDetail} />

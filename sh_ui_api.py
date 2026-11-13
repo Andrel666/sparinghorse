@@ -9,6 +9,7 @@ is imported by the coach.
 The app module is passed in (`register(app, S)`): SparingHorse may be running as __main__.
 """
 import json
+import math
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -27,6 +28,8 @@ LIMITS = {
                 "held": "the week's speed-weighted load is at its ceiling ({laid} of {ceiling})"},
     "eq_session": {"name": "Impact load, single run",
                    "held": "the biggest single run is at its ceiling ({laid} of {ceiling})"},
+    "vmax": {"name": "Weekly volume ceiling",
+             "held": "your ceiling is {ceiling} km a week; this week lays {laid}"},
     "tissue": {"name": "Weeks near the ceiling",
                "held": "several weeks in a row near the load ceiling force a lighter week"},
 }
@@ -43,6 +46,10 @@ def _pace(sec_per_km):
         return None
     s = int(round(sec_per_km))
     return f"{s // 60}:{s % 60:02d}"
+
+
+STRIDES_STEP = "4–6 strides of ~20 s after the run, walk back between"
+STRIDES_MIN = 6                  # 4–6 strides of ~20 s with the walk back: about a minute each
 
 
 def strides_of(session):
@@ -103,12 +110,13 @@ def workout_steps(session):
     add("Cool-down, easy", by("cooldown"), "easy")
     st = strides_of(session)
     if st:
-        steps.append({"label": f"{st} × 4–6 strides of ~20 s, walk back between", "minutes": st * 3, "km": None,
+        # the session's count is the engine's stride marker, not a number of sets: what to run is one set
+        steps.append({"label": STRIDES_STEP, "minutes": STRIDES_MIN, "km": None,
                       "zone": "interval", "pace": None})
     return steps
 
 
-def _week_days(S, w, today_iso):
+def _week_days(S, w, today_iso, db=None):
     start = S._date(w["start"])
     by = {}
     for x in w["sessions"]:
@@ -125,7 +133,7 @@ def _week_days(S, w, today_iso):
                      "kind": (main or {}).get("kind") or "rest",
                      "title": KIND_TITLE.get((main or {}).get("kind") or "rest", (main or {}).get("kind")),
                      "km": (main or {}).get("km"), "status": status, "race": bool((main or {}).get("race")),
-                     "strides": strides_of(main), "actual": (main or {}).get("actual"),
+                     "strides": strides_of(main), "actual": easy_actual(db, main) if db is not None else (main or {}).get("actual"),
                      "moved_to": (main or {}).get("moved_to"),
                      "moved_dow": S._date(main["moved_to"]).strftime("%a") if (main or {}).get("moved_to") else None,
                      "runs": [], "moved_from": None})
@@ -138,10 +146,13 @@ def _week_days(S, w, today_iso):
         if ran not in at:
             continue
         rs = x.get("runs") or [{"km": x["actual"].get("km"), "pace": x["actual"].get("pace"), "activity_id": x.get("activity_id")}]
+        ea = easy_actual(db, x) if db is not None and len(rs) == 1 else None
+        if ea and ea.get("strides"):           # §EP — the easy part, the strides said beside it
+            rs = [{**rs[0], "km": ea["km"], "pace": ea["pace"], "strides": ea["strides"]}]
         for r in rs:
             at[ran]["runs"].append({"activity_id": r.get("activity_id"), "km": r.get("km"), "pace": r.get("pace"),
                                     "hr": x["actual"].get("hr") if len(rs) == 1 else None,
-                                    "kind": x.get("kind"), "unplanned": bool(x.get("unplanned"))})
+                                    "kind": x.get("kind"), "unplanned": bool(x.get("unplanned")), "strides": r.get("strides")})
         if x.get("moved_to") and ran != x["date"]:
             at[ran]["moved_from"] = S._date(x["date"]).strftime("%a")
     return days
@@ -172,6 +183,34 @@ def _hrv_line(h):
     return f"HRV {h['baseline']:.0f} against a band of {h['band'][0]:.0f}–{h['band'][1]:.0f} — {h.get('state') or 'unread'}"
 
 
+HRV_NEAR = 0.05   # within 5 % of the band's edge reads "just above/below": a fraction of a ms is not news
+
+
+def _readiness_inputs(a, checkin):
+    """§RD2 — what the verdict read, each with its value and a plain word, shown on the card itself rather
+    than behind "Why": HRV against its band, then any check-in answer that was given."""
+    h = (a or {}).get("hrv") or {}
+    out = []
+    if h.get("baseline") is not None and h.get("band"):
+        lo, hi = h["band"]
+        b, st = h["baseline"], h.get("state")
+        near = (st == "high" and b <= hi * (1 + HRV_NEAR)) or (st == "low" and b >= lo * (1 - HRV_NEAR))
+        word = {"ok": "inside", "high": "above", "low": "below"}.get(st)
+        word = (f"{'just ' if near else ''}{word} your band {lo:.0f}–{hi:.0f}"
+                + (", not a warning" if st == "high" else "")) if word else f"band {lo:.0f}–{hi:.0f}"
+        out.append({"key": "hrv", "label": "HRV", "value": f"{b:.0f} ms", "word": word,
+                    "tone": "warn" if st == "low" else None})
+    else:
+        out.append({"key": "hrv", "label": "HRV", "value": "—", "word": "no reading", "tone": None})
+    # the check-in's legs and sleep answers show only when given: the runner doesn't fill them in, and the measured
+    # night (the overnight rows under this) is the sleep that is actually there
+    c = checkin or {}
+    for key, label, bad in (("energy", "Legs", "heavy"), ("sleep", "Sleep, felt", "poor")):
+        if c.get(key):
+            out.append({"key": key, "label": label, "value": c[key], "word": None, "tone": "warn" if c[key] == bad else None})
+    return out
+
+
 def _ai_line(a):
     src = str(a.get("source") or "")
     if src.startswith("llm"):
@@ -192,7 +231,7 @@ def today_page(S, db):
     kind = sess.get("kind") or ("rest" if sess else "none")      # none: no plan covers today
     session = {"kind": kind, "title": KIND_TITLE.get(kind, kind), "km": sess.get("km"),
                "minutes": sess.get("minutes"), "note": sess.get("note"), "done": bool(sess.get("done")),
-               "actual": sess.get("actual"), "race": bool(sess.get("race")),
+               "actual": easy_actual(db, sess), "race": bool(sess.get("race")),
                "target": session_target(S, db, kind, zones), "steps": workout_steps(sess),
                "phase": sess.get("pk"), "week": sess.get("week"), "trimp": sess.get("trimp"),
                "optional": bool(sess.get("optional")), "start": sess.get("start"), "component": sess.get("component"),
@@ -207,7 +246,7 @@ def today_page(S, db):
         cur = [w for w in log["weeks"] if w["start"] <= tiso <= (S._date(w["start"]) + timedelta(days=6)).isoformat()]
         if cur:
             w = cur[0]
-            days = _week_days(S, w, tiso)
+            days = _week_days(S, w, tiso, db)
             dl = w.get("deload") or {}
             week = {"start": w["start"], "phase": w.get("pk"), "km": w.get("km"),
                     "runs": sum(1 for d in days if d["kind"] != "rest" and d["status"] != "extra"),
@@ -304,12 +343,29 @@ def today_page(S, db):
             latest["verdict_line"] = (f"{VERDICT_TEXT[v][:1].upper()}{VERDICT_TEXT[v][1:]}: {hr} bpm against ≤ {ceil}"
                                       if v in ("hot", "too_hard") else f"Easy, on target: {hr} bpm, under ≤ {ceil}"
                                       if v in ("on", "easy") else None)
+    # §RD3 — a caution day drops the progression its action names ("no strides"), so the session card under the
+    # verdict no longer lists the strides the verdict just told the runner to skip
+    if (a.get("verdict") in ("amber", "red") or a.get("halt")) and any(x["label"] == STRIDES_STEP for x in session["steps"]):
+        session["steps"] = [x for x in session["steps"] if x["label"] != STRIDES_STEP]
+        session["skipped"] = "strides"
     session["activity_id"] = sess.get("activity_id")
+    if session["done"] and not session["activity_id"]:
+        # the readiness session doesn't carry the run: the block log's pairing of today's session does, and failing
+        # that today's latest run (the hero's "Open" and the debrief summary need it)
+        log = S.block_log(db) or {}
+        paired = next((x.get("activity_id") for w in log.get("weeks") or [] for x in w.get("sessions") or []
+                       if x.get("date") == tiso and x.get("activity_id") and not x.get("unplanned")), None)
+        session["activity_id"] = paired or ((latest or {}).get("id") if (latest or {}).get("date") == tiso else None)
+    if session["activity_id"]:                # §EP — the run is known only now: read its easy part
+        session["actual"] = easy_actual(db, {"actual": session["actual"], "activity_id": session["activity_id"]})
     return {"ok": True, "today": tiso, "sync_minutes": sync_min, "race": race, "dateline": dateline,
             "readiness": {"verdict": a.get("verdict"), "halt": bool(a.get("halt")), "action": a.get("action"),
-                          "headline": split_action(a.get("action"))[0], "detail": split_action(a.get("action"))[1],
+                          "headline": split_action(a.get("action"))[0], "detail": ("Recover; nothing else scheduled." if a.get("done")       # the hero already says what was run
+                                     else split_action(a.get("action"))[1]),
                           "reasons": a.get("reasons") or [], "hrv": (a.get("hrv") or {}).get("state"),
                           "hrv_line": _hrv_line(a.get("hrv")), "ai_line": _ai_line(a),
+                          "inputs": _readiness_inputs(a, rd.get("checkin")),
+                          "judged": str(a.get("source") or "").startswith("llm"),
                           "checkin": _checkin(rd.get("checkin")), "for_label": for_label,
                           "saved_at": ck["created_at"] if ck and ck["created_at"] else None},
             "session": session, "next": nxt, "week": week, "latest_run": latest, "coming": coming,
@@ -317,6 +373,7 @@ def today_page(S, db):
             "where": today_where(S, db, log, week, json.loads(plan_row["plan"]) if plan_row else None, today),
             "why": today_why(S, week, log, json.loads(plan_row["plan"]) if plan_row else None, today),
             "recovery": today_recovery(S, db, a.get("hrv")),
+            "signals": today_signals(S, db, json.loads(plan_row["plan"]) if plan_row else None, today),
             "vs_plan": today_vs_plan(S, db, today),
             "endurance": today_endurance(S, db, today)}
 
@@ -408,7 +465,7 @@ def endurance_page(S, db, today=None):
 
 HRV_WORD = {"ok": "inside the band", "low": "below the band", "high": "above the band"}
 COMING_N = 5                    # sessions listed under "Coming up"
-RECOVERY_MARKERS = ("resting_hr", "sleep_duration", "weight")   # the nightly markers Today shows, when recorded
+RECOVERY_MARKERS = ("resting_hr", "sleep_duration")   # the nightly markers Today shows beside readiness (weight lives on Body)
 
 
 def _hms_s(t):
@@ -576,6 +633,16 @@ def today_why(S, week, log, plan, today):
     return out
 
 
+def today_signals(S, db, plan, today):
+    """Fork §SEASON — the two training signals the athlete's races track: VO₂max and beats per km."""
+    try:
+        import sh_seasons
+        return sh_seasons.today_signals(S, db, today, (plan or {}).get("objective"))
+    except Exception as e:                       # never take Today down
+        print(f"[signals] {type(e).__name__}: {e}")
+        return []
+
+
 def today_recovery(S, db, hrv):
     """The overnight signals in one place: HRV against its band, then the nightly markers, each with its last 30 days."""
     today = datetime.now().date()
@@ -608,9 +675,14 @@ def today_recovery(S, db, hrv):
         wk = [p["v"] for p in series if p["date"] >= (today - timedelta(days=6)).isoformat()]
         mo = [p["v"] for p in series]
         age = (today - S._date(last["date"])).days
+        # §RD4 — a night is filed by the morning it ended; when that is not this morning, say which night it is
+        ld = S._date(last["date"])
+        when = (None if age == 0 else
+                f"night of {(ld - timedelta(days=1)).day}–{ld.day} {ld.strftime('%b')}, last night not synced yet"
+                if hours else f"{ld.day} {ld.strftime('%b')}")
         out.append({"key": key, "label": m["label"], "unit": "" if hours else m.get("unit", ""),
                     "value": _hm(last["value"]) if hours else f"{last['value']:g}",
-                    "sub": " · ".join(x for x in [f"7-day avg {fmt(sum(wk) / len(wk))}" if wk else None,
+                    "sub": " · ".join(x for x in [when if last["date"] >= fresh else None, f"7-day avg {fmt(sum(wk) / len(wk))}" if wk else None,
                                                   f"30-day {fmt(sum(mo) / len(mo))}" if len(mo) > len(wk) else None,
                                                   None if last["date"] >= fresh else f"last read {age} days ago"] if x),
                     "state": marker_state(last["value"], m.get("ref"), m.get("good")), "series": series})
@@ -626,13 +698,17 @@ REST_DAYS_MAX = 60
 
 
 def rest_days(S, ctl, atl, start):
-    """Days of zero load from `start` until CTL − ATL ≥ 0 (0 when it already is; capped)."""
+    """Days of zero load from `start` until CTL − ATL ≥ 0, to one decimal like Runalyze (3.4, not 4).
+    On zero load each EWMA only decays (x·(1 − α)), so the crossing has a closed form on the engine's own
+    smoothing: CTL·dc^t = ATL·da^t → t = ln(ATL/CTL) / ln(dc/da). 0 when form is already balanced; capped."""
     if ctl - atl >= 0:
         return 0
-    for i, p in enumerate(S.roll({}, start, start + timedelta(days=REST_DAYS_MAX - 1), ctl0=ctl, atl0=atl), start=1):
-        if p["ctl"] - p["atl"] >= 0:
-            return i
-    return REST_DAYS_MAX
+    if ctl <= 0:
+        return float(REST_DAYS_MAX)
+    import math
+    dc, da = 1 - 2.0 / (S.TAU_CTL + 1), 1 - 2.0 / (S.TAU_ATL + 1)
+    t = math.log(atl / ctl) / math.log(dc / da)
+    return min(round(t, 1), float(REST_DAYS_MAX))
 
 
 def today_rest_days(S, db, today):
@@ -644,12 +720,13 @@ def today_rest_days(S, db, today):
     ctl, atl = last["ctl"], last["atl"]
     tsb = ctl - atl
     n = rest_days(S, ctl, atl, today + timedelta(days=1))
+    whole = math.ceil(n)                     # the first whole day form reads balanced
     cut = (today - timedelta(days=30)).isoformat()
     r = round(tsb)
     tsb_txt = f"{'+' if r > 0 else '−' if r < 0 else ''}{abs(r):.0f}"
-    by = f" ({(today + timedelta(days=n)).strftime('%a')})" if n <= 6 else ""
+    by = f" ({(today + timedelta(days=whole)).strftime('%a')})" if whole <= 6 else ""
     sub = f"form is balanced · TSB {tsb_txt}" if n == 0 else f"full rest to TSB 0{by} · now {tsb_txt}"
-    return {"key": "rest_days", "label": "Rest days", "value": f"{n}{'+' if n >= REST_DAYS_MAX else ''}",
+    return {"key": "rest_days", "label": "Rest days", "value": f"{n:g}{'+' if n >= REST_DAYS_MAX else ''}",
             "unit": "day" if n == 1 else "days", "sub": sub,
             "state": "watch" if tsb <= FORM_TIRED else None,
             "series": [{"date": p["date"], "v": round(p["ctl"] - p["atl"], 1)} for p in hist if p["date"] >= cut],
@@ -985,11 +1062,30 @@ def _limits_list(limits):
     return sorted(out, key=lambda x: (not x["holds"], x["name"]))
 
 
+def easy_actual(db, x):
+    """§EP — what a session's run did, the easy part on its own when the run ended with a set of strides
+    (cached read only: a list never fans out into stream fetches). Falls back to the stored actual."""
+    act = (x or {}).get("actual")
+    aid = (x or {}).get("activity_id")
+    if not act or not aid:
+        return act
+    try:
+        row = db.execute("SELECT structure FROM structcache WHERE activity_id=?", (aid,)).fetchone()
+        st = json.loads(row["structure"]) if row else {}
+    except Exception:
+        return act
+    ep = (st or {}).get("easy_part")
+    if not ep:
+        return act
+    return {**act, "km": round(ep["km"], 1), "pace": _pace(ep["pace"]), "hr": ep.get("hr") or act.get("hr"),
+            "strides": (st.get("stride_sets") or [0])[-1], "total_km": act.get("km")}
+
+
 def _session_detail(S, db, x, zones):
     return {"date": x["date"], "kind": x.get("kind"), "title": KIND_TITLE.get(x.get("kind"), x.get("kind")),
             "km": x.get("km"), "minutes": x.get("minutes"), "note": x.get("note"), "race": bool(x.get("race")),
             "strides": strides_of(x), "target": session_target(S, db, x.get("kind"), zones),
-            "steps": workout_steps(x), "actual": x.get("actual"), "moved_to": x.get("moved_to"),
+            "steps": workout_steps(x), "actual": easy_actual(db, x), "moved_to": x.get("moved_to"),
             "status": ("extra" if x.get("unplanned") else "moved" if x.get("moved_to") else "done" if x.get("done")
                        else "missed" if x.get("missed") else "planned")}
 
@@ -1006,18 +1102,34 @@ def week_flags(S, w):
         add("✓ frequency met — today optional", "This week's prescribed count and volume are already run; the remaining run is optional.", "ok")
     elif w.get("volume_met"):
         add("✓ volume run — today optional", "This week's planned km are already run; the remaining days aren't re-prescribed just to hit a run count.", "ok")
+    kq = w.get("kept_quality_km")
+    if kq is not None:                               # fork §KEEPQ — the week gave easy km for its workout
+        add(f"workout kept · −{kq:g} km", "Keep quality over volume: the workout would have pushed this week's "
+            "day-to-day load past the spike limit, so the week runs a little less easy instead of losing it.")
     if w.get("fatigue_capped"):
         add("⚠ build intent capped by recent fatigue", "A building week, but recent fatigue left no load-ratio headroom — the long run was held back.", "warn")
-    elif w.get("clipped"):
+    elif w.get("clipped") and kq is None:
         add("clipped to fit the load ratio", None, "warn")
     if w.get("long_step_capped"):
         add("long run held (+10 %)", "This week's long run was held to +10 % over your longest of the last 4 weeks; the freed volume went to easy runs.")
     if w.get("long_max_capped"):
-        add("long run at its limit", "Held to 35 km or 3 h 30 min at its planned pace, whichever comes first.")
+        _lm = (w.get("limits") or {}).get("long_max") or {}
+        add("long run at its limit", f"Held to {(_lm.get('max_km') or 35):g} km or its time limit at its planned pace, "
+            "whichever comes first.")
     lf = next((x.get("long_first_km") for x in w.get("sessions") or [] if x.get("long_first_km")), None)
     if lf:
         add(f"long run +{lf:g} km from the easy runs", "Long run first: the week was held by its weekly limits, so the "
             "long run rose toward its +10% step and the km came out of this week's easy runs.")
+    if w.get("peak_long_km"):                        # fork §PEAKLR — the one longer long run
+        add(f"the longer long run · up to {w['peak_long_km']:g} km", "One longer long run before the taper, in a "
+            "lighter week: past your longest long run, at most 15 % over the longest of the 4 weeks before.")
+    if any(x.get("long_share_capped") for x in w.get("sessions") or []):    # fork §LSHARE
+        add("long run held to its share", "The long run is held to its most of the week's km; the rest went to "
+            "the easy runs.")
+    _vm = (w.get("limits") or {}).get("vmax") or {}
+    if _vm.get("binds"):                             # fork §VMAX
+        add(f"at your weekly ceiling · {_vm.get('ceiling'):g} km", "Weekly volume ceiling: the week is laid at "
+            "the most you set for a week.")
     if w.get("long_held"):
         add("long run kept", f"Kept at its ladder rung ({w['long_held'].get('rung_km')} km): your easy days ran over the sheet.")
     if w.get("run_moved"):
@@ -1206,7 +1318,7 @@ def plan_page(S, db, week=None, day=None):
             "week": {"start": sel["start"], "end": end(sel), "phase": phase_key(sel.get("pk")),
                      "phase_name": phase_name(sel.get("pk")), "n": sel.get("wk"), "km": sel.get("km"),
                      "intent": sel.get("intent"), "current": sel is cur,
-                     "days": _week_days(S, sel, tiso), "held": limit_held(sel.get("limits")),
+                     "days": _week_days(S, sel, tiso, db), "held": limit_held(sel.get("limits")),
                      "limits": _limits_list(sel.get("limits")),
                      "sessions": [{**_session_detail(S, db, x, zones), **_session_line(S, x, tiso)} for x in sel["sessions"]],
                      "flags": week_flags(S, sel), "deload": deload_state(sel),
@@ -1248,12 +1360,14 @@ def runs_log(S, db, month=None, last_days=None):
     ed = {x.get("date"): x for x in (S.effort_discipline(db) or {}).get("runs") or []}
     import sh_ui_lenses as LN
     short = {x["activity_id"]: x for x in LN.short_sessions(S, db)}      # the debrief's distance verdict, per run
+    import sh_seasons as SN                                               # beats per km, the season signal (easy part only)
+    bpk = {x["id"]: round(x["bpk"]) for x in SN._runs(S, db) if x["id"] in set(ids) and x["bpk"]}
     out = []
     for r in sorted(rows, key=lambda r: (r["date"], r.get("t") or ""), reverse=True):
         a, e = extra.get(r["id"]), ed.get(r["date"]) or {}
         out.append({"id": r["id"], "date": r["date"], "dow": S._date(r["date"]).strftime("%a"), "time": r.get("t"),
                     "km": r.get("km"), "pace": r.get("pace"), "z": r.get("z"),
-                    "hr": a["hr_avg"] if a else None, "min": round(a["duration"] / 60) if a and a["duration"] else None,
+                    "hr": a["hr_avg"] if a else None, "bpk": bpk.get(r["id"]), "min": round(a["duration"] / 60) if a and a["duration"] else None,
                     "kind": KIND_TITLE.get(e.get("kind"), "Run") if e.get("kind") else "Run",
                     "verdict": e.get("verdict"), "verdict_text": "; ".join(t for t in (
                         f"{short[r['id']]['did']:g} of {short[r['id']]['asked']:g} km asked" if r["id"] in short else None,
@@ -1352,7 +1466,21 @@ def run_page(S, db, aid):
     ed = S.effort_discipline(db, window_days=3650) or {}
     er = next((x for x in ed.get("runs") or [] if x.get("date") == a.get("date")), {})
     dur = a.get("duration") or 0
-    return {"ok": True, "id": aid, "date": a.get("date"), "title": a.get("title"), "sport": a.get("sport"),
+    # §EP — an easy run with a late set of strides, in its two parts: the easy run the debrief judges, then the
+    # strides with their walk-backs (what is left of the recording after the cut)
+    parts, ep = None, (st or {}).get("easy_part")
+    if ep and a.get("distance") and dur:
+        sk, ss = max(0.0, a["distance"] - ep["km"]), max(0, dur - ep["sec"])
+        n = ((st.get("stride_sets") or [0])[-1])
+        mmss = lambda x: f"{int(x // 60)}:{int(x % 60):02d}"
+        parts = [{"key": "easy", "label": "Easy run", "km": ep["km"],
+                  "figures": f"{ep['km']:.2f} km · {mmss(ep['sec'])} · {_pace(ep['pace'])}/km"
+                             + (f" · {ep['hr']} bpm" if ep.get("hr") else "") + (f" · {ep['cad']} spm" if ep.get("cad") else ""),
+                  "note": "what the debrief reads"},
+                 {"key": "strides", "label": f"{n}× strides", "km": round(sk, 2),
+                  "figures": f"{sk:.2f} km · {mmss(ss)}" + (f" · strides @{_pace(st['stride_pace'])}/km" if st.get("stride_pace") else ""),
+                  "note": "with the walk-backs between them"}]
+    return {"ok": True, "id": aid, "date": a.get("date"), "title": a.get("title"), "sport": a.get("sport"), "parts": parts,
             # the first four are the run's headline figures (primary); the rest sit under them, smaller
             "stats": [{"k": "Distance", "v": f"{a['distance']:.2f} km" if a.get("distance") else None, "primary": True},
                       {"k": "Time", "v": f"{int(dur // 3600)}:{int(dur % 3600 // 60):02d}:{int(dur % 60):02d}" if dur else None, "primary": True},
@@ -1473,12 +1601,20 @@ CHOICES = {
     "tz": _tz_choices(),
 }
 # fields with a typed control other than a dropdown: whole numbers, and the ranked rest days
-NUMBERS = {"athlete_age": (10, 100, "years"), "manual_lthr": (100, 220, "bpm")}   # the validators' own bounds
+NUMBERS = {"athlete_age": (10, 100, "years"), "manual_lthr": (100, 220, "bpm"),
+           "long_run_max_km": (10, 35, "km"), "more_runs_at_long_km": (6, 30, "km"),
+           "volume_hold_km": (15, 150, "km"), "volume_max_km": (15, 150, "km"),
+           "long_run_share_max": (25, 70, "%"), "easy_days_before_long": (1, 3, "days"),
+           "peak_long_km": (10, 35, "km"), "peak_long_weeks_out": (2, 6, "weeks"),
+           "peak_long_week_pct": (60, 100, "%")}   # the validators' own bounds
 RANKED = {"rest_day_rank": DAYS7}
 
 
 SETTING_GROUPS = [("Athlete", ["athlete_context", "athlete_age", "manual_lthr", "injury_history"]),
-                  ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "long_run_first", "taper_weeks"]),
+                  ("Week", ["week_start", "long_run_day", "rest_day_rank", "max_runs_per_week", "more_runs_at_long_km",
+                            "long_run_first", "long_run_max_km", "long_run_share_max", "peak_long_km",
+                            "peak_long_weeks_out", "peak_long_week_pct", "easy_days_before_long", "long_run_easy",
+                            "volume_hold_km", "volume_max_km", "keep_quality", "taper_weeks"]),
                   ("Display", ["units", "tz"]),
                   ("AI features", ["ai_narration", "ai_parsing", "ai_judgment", "ai_coach"]),
                   ("Links", ["house_url", "house_name", "private_url"])]

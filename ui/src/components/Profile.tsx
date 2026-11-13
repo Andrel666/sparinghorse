@@ -18,7 +18,8 @@ const CH: { k: Ch; label: string; has: keyof P; fmt: (v: number) => string; inve
 const ZC = ZONE_COLORS;
 const zoneOf = (bpm: number, cut: number[]) => { let z = 0; for (const c of cut) if (bpm >= c) z++; return Math.min(z, 4); };
 
-export function Profile({ id }: { id: number }) {
+/** `mark`: a distance (km) to draw a dashed divider at, e.g. where the strides start after an easy run. */
+export function Profile({ id, mark }: { id: number; mark?: number | null }) {
   const q = useProfile(id);
   const [locked, setLocked] = useState<Ch | null>(null);
   const [peek, setPeek] = useState<Ch | null>(null);
@@ -53,6 +54,7 @@ export function Profile({ id }: { id: number }) {
             <path d={`M${path.join("L")}`} fill="none" stroke="var(--text)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
           </>}
           {ch.k === "hr" && p.hr_avg && <line x1={0} x2={W} y1={Y(p.hr_avg)} y2={Y(p.hr_avg)} stroke="var(--muted)" strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />}
+          {mark != null && mark > d0 && mark < d1 && <line x1={X(mark)} x2={X(mark)} y1={0} y2={H} stroke="var(--signal-ink)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />}
           {hi_ != null && <line x1={X(p.dist[hi_])} x2={X(p.dist[hi_])} y1={0} y2={H} stroke="var(--text)" opacity={0.3} vectorEffect="non-scaling-stroke" />}
         </svg>
         {hi_ != null && <div className="readout">{dist(p.dist[hi_]).toFixed(2)} {unit()} · {CH.filter(c => p[c.has] && (p[c.k] as (number | null)[])[hi_] != null)

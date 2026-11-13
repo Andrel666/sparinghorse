@@ -463,6 +463,9 @@ a.figure.link:hover .k { color: var(--signal-ink); }
 .dayband .verdict-block { gap: var(--sp-2); padding-bottom: var(--sp-4); border-bottom: 1px solid var(--line); }
 .dayband .hero-link { color: inherit; text-decoration: none; background: none; border: 0; padding: 0; text-align: left; font: inherit; cursor: pointer; }
 .dayband .hero-link:hover .hero-v { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 8px; }
+.dayband .recovery-hero > div { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); column-gap: var(--sp-5); }
+.dayband .recovery-hero .marker-row { grid-template-columns: 1fr 72px; padding: 8px 0; }
+.dayband .next-up { display: flex; flex-direction: column; gap: var(--sp-2); }
 .dayband .struck-hero { text-decoration: line-through; color: var(--muted); }
 .why-toggle { font-size: var(--fs-small); }
 .page-head .aside { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: var(--fs-small); }
@@ -649,6 +652,19 @@ body { font-variation-settings: "opsz" 14; font-optical-sizing: auto; }
 .debrief > section { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding-top: var(--sp-3);
   border-top: 1px solid var(--line); }
 .debrief-q { font-size: var(--fs-label); color: var(--text); }
+.debrief-wide { grid-column: 1 / -1; }
+.seasons-charts { display: grid; grid-template-columns: 1fr; gap: var(--sp-5); margin: var(--sp-4) 0; }
+@media (min-width: 900px) { .seasons-charts { grid-template-columns: 1fr 1fr; column-gap: var(--sp-6); } }
+.seasons-charts figure { margin: 0; display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.debrief .pill { white-space: normal; max-width: 100%; align-items: baseline; }   /* a long verdict wraps on the phone instead of widening the page */
+.insights { display: grid; grid-template-columns: 1fr; gap: var(--sp-4); }
+@media (min-width: 900px) { .insights { grid-template-columns: 1fr 1fr; column-gap: var(--sp-6); } }
+.insights-wide { grid-column: 1 / -1; }
+.insights-h { font-size: var(--fs-label); color: var(--muted); }
+.drawer .debrief, .drawer .insights { grid-template-columns: 1fr; }   /* 480px: one column, whatever the viewport */
+.drawer #debrief { margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--rule); }
+.debrief-sum { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); margin-top: var(--sp-2); max-width: 60ch; }
+.debrief-sum .pill { white-space: normal; }
 /* Goal: the ranked levers, one door per lever */
 .levers { list-style: none; margin: 0; padding: 0; counter-reset: lever; }
 .levers li + li { border-top: 1px solid var(--line); }
@@ -697,3 +713,15 @@ body { font-variation-settings: "opsz" 14; font-optical-sizing: auto; }
   .road-dates .full { display: none; }
   .road-dates .m .short { display: inline; }
 }
+
+.planned { color: var(--signal); }
+
+/* §RD2 — what the readiness verdict read, on the card: label left, value and its word right */
+.reads { margin: 0; display: grid; gap: 6px; font-size: var(--fs-small); }
+.reads > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: var(--sp-3); align-items: baseline; }
+.reads dt { color: var(--muted); }
+.reads dd { margin: 0; color: var(--text-2); }
+.reads dd .num { color: var(--text); }
+.reads .toned.tone-warn { color: var(--warn); }
+.reads dt a { color: inherit; text-decoration: none; }
+.reads dt a:hover { color: var(--signal-ink); }

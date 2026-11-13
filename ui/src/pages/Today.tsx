@@ -2,7 +2,7 @@
 // this week and why it looks like that, the latest run, the overnight signals. Every number is a door.
 // The check-in and each day's detail open in a drawer (?checkin=1, ?day=), so back closes them.
 import { useSearchParams, Link } from "react-router-dom";
-import { useToday, type TodayPage, type Where } from "../lib/api";
+import { useToday, type MarkerRow, type TodayPage, type Where } from "../lib/api";
 import { dateLong, dateShort, km, minutes, pace, verdictTone } from "../lib/format";
 import { Card, PageHead, Strip } from "../components/ui";
 import { Week } from "../components/Week";
@@ -14,7 +14,7 @@ import { Banner } from "../components/feedback";
 import { Drawer } from "../components/layout";
 import { DayDetail, type DaySession } from "../components/Session";
 import { Spark } from "../components/charts";
-import { Debrief } from "../components/Debrief";
+import { Debrief, DebriefSummary } from "../components/Debrief";
 
 const VERDICT_WORD = { green: "Good to go", amber: "Go easier", red: "Hold off" } as const;
 const MARKER_TONE = { ok: "ok", watch: "warn" } as const;
@@ -31,20 +31,26 @@ function Hero({ d, onDay }: { d: TodayPage; onDay: (date: string) => void }) {
     return <div><div className="hero-v">{t.h}</div>
       <Link to={t.to} className="btn primary" style={{ alignSelf: "flex-start" }}>{t.a}</Link></div>;
   }
-  if (s.kind === "rest") return (
-    <div>
-      <span className="eyebrow">Rest day</span>
-      {n ? <>
-        <button type="button" className="hero-link" onClick={() => onDay(n.date)} aria-label={`${n.title} ${km(n.km)}: show the session`}>
-          <span className="hero-v">{n.race ? "Race" : n.title} {km(n.km)}</span></button>
-        <div className="meta">
-          <span>{n.days === 1 ? "Tomorrow" : `${DOW_LONG[n.dow] ?? n.dow} ${dateShort(n.date)}`}</span>
-          {n.target && <span className="target" title={n.target.hint}>{n.target.text}</span>}
-          {n.minutes ? <span className="muted">~{minutes(n.minutes)}</span> : null}
-          {n.strides ? <span className="muted">+ {n.strides}× strides</span> : null}
-        </div>
-      </> : <div className="hero-v">Recovery</div>}
-    </div>);
+  if (s.kind === "rest") {
+    // a rest day's action is recovering: the overnight signals take the hero, the next run steps down to one line
+    const rec = d.recovery ?? [];
+    const next = n && <>
+      <button type="button" className="hero-link" onClick={() => onDay(n.date)} aria-label={`${n.title} ${km(n.km)}: show the session`}>
+        <span className={rec.length ? "second" : "hero-v"}>{n.race ? "Race" : n.title} {km(n.km)}</span></button>
+      <div className="meta">
+        <span>{n.days === 1 ? "Tomorrow" : `${DOW_LONG[n.dow] ?? n.dow} ${dateShort(n.date)}`}</span>
+        {n.target && <span className={rec.length ? undefined : "target"} title={n.target.hint}>{n.target.text}</span>}
+        {n.minutes ? <span className="muted">~{minutes(n.minutes)}</span> : null}
+        {n.strides ? <span className="muted">+ strides</span> : null}
+      </div></>;
+    if (!rec.length) return <div><span className="eyebrow">Rest day</span>{next ?? <div className="hero-v">Recovery</div>}</div>;
+    return (
+      <div>
+        <span className="eyebrow">Rest day · recovery</span>
+        <div className="recovery-hero"><Recovery items={rec} /></div>
+        {next && <div className="next-up"><span className="eyebrow">Next run</span>{next}</div>}
+      </div>);
+  }
   const title = `${s.race ? "Race" : s.title} ${s.km != null ? km(s.km) : ""}`;
   return (
     <div>
@@ -58,25 +64,42 @@ function Hero({ d, onDay }: { d: TodayPage; onDay: (date: string) => void }) {
         {s.minutes ? <span className="muted">~{minutes(s.minutes)}</span> : null}
         <ComponentChip k={s.component} />
       </div>
-      {s.done && s.actual && <span><span className="mk-ok">✓</span> Ran {km(s.actual.km)}{s.actual.pace ? ` at ${pace(s.actual.pace)}` : ""}{" "}
+      {s.done && s.actual && <span><span className="mk-ok">✓</span> Ran {km(s.actual.km)}{s.actual.pace ? ` at ${pace(s.actual.pace)}` : ""}{s.actual.strides ? ` + ${s.actual.strides}× strides` : ""}{" "}
         {s.activity_id ? <Link to={`/runs?id=${s.activity_id}`} className="linkish">Open ›</Link> : null}</span>}
+      {s.done && s.activity_id ? <DebriefSummary id={s.activity_id} onOpen={() => onDay(d.today)} /> : null}
       <Steps steps={s.steps} />
+      {s.skipped === "strides" && <span className="muted t-small">Strides skipped today.</span>}
     </div>);
 }
 
-/** The right of the day band: the verdict (hero-sized when it asks for caution), and the check-in as one quiet line. */
+/** The right of the day band: the verdict, then what it read (HRV, legs, sleep) on the card itself, the
+ *  overnight markers beside them as context, and the check-in. "Why" opens only for the model's own reasons. */
 function Verdict({ d, onCheckin }: { d: TodayPage; onCheckin: () => void }) {
   const r = d.readiness, s = d.session;
   const caution = r.halt || r.verdict === "amber" || r.verdict === "red";
   const word = r.headline || (r.verdict ? VERDICT_WORD[r.verdict] : "No read yet");
   const line = checkinLine(r.checkin, r.saved_at);
+  // on a rest day the overnight markers are the hero (left); otherwise they sit here, under what the verdict read
+  const context = s.kind === "rest" ? [] : (d.recovery ?? []).filter(m => m.key !== "hrv");
   return (
     <div>
       <span className="eyebrow">Readiness</span>
       <span className={`${caution && !["rest", "pre", "post", "none"].includes(s.kind) ? "hero-v" : "second"} toned`}>{word}</span>
       <span>{r.for_label || r.detail}</span>
-      <details className="why"><summary>Why</summary>
-        <ul>{r.reasons.map((x, i) => <li key={i}>{x}</li>)}<li>{r.hrv_line}</li>{r.ai_line && <li>{r.ai_line}</li>}</ul></details>
+      {!!r.inputs?.length && <dl className="reads" aria-label="What the verdict read">
+        {r.inputs.map(x => <div key={x.key}>
+          <dt>{x.label}</dt>
+          <dd>{x.value && <span className={`num${x.tone ? " tone-warn toned" : ""}`}>{x.value}</span>}
+            {x.word && <span className="muted">{x.value ? " · " : ""}{x.word}</span>}</dd></div>)}
+      </dl>}
+      {!!context.length && <dl className="reads" aria-label="Overnight">
+        {context.map(m => <div key={m.key}>
+          <dt><Link to={m.link ?? `/fitness?tab=body#${m.key}`}>{m.label}</Link></dt>
+          <dd><span className="num">{m.value}{m.unit ? ` ${m.unit}` : ""}</span>
+            {m.sub && <span className="muted"> · {m.sub}</span>}</dd></div>)}
+      </dl>}
+      {r.judged && !!r.reasons.length && <details className="why"><summary>Why</summary>
+        <ul>{r.reasons.map((x, i) => <li key={i}>{x}</li>)}{r.ai_line && <li>{r.ai_line}</li>}</ul></details>}
       <button type="button" className="checkin-open" onClick={onCheckin}>
         {line ? <><span className="mk-ok" aria-hidden="true">✓</span> {line}</> : "Check in"}</button>
     </div>);
@@ -122,7 +145,7 @@ function Why({ items }: { items: NonNullable<TodayPage["why"]> }) {
     <li key={x.key}><Link to={x.link} title={x.detail}>{x.text}<span className="muted"> ›</span></Link></li>))}</ul>;
 }
 
-function Recovery({ items }: { items: NonNullable<TodayPage["recovery"]> }) {
+function Recovery({ items }: { items: MarkerRow[] }) {
   if (!items.length) return <span className="muted">No overnight data yet.</span>;
   return <div>{items.map(m => (
     <Link key={m.key} to={m.link ?? `/fitness?tab=body#${m.key}`} className="marker-row" aria-label={`${m.label} ${m.value} ${m.unit}. ${m.sub}. Open the marker`}>
@@ -148,9 +171,12 @@ export function Today() {
     const daySessions: DaySession[] = !day ? [] : inWeek ? (w!.sessions ?? []).filter(x => x.date === day) : (d.coming ?? []).filter(x => x.date === day);
     const dayInfo = inWeek ? w!.days.find(x => x.date === day) : undefined;
     const ranHere = (dayInfo?.runs ?? []).filter(run => !daySessions.some(s => s.activity_id === run.activity_id && !s.moved_to));
-    // the debrief of the latest run: above the day band on the day the run lands, once today's session is done
-    // or today is a rest day (the moment is "how did it go?"); below the week otherwise
-    const fresh = !!lr && lr.date === d.today && (d.session.done || ["rest", "none", "pre", "post"].includes(d.session.kind));
+    // the debrief of the latest run: on the day the run lands and today's session is done, it is summarised under the
+    // hero and opens in the day drawer (the same door as the day itself); otherwise it sits below the week as a card
+    const fresh = !!lr && lr.date === d.today && !!d.session.done && d.session.activity_id === lr.id;
+    // every run on the open day gets its debrief in the drawer
+    const dayRuns = [...new Set([...daySessions.map(x => x.activity_id), ...ranHere.map(x => x.activity_id)]
+      .filter((x): x is number => typeof x === "number"))];
     const debrief = lr && <Debrief id={lr.id} label={`Debrief · ${lr.date === d.today ? "today's run" : `latest run, ${dateShort(lr.date)}`}`} />;
     return (
       <div className="page">
@@ -158,7 +184,6 @@ export function Today() {
           <span className="aside">{(d.dateline ?? dateLong(d.today)).split(" · ")[0]}</span>
         </PageHead>
         {r.halt && <Banner tone="bad"><b>Plan halted.</b> Clear it with your doctor before resuming.</Banner>}
-        {fresh && <div className="grid">{debrief}</div>}
         <section className={`dayband${verdictTn ? ` tone-${verdictTn}` : ""}`} aria-label="Today">
           <Hero d={d} onDay={setDay} />
           <Verdict d={d} onCheckin={() => setParam("checkin", "1")} />
@@ -176,10 +201,13 @@ export function Today() {
           {!!d.why?.length && <Card label="Why this week" span={4}><Why items={d.why} /></Card>}
           {!fresh && debrief}
           {lr?.cross_training && <p className="muted t-small span-12">{lr.cross_training}</p>}
-          {d.recovery && <Card id="recovery" label="Recovery" span={12}><Recovery items={d.recovery} /></Card>}
+          {!!d.signals?.length && <Card id="signals" label="Training signals" span={12}
+                                       aside={<Link to="/goal#seasons" className="linkish t-small">Seasons ›</Link>}>
+            <Recovery items={d.signals} /></Card>}
         </div>
         <Drawer title={day ? dateLong(day) : ""} open={!!day} onClose={() => setDay(null)}>
           <DayDetail sessions={daySessions} ranHere={ranHere} movedFrom={dayInfo?.moved_from} onRun={() => setDay(null)} />
+          {dayRuns.map(id => <Debrief key={id} id={id} bare />)}
         </Drawer>
         <Drawer title="Check in" open={checkin} onClose={() => setParam("checkin", null)}>
           <Checkin initial={r.checkin} onSaved={() => setParam("checkin", null)} />

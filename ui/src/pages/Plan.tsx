@@ -38,7 +38,7 @@ function SessionLine({ s, onDay, onRun }: { s: SessionDetail; onDay: (d: string)
     <Row onClick={() => (runId ? onRun(runId) : onDay(s.date))} active={s.mark === "today"}
          label={`${dateShort(s.date)}: ${s.title} ${km(s.km)}, ${MARK_LABEL[s.mark]}. ${runId ? "Open the run" : "Show the session"}`}
          lead={<><span className={`mk ${s.mark}`} aria-hidden="true">{MARK[s.mark]}</span> {dayName(s.date).slice(0, 3)} {s.date.slice(8).replace(/^0/, "")}</>}
-         main={<>{s.mark === "extra" ? "Unplanned run" : s.race ? "Race" : s.title}{s.mark !== "extra" ? ` ${km(s.km)}` : ""}{s.strides ? ` + ${s.strides}× strides` : ""} <ComponentChip k={s.component} /></>}
+         main={<>{s.mark === "extra" ? "Unplanned run" : s.race ? "Race" : s.title}{s.mark !== "extra" ? ` ${km(s.km)}` : ""}{s.strides ? " + strides" : ""} <ComponentChip k={s.component} /></>}
          sub={<>{sub}{s.reflection && <span className="reflection"><Icon name="note" /> {s.reflection}</span>}</>}
          cols={[{ v: s.target && s.mark !== "done" && s.mark !== "extra" ? s.target.text : "", w: 12, muted: true }]} />);
 }

@@ -191,6 +191,57 @@ SETTINGS_SPEC = [
              "the km come out of that week's easy runs. The week's total does not change; easy runs keep "
              "at least 4 km, intervals and race-pace runs are untouched, and the long run stays under half "
              "the week. Off = the doctrine share (30% of the week in base). Regenerate the plan after changing it."},
+    {"key": "long_run_max_km", "env": "SH_LONG_RUN_MAX_KM", "label": "Longest long run (km)", "kind": "line",
+     "help": "The longest any long run may be, 10–35 km. The race's own limit still applies when it is "
+             "shorter (a half: 22 km). The km a capped long run cannot take go to the week's easy runs. "
+             "Empty = the race's limit. Regenerate the plan after changing it."},
+    {"key": "more_runs_at_long_km", "env": "SH_MORE_RUNS_AT_LONG_KM", "label": "One more run once the long run reaches (km)",
+     "kind": "line",
+     "help": "Once your long run has reached this distance (the longest of the last 4 weeks, run or "
+             "planned), the plan may lay one run a week more than Max runs per week, so the same load "
+             "spreads over more, shorter runs. A break "
+             "that drops the long run below it goes back to Max runs per week. Needs Max runs per week. "
+             "Empty = off. Regenerate the plan after changing it."},
+    {"key": "volume_hold_km", "env": "SH_VOLUME_HOLD_KM", "label": "Hold weekly volume at (km)", "kind": "line",
+     "help": "A weekly volume to settle at before going past it, 15–150 km: the plan may lay a week above "
+             "it only after 3 weeks at it (one down week between them is allowed). For a volume you got "
+             "hurt at before. Empty = off. Regenerate the plan after changing it."},
+    {"key": "keep_quality", "env": "SH_KEEP_QUALITY", "label": "Keep quality over volume", "kind": "flag",
+     "default": "0",
+     "help": "When a week's quality session would push its day-to-day load past the spike limit, the plan "
+             "takes easy km off that week (up to a tenth of it) until the session fits, instead of "
+             "dropping the session and keeping the km. Every other limit still holds; if no lighter week "
+             "fits, the session goes as before. Off = keep the volume. Regenerate the plan after changing it."},
+    {"key": "volume_max_km", "env": "SH_VOLUME_MAX_KM", "label": "Weekly volume ceiling (km)", "kind": "line",
+     "help": "No training week goes past this many km, 15–150, however fit you get. Unlike Hold weekly "
+             "volume, it never lets go. Taper weeks (they carry the race) are exempt. Empty = off. "
+             "Regenerate the plan after changing it."},
+    {"key": "long_run_share_max", "env": "SH_LONG_RUN_SHARE_MAX", "label": "Long run's most of the week (%)",
+     "kind": "line",
+     "help": "The long run may be at most this share of the week's km, 25–70 %; the rest goes to the easy "
+             "runs. 40 on a 30 km week holds the long run to 12 km. Empty = the engine's own share. "
+             "Regenerate the plan after changing it."},
+    {"key": "easy_days_before_long", "env": "SH_EASY_DAYS_BEFORE_LONG", "label": "Easy days before the long run",
+     "kind": "line",
+     "help": "No quality session (intervals, tempo, race pace) on this many days leading into the long run, "
+             "1–3. 2 keeps the two days before it easy or rest. Empty = the engine's own spacing. "
+             "Regenerate the plan after changing it."},
+    {"key": "peak_long_km", "env": "SH_PEAK_LONG_KM", "label": "One longer long run (km)", "kind": "line",
+     "help": "Once in the build, a long run up to this distance, 10–35 km, past Longest long run and the "
+             "long run's share, in a lighter week (see the two settings below). It may step up at most 15 % "
+             "past the longest run of the 4 weeks before. Empty = off. Regenerate the plan after changing it."},
+    {"key": "peak_long_weeks_out", "env": "SH_PEAK_LONG_WEEKS_OUT", "label": "Longer run: weeks before race week",
+     "kind": "line",
+     "help": "Which week carries the longer long run: the one starting this many weeks before the race's "
+             "week, 2–6 (default 3). A taper week never does. Regenerate the plan after changing it."},
+    {"key": "peak_long_week_pct", "env": "SH_PEAK_LONG_WEEK_PCT", "label": "Longer run: its week's volume (%)",
+     "kind": "line",
+     "help": "That week is lighter: at most this share of the weekly volume ceiling (or of what the week "
+             "could carry), 60–100 % (default 90). Regenerate the plan after changing it."},
+    {"key": "long_run_easy", "env": "SH_LONG_RUN_EASY", "label": "Easy long runs", "kind": "flag", "default": "0",
+     "help": "Long runs stay easy from start to finish: no race-pace finish. The race-pace work moves to "
+             "a mid-week session, run fresh, unless that week already has a threshold run. Off = the "
+             "Build and Peak long runs finish at race pace. Regenerate the plan after changing it."},
     {"key": "taper_weeks", "env": "SH_TAPER_WEEKS", "label": "Taper length (weeks)", "kind": "line",
      "help": "The weeks of the taper before a goal race, race week included: 2 or 3. Empty = "
              "automatic: 3 weeks when the road to the race is 16 weeks or longer, else 2. A week "
@@ -1346,19 +1397,272 @@ def long_first():
 
 set_long_first(os.environ.get("SH_LONG_RUN_FIRST"))
 
+# Fork §LRCAP — the athlete's own ceiling on the long run, in km. It only ever lowers §LRMAX's limit
+# (the race's: 22 km for a half, 35 km otherwise) and rides §LRMAX's whole path: the fold into §PRO9's
+# cap, the km moved to the easy days, the held note. Unset ⇒ byte-identical.
+# Fork §STEPUP — one more run a week once the long run has reached `_STEPUP_LONG_KM` (the §PRO9 baseline:
+# the longest of the trailing LONG_RUN_STEP_WINDOW weeks, run or planned). It raises §MAXRUNS's ceiling
+# by one for that week only, never past the frequency the shape designed; §LRF and §LRCAP still shape
+# the long run inside it, so the extra run takes the easy km the long run does not. A break that drops
+# the baseline back under the threshold drops the extra run with it. Unset or no §MAXRUNS ⇒ byte-identical.
+# Fork §EASYLR — the long run stays easy: the race-pace slice §RSPEC would put on its finish becomes its
+# own mid-week race-pace session (half pace on a half road, marathon pace otherwise), run fresh, at the
+# slice's size. A week capped to one mid-week session (§MAXRUNS) alternates by §ROT position: even weeks
+# lay the race-pace session, odd weeks the shape's own first session (VO₂), so neither disappears.
+# Off ⇒ byte-identical.
+# Fork §HOLD — settle at a weekly volume before passing it. A building week's allowance is held to
+# `_HOLD_KM` (in easy-equivalent TRIMP, the governor's own unit) until HOLD_WEEKS of the last
+# HOLD_WEEKS + 1 weeks carried at least HOLD_FRAC of it, so one down week between them is allowed.
+# Lived weeks count through their eq-km. Only ever lowers the allowance; down and taper weeks are
+# never touched; the week in progress keeps its own lay. Unset ⇒ byte-identical.
+# Fork §KEEPQ — keep quality over volume. §H1's rescue answers a quality week whose in-week peak ACWR
+# passes H1_RESCUE_ACWR by stripping the quality and re-laying the week pure easy at the ceiling: volume
+# kept, intensity dropped. With §KEEPQ on, the week is first re-laid WITH its quality at a lower budget,
+# LAY_STEP_FRAC at a time down to KEEPQ_MAX_TRIM below `chosen`; the first lay that passes the governor's
+# judge, the peak bound, the polarized floor and the §3.1 eq ceiling, with a quality session still in it,
+# is the week. Load only ever goes down; every bound is the one the week already answered to. None
+# passes ⇒ §H1's rescue as before. Off ⇒ byte-identical.
+# Fork §VMAX — a weekly ceiling, in laid km: no training week goes past `_VOLUME_MAX_KM`, ever (unlike §HOLD,
+# which settles and then releases). The week's budget is scaled down until its lay fits; taper weeks (which
+# carry the race) are exempt, down weeks sit under it anyway. Only ever lowers. Unset ⇒ byte-identical.
+# Fork §LSHARE — the long run's most of the week: on a building or peak week the long run may take at most
+# `_LONG_SHARE_MAX` of the week's km, the rest spreading over the easy runs. It rides §PRO9's own clip (so
+# the shorts are held under it too), hence the assertive regime only. Unset ⇒ byte-identical.
+# Fork §GAP — easy days before the long run: no quality session on the `_EASY_BEFORE_LONG` days that lead
+# into the long run (counted round the week, so a Sunday long run guards Friday and Saturday). The slot
+# walk skips them, so a week with no legal day lays its quality nowhere rather than there. Unset ⇒
+# byte-identical.
+# Fork §PEAKLR — one longer long run: the week that starts `_PEAK_LONG_WEEKS` weeks before the race week
+# (a training week, never the taper) may lay a long run up to `_PEAK_LONG_KM`, past §LRCAP's longest long run
+# and §LSHARE's share, and past §PRO9's +10 % step up to PEAK_LONG_STEP. In exchange the week is lighter:
+# §VMAX's ceiling (or, without one, the week's own allowance) times `_PEAK_LONG_WEEK_PCT`. Unset ⇒
+# byte-identical.
+VMAX_RANGE = (15.0, 150.0)
+LSHARE_RANGE = (25.0, 70.0)
+GAP_RANGE = (1, 3)
+PEAK_LONG_WEEKS_RANGE = (2, 6)
+PEAK_LONG_PCT_RANGE = (60.0, 100.0)
+PEAK_LONG_WEEKS_DEFAULT = 3
+PEAK_LONG_PCT_DEFAULT = 90.0
+PEAK_LONG_STEP = 1.15          # the one longer run may step at most +15 % past the trailing longest
+PEAK_LONG_SHARE = 0.65         # …and take up to this share of its (lighter) week
+_VOLUME_MAX_KM = None
+_LONG_SHARE_MAX = None
+_EASY_BEFORE_LONG = None
+_PEAK_LONG_KM = None
+_PEAK_LONG_WEEKS = PEAK_LONG_WEEKS_DEFAULT
+_PEAK_LONG_WEEK_PCT = PEAK_LONG_PCT_DEFAULT
+KEEPQ_MAX_TRIM = 0.10
+_KEEP_QUALITY = False
+HOLD_RANGE = (15.0, 150.0)
+HOLD_WEEKS = 3
+HOLD_FRAC = 0.95
+_HOLD_KM = None
+LONG_RUN_CAP_RANGE = (10.0, 35.0)
+STEPUP_LONG_RANGE = (6.0, 30.0)
+EASYLR_PACE = {"kind": "tempo", "structure": "intervals", "rep_min": 10, "rec_min": 2, "component": "resilience"}
+_LONG_RUN_CAP_KM = None
+_STEPUP_LONG_KM = None
+_LONG_EASY = False
 
-def _tight_cap():
+
+def _parse_km_setting(text, rng):
+    """'17' → 17.0; empty, malformed or outside `rng` → None. Forgiving, like `_parse_max_runs`."""
+    try:
+        v = float(str(text).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+    return v if rng[0] <= v <= rng[1] else None
+
+
+def set_long_run_cap(text):
+    global _LONG_RUN_CAP_KM
+    _LONG_RUN_CAP_KM = _parse_km_setting(text, LONG_RUN_CAP_RANGE)
+
+
+def long_run_cap():
+    return _LONG_RUN_CAP_KM
+
+
+def set_more_runs_at(text):
+    global _STEPUP_LONG_KM
+    _STEPUP_LONG_KM = _parse_km_setting(text, STEPUP_LONG_RANGE)
+
+
+def more_runs_at():
+    return _STEPUP_LONG_KM
+
+
+def set_volume_hold(text):
+    global _HOLD_KM
+    _HOLD_KM = _parse_km_setting(text, HOLD_RANGE)
+
+
+def volume_hold():
+    return _HOLD_KM
+
+
+def _hold_trimp(history, trimp_per_km):
+    """Fork §HOLD — the week's TRIMP ceiling, or None once it has been held (or §HOLD is off)."""
+    if _HOLD_KM is None:
+        return None
+    cap = _HOLD_KM * trimp_per_km
+    held = sum(1 for t in history[-(HOLD_WEEKS + 1):] if t >= HOLD_FRAC * cap)
+    return None if held >= HOLD_WEEKS else cap
+
+
+def _parse_int_setting(text, rng):
+    """'2' → 2; empty, malformed or outside `rng` → None."""
+    t = str(text if text is not None else "").strip()
+    return int(t) if t.isdigit() and rng[0] <= int(t) <= rng[1] else None
+
+
+def set_volume_max(text):
+    global _VOLUME_MAX_KM
+    _VOLUME_MAX_KM = _parse_km_setting(text, VMAX_RANGE)
+
+
+def volume_max():
+    return _VOLUME_MAX_KM
+
+
+def set_long_share_max(text):
+    global _LONG_SHARE_MAX
+    v = _parse_km_setting(text, LSHARE_RANGE)          # a percent, same forgiving parse
+    _LONG_SHARE_MAX = None if v is None else v / 100.0
+
+
+def long_share_max():
+    return _LONG_SHARE_MAX
+
+
+def set_easy_before_long(text):
+    global _EASY_BEFORE_LONG
+    _EASY_BEFORE_LONG = _parse_int_setting(text, GAP_RANGE)
+
+
+def easy_before_long():
+    return _EASY_BEFORE_LONG
+
+
+def set_peak_long(km, weeks=None, pct=None):
+    global _PEAK_LONG_KM, _PEAK_LONG_WEEKS, _PEAK_LONG_WEEK_PCT
+    _PEAK_LONG_KM = _parse_km_setting(km, LONG_RUN_CAP_RANGE)
+    w = _parse_int_setting(weeks, PEAK_LONG_WEEKS_RANGE)
+    _PEAK_LONG_WEEKS = PEAK_LONG_WEEKS_DEFAULT if w is None else w
+    p = _parse_km_setting(pct, PEAK_LONG_PCT_RANGE)
+    _PEAK_LONG_WEEK_PCT = PEAK_LONG_PCT_DEFAULT if p is None else p
+
+
+def peak_long():
+    return _PEAK_LONG_KM, _PEAK_LONG_WEEKS, _PEAK_LONG_WEEK_PCT
+
+
+def _is_peak_long_week(race, week_start):
+    """§PEAKLR — does this week start `_PEAK_LONG_WEEKS` weeks before the race's week?"""
+    if _PEAK_LONG_KM is None or not race:
+        return False
+    lo, hi = 7 * _PEAK_LONG_WEEKS, 7 * (_PEAK_LONG_WEEKS + 1)
+    return any(lo <= off < hi for off in _race_offsets(race, week_start))
+
+
+def _wk_public(wk):
+    """The shape week as a published week starts from: everything but the engine's own §PEAKLR key (the race
+    date it counts weeks to; the race itself is published by its phase)."""
+    return {k: v for k, v in wk.items() if k != "race_date"}
+
+
+def _peak_long_cap(wk, long_km_cap, trailing):
+    """§PEAKLR — the longer run's week lifts §PRO9's step cap to the run, at most PEAK_LONG_STEP past the
+    trailing longest. Other weeks, or no baseline (caution) ⇒ `long_km_cap` unchanged."""
+    if not (wk.get("peak_long_km") and long_km_cap and trailing):
+        return long_km_cap
+    return max(long_km_cap, min(wk["peak_long_km"], round(PEAK_LONG_STEP * max(trailing), 1)))
+
+
+def _gap_blocked(days, long_idx, s):
+    """§GAP — is slot `s` one of the easy days leading into the long run (round the week)?"""
+    if not _EASY_BEFORE_LONG or s == long_idx:
+        return False
+    return 1 <= (days[long_idx] - days[s]) % 7 <= _EASY_BEFORE_LONG
+
+
+def _fit_week_km(lay, total, cap_km):
+    """§VMAX — scale `total` down until `lay(total)` lays at most `cap_km` km. Only ever lowers."""
+    if not cap_km or total <= 0:
+        return total
+    for _ in range(6):
+        km = sum((x.get("km") or 0.0) for x in lay(total)[0])
+        if km <= cap_km + 0.05:
+            return total
+        total *= (cap_km / km) * 0.995
+    return total
+
+
+def set_keep_quality(text):
+    global _KEEP_QUALITY
+    _KEEP_QUALITY = str(text or "").strip() == "1"
+
+
+def keep_quality():
+    return _KEEP_QUALITY
+
+
+def set_long_easy(text):
+    global _LONG_EASY
+    _LONG_EASY = str(text or "").strip() == "1"
+
+
+def long_easy():
+    return _LONG_EASY
+
+
+set_long_run_cap(os.environ.get("SH_LONG_RUN_MAX_KM"))
+set_more_runs_at(os.environ.get("SH_MORE_RUNS_AT_LONG_KM"))
+set_long_easy(os.environ.get("SH_LONG_RUN_EASY"))
+set_volume_hold(os.environ.get("SH_VOLUME_HOLD_KM"))
+set_keep_quality(os.environ.get("SH_KEEP_QUALITY"))
+set_volume_max(os.environ.get("SH_VOLUME_MAX_KM"))
+set_long_share_max(os.environ.get("SH_LONG_RUN_SHARE_MAX"))
+set_easy_before_long(os.environ.get("SH_EASY_DAYS_BEFORE_LONG"))
+set_peak_long(os.environ.get("SH_PEAK_LONG_KM"), os.environ.get("SH_PEAK_LONG_WEEKS_OUT"),
+              os.environ.get("SH_PEAK_LONG_WEEK_PCT"))
+
+
+def _step_up_runs(wk, trailing_longs):
+    """Fork §STEPUP — set `wk`'s run ceiling from the long-run baseline: §MAXRUNS + 1 once the trailing
+    longest reached the threshold, else §MAXRUNS. Re-decided every call (a §PRO11 swap carries the
+    fields of another week). Only weeks the block marked with `runs_designed` are touched."""
+    if wk.get("runs_designed") is None:
+        return
+    base = (trailing_longs and max(trailing_longs) >= _STEPUP_LONG_KM - 0.05)
+    if base and _MAX_RUNS is not None and _MAX_RUNS < MAX_RUNS_RANGE[1]:
+        wk["max_runs"] = _MAX_RUNS + 1
+    else:
+        wk.pop("max_runs", None)
+    wk["runs"] = _cap_runs(wk["runs_designed"], wk)
+
+
+def _runs_ceiling(wk=None):
+    """The run ceiling for `wk`: its own (fork §STEPUP) when set, else the athlete's §MAXRUNS."""
+    c = wk.get("max_runs") if isinstance(wk, dict) else None
+    return c if c is not None else _MAX_RUNS
+
+
+def _tight_cap(wk=None):
     """Fork §MAXRUNS — whether the cap is TIGHT: below BASE_RUNS, the frequency every building phase
     is designed at. A tight cap packs the designed load into fewer, bigger days, so the extra
     conservatism (the classic acute ceiling, the low-frequency long-run share, the shape cap on
     every short, the stricter held bound) applies. A cap of 5 or 6 only stops the §REST2 re-lay
     and the §REST append from adding a day — the engine's own, already-tested spacing-gate shed."""
-    return _MAX_RUNS is not None and _MAX_RUNS < BASE_RUNS
+    c = _runs_ceiling(wk)
+    return c is not None and c < BASE_RUNS
 
 
-def _cap_runs(n):
-    """`n` held to the athlete's ceiling. Never raises a count; no cap ⇒ `n` unchanged."""
-    return n if _MAX_RUNS is None or n is None else min(n, _MAX_RUNS)
+def _cap_runs(n, wk=None):
+    """`n` held to the athlete's ceiling (`wk`'s own under §STEPUP). Never raises a count; no cap ⇒ `n`."""
+    c = _runs_ceiling(wk)
+    return n if c is None or n is None else min(n, c)
 
 
 set_max_runs(os.environ.get("SH_MAX_RUNS"))
@@ -1750,8 +2054,10 @@ def _rspec_cruise(q):
 def _race_specific_quality(quality, wk):
     """Fork §RSPEC — re-aim a shape week's marathon-pace long-run spec at the week's race."""
     rt = (((wk or {}).get("race_type") if isinstance(wk, dict) else None) or "").lower()
-    if rt not in LONG_RUN_MAX_BY_RACE or not quality:
+    if (rt not in LONG_RUN_MAX_BY_RACE and not _LONG_EASY) or not quality:
         return quality
+    if _LONG_EASY and rt not in ("10k", "5k"):
+        return _easy_long_quality(quality, rt)
     out, has_thr = [], any(q.get("zone") == "threshold" and q.get("attach") != "long" and not _rspec_cruise(q)
                            for q in quality)
     for q in quality:
@@ -1781,11 +2087,42 @@ def _race_specific_quality(quality, wk):
     return out
 
 
+def _easylr_pace(q):
+    """Fork §EASYLR — is `q` the race-pace session `_easy_long_quality` moved off the long run?"""
+    return q.get("kind") == "tempo" and q.get("easylr") is True
+
+
+def _easy_long_quality(quality, rt):
+    """Fork §EASYLR — the long run's race-pace finish becomes a mid-week race-pace session (half pace
+    on a half road, marathon pace otherwise), appended after the shape's own sessions. The slice keeps
+    its size: it was exempt from the polarized floor on the long run and is the same pace mid-week.
+    Idempotent (a list without a long-run slice comes back unchanged)."""
+    zone = "half" if rt == "half" else "marathon"
+    out = [q for q in quality if not (q.get("attach") == "long" and q.get("zone") in ("marathon", "half"))]
+    for q in quality:
+        if q.get("attach") != "long" or q.get("zone") not in ("marathon", "half"):
+            continue
+        if any(_easylr_pace(x) for x in out):
+            continue
+        _rot = next((x["rot"] for x in quality if x.get("rot") is not None), None)
+        out.append(dict(EASYLR_PACE, zone=zone, frac=q["frac"], easylr=True,
+                        label=("half-marathon-pace intervals" if zone == "half" else "marathon-pace intervals"),
+                        **({"rot": _rot} if _rot is not None else {})))
+    return out
+
+
 def _race_specific_intent(intent, wk):
     """Fork §RSPEC — the week's intent sentence, worded for the race it builds toward."""
     rt = (((wk or {}).get("race_type") if isinstance(wk, dict) else None) or "").lower()
-    if rt not in LONG_RUN_MAX_BY_RACE or not intent:
+    if (rt not in LONG_RUN_MAX_BY_RACE and not _LONG_EASY) or not intent:
         return intent
+    if _LONG_EASY and rt not in ("10k", "5k"):                     # fork §EASYLR
+        p = "half-marathon-pace" if rt == "half" else "marathon-pace"
+        return (intent.replace("marathon-pace long run", f"easy long run + {p} intervals")
+                .replace("growing MP work", f"growing {p} work")
+                .replace("long-fast resilience", f"easy long run + {p} intervals")
+                .replace("race-pace long run", f"easy long run + {p} intervals")
+                .replace("marathon-specific", "half-marathon-specific" if rt == "half" else "marathon-specific"))
     if rt == "half":
         return (intent.replace("marathon-pace long run", "half-marathon-pace long run")
                 .replace("growing MP work", "growing half-marathon-pace work")
@@ -1796,10 +2133,27 @@ def _race_specific_intent(intent, wk):
             .replace("race-pace long run + sharpening", "cruise intervals + sharpening"))
 
 
+def _held_note(max_bound, share_bound, wk):
+    """The long run's note when a ceiling held it: the race/longest-long-run limit, the share, or the step."""
+    if share_bound and not max_bound:          # fork §LSHARE
+        return f" — held to {round(100 * (_LONG_SHARE_MAX or 0))} % of the week"
+    return _long_cap_note(max_bound, wk)
+
+
+def _held_flag(max_bound, share_bound):
+    return "long_max_capped" if max_bound else "long_share_capped" if share_bound else "long_step_capped"
+
+
 def _long_run_max(wk=None):
     """(km, minutes) ceiling on any single run of `wk`, by the race its phase builds toward."""
     t = ((wk or {}).get("race_type") or "").lower() if isinstance(wk, dict) else ""
-    return LONG_RUN_MAX_BY_RACE.get(t, (LONG_RUN_MAX_KM, LONG_RUN_MAX_MIN))
+    km, mn = LONG_RUN_MAX_BY_RACE.get(t, (LONG_RUN_MAX_KM, LONG_RUN_MAX_MIN))
+    _pk = (wk or {}).get("peak_long_km") if isinstance(wk, dict) else None
+    if _pk:                                                        # fork §PEAKLR — its own limit, this week
+        km = min(km, _pk)
+    elif _LONG_RUN_CAP_KM is not None and _LONG_RUN_CAP_KM < km:   # fork §LRCAP — only ever lower
+        km = _LONG_RUN_CAP_KM
+    return km, mn
 
 # §PRO21 — the long run has to BE the long run. Every long-run constant above this line is a CEILING
 # (LONG_RUN_MAX_FRAC/BASE_LONG_FRAC = the Daniels/Hansons share cap; LONG_RUN_STEP_CAP = the Aarhus
@@ -2753,7 +3107,8 @@ def _carve_threshold(spec, sessions, day_trimps, start_monday, week_trimp, long_
         return (_date(x["date"]) - start_monday).days
 
     def _near_race(o):
-        return any(r - TUNEUP_CLEAR_DAYS <= o <= r + 2 for r in (race_offs or ()))
+        return (any(r - TUNEUP_CLEAR_DAYS <= o <= r + 2 for r in (race_offs or ()))
+                or bool(_EASY_BEFORE_LONG and 1 <= (long_off - o) % 7 <= _EASY_BEFORE_LONG))   # fork §GAP
     shorts = [x for x in sessions if x.get("kind") == "easy" and (x.get("km") or 0) > 0]
     if pin is not None:
         target = next((x for x in shorts if _off(x) == pin), None)
@@ -2858,6 +3213,34 @@ def _race_offsets(race, week_start):
     return [(_date(r["date"]) - _ws).days for r in cands if r.get("date")]
 
 
+def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, **kw):
+    """The week's lay (`_distribute_week_raw`), held to Fork §LSHARE against the week AS LAID. The share bound
+    inside the lay is set off the week's km before the easy runs are placed; budget the shorts cannot take
+    sheds, the week lands smaller, and the long run can end past its share. Re-lay with the long run's cap
+    at the share of the laid week until it holds (a few passes: each lowers the cap). Off, or a week the
+    share does not govern ⇒ one lay, byte-identical."""
+    out = _distribute_week_raw(wk, start_monday, week_trimp, easy_pace_sec, zones, **kw)
+    if (not _LONG_SHARE_MAX or not kw.get("long_km_cap") or kw.get("free_from") is not None
+            or wk.get("peak_long_km") or _is_taper(wk) or _is_down(wk)):
+        return out
+    for _ in range(4):
+        runs = [x for x in out[0] if (x.get("km") or 0) > 0 and not x.get("race")]
+        longs = [x["km"] for x in runs if (x.get("kind") or "").startswith("long")]
+        if not longs or len(runs) < 2:
+            return out
+        lim = math.floor(10 * _LONG_SHARE_MAX * sum(x["km"] for x in runs)) / 10
+        if max(longs) <= lim + 0.05 or lim >= kw["long_km_cap"]:
+            return out
+        kw = dict(kw, long_km_cap=lim)
+        out = _distribute_week_raw(wk, start_monday, week_trimp, easy_pace_sec, zones, **kw)
+        for x in out[0]:                       # the share held it, whatever the clip inside named
+            if (x.get("kind") or "").startswith("long") and x.get("long_step_capped"):
+                x.pop("long_step_capped")
+                x["long_share_capped"] = True
+                x["note"] = (x.get("note") or "").split(" — held to")[0] + _held_note(False, True, wk)
+    return out
+
+
 def _uncarve_eased(sessions, adjust, wk, easy_pace_sec):
     """§ROT — a check-in whose window covers the run's day takes the run back to its easy run BEFORE
     `_apply_adjustment` eases the day, so the day reads as the easy run eased (what the week without the
@@ -2898,10 +3281,14 @@ def _long_cap_note(max_bound, wk=None):
     km, mn = _long_run_max(wk)
     if (km, mn) == (LONG_RUN_MAX_KM, LONG_RUN_MAX_MIN):
         return _LONG_CAP_NOTE[True]
+    if (wk or {}).get("peak_long_km") and km == wk["peak_long_km"]:   # fork §PEAKLR
+        return f" — your one longer long run ({km:g} km)"
+    if _LONG_RUN_CAP_KM is not None and km == _LONG_RUN_CAP_KM:   # fork §LRCAP
+        return f" — held to your longest long run ({km:g} km or {mn // 60} h {mn % 60:02d} min, the shorter)"
     return f" — held to the {wk.get('race_type')} long-run limit ({km:g} km or {mn // 60} h {mn % 60:02d} min, the shorter)"
 
 
-def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, days_override=None,
+def _distribute_week_raw(wk, start_monday, week_trimp, easy_pace_sec, zones=None, days_override=None,
                      long_km_cap=None, av_blocked=None, q_days=None, long_km_aim=None,
                      free_from=None, ladder=False, fixed_days=None, prev_tail=0, _relay_runs=None,
                      carve=True, carve_eq_cap=None, carve_basis=None, carve_max_min=None, carve_race_offs=None):
@@ -2932,7 +3319,7 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
     never passed by a caller. Returns (sessions, day_trimps)."""
     from datetime import timedelta
     days = (list(days_override) if days_override is not None
-            else list(_run_days(_cap_runs(_relay_runs or wk["runs"]))))
+            else list(_run_days(_cap_runs(_relay_runs or wk["runs"], wk))))
     n = len(days)
     # §DAYPREF — WHICH SLOT IS THE LONG RUN. This used to be `n - 1` computed further down, which was
     # the same statement the layout table made ("every layout ENDS on Sunday"): last slot = long run =
@@ -2966,9 +3353,14 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
     # carries ONE mid-week quality session (the shape's first — its own order decides), the classic
     # low-frequency structure, and never more than n − 2; the carved threshold run — which turns an
     # easy day hard — is dropped when it would take the last easy one. No tight cap ⇒ untouched.
-    if _tight_cap() and quality:
+    if _tight_cap(wk) and quality:
         _room = max(0, min(1, n - 2))
         if len(mid_q) > _room:
+            # Fork §EASYLR — the race-pace session moved off the long run takes the one mid-week slot
+            # on even §ROT positions (and where the week has no rotation), so the weeks alternate.
+            _pace = [q for q in mid_q if _easylr_pace(q)]
+            if _pace and (_pace[0].get("rot") or 0) % 2 == 0:
+                mid_q = _pace + [q for q in mid_q if not _easylr_pace(q)]
             mid_q = mid_q[:_room]
         if carve_q and (n - 1 - len(mid_q)) <= 1:
             carve_q = []
@@ -3027,7 +3419,7 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
             #    on Sunday and slot 1 on Tuesday, four days apart by construction; with a Wednesday
             #    long run, slot 1 IS Tuesday and the week seats an interval the day before its long
             #    run (measured on this fixture before the fix). Byte-identical with no preference set.
-            while s < n and (s == long_idx
+            while s < n and (s == long_idx or _gap_blocked(days, long_idx, s)        # fork §GAP
                              or ((av_blocked is not None or _has_day_pref())
                                  and (abs(days[long_idx] - days[s]) < 2
                                       or (q_slots and (days[s] - days[q_slots[-1]]) < 2)))):
@@ -3064,9 +3456,11 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
     # engine's own layouts never reach this, so every uncapped plan is byte-identical. The long run's
     # absolute ceilings (§PRO9's +10 % step, §LRMAX's 35 km / 3 h 30) are applied below and still
     # bind; what they then cannot place sheds (see the §REST append below), never inflates the shorts.
-    if _tight_cap() and n_short > 0:
+    if _tight_cap(wk) and n_short > 0:
         _f = 1.0 / LONG_RUN_EASY_FRAC
         long_cap = max(long_cap, min(_f / (n_short + _f), MAXRUNS_LONG_SHARE_MAX))
+    if wk.get("peak_long_km"):                 # fork §PEAKLR — the one longer run takes its share
+        long_cap = max(long_cap, PEAK_LONG_SHARE)
     long_w = min(wk["long"] / wk["km"], long_cap) if wk["km"] else 0.0
     # Both §PRO15's aim and §PRO9's cap are TOTAL long-run distances, and the MP finish rides on top
     # of the easy base — so both convert to a base target by subtracting the MP km. Computed once.
@@ -3192,6 +3586,16 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
     # Needs somewhere to redistribute (n_short>0) and a positive easy budget; the MP-finish km rides on
     # top of the easy base, so the base is capped to leave room for it (base + MP ≤ cap). Only ever lowers
     # long_w — never raises it — so a set cap can only shrink the long run, never inflate it.
+    # Fork §LSHARE — the long run's most of the WEEK, through §PRO9's own clip below (which then holds every
+    # short under it too). The week's km is the one §SHARE converts with: quality built + MP + easy budget.
+    long_share_bound = False
+    if (_LONG_SHARE_MAX and long_km_cap and easy_budget > 0 and n_short > 0 and free_from is None
+            and not wk.get("peak_long_km") and not _is_taper(wk)):
+        _kpt = 60.0 / (easy_pace_sec * EASY_TRIMP_PER_MIN)
+        _wk_km = sum((x.get("km") or 0.0) for x in sessions) + mp_km + easy_budget * _kpt
+        _sh_km = math.floor(10 * _LONG_SHARE_MAX * _wk_km) / 10
+        if _sh_km < long_km_cap:
+            long_km_cap, long_share_bound = _sh_km, True
     long_step_capped = False
     cap_short_trimp = None
     _gate_blocked = False                          # §REST — did the spacing gate refuse a day?
@@ -3275,7 +3679,7 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
             # day the athlete has already run or onto a day they are away. Those keep §REST's
             # append-with-gate exactly as it was ⇒ byte-identical.
             if (need_short > n_short and days_override is None
-                    and len(days) < _cap_runs(RELAY_MAX_RUNS) and free_from is None and not fixed_days):
+                    and len(days) < _cap_runs(RELAY_MAX_RUNS, wk) and free_from is None and not fixed_days):
                 _tpl = list(_run_days(len(days) + 1))
                 _seam = _max_streak(sorted(_tpl + [-(_i + 1) for _i in range(prev_tail or 0)]))
                 if (len(_tpl) == len(days) + 1
@@ -3317,7 +3721,7 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
             _streak_cap = _streak_ceiling(_fixed)        # §DAYPREF — AV_MAX_STREAK, or what the
             #                                              athlete's own layout already spends
             while n_short < need_short and len(days) < 7 and free:
-                if len(days) >= _cap_runs(7):
+                if len(days) >= _cap_runs(7, wk):
                     # Fork §MAXRUNS — the athlete's ceiling took the frequency decision, exactly as
                     # the spacing gate below does: the load it cannot hold SHEDS, honestly, and the
                     # shape cap stands (no short outgrows LONG_RUN_EASY_FRAC of the long run).
@@ -3447,7 +3851,7 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
     # held to LONG_RUN_EASY_FRAC of the long run laid, by the same water-fill; what the days cannot
     # hold sheds with the week. No cap ⇒ `_wf_cap` IS `cap_short_trimp` ⇒ byte-identical.
     _wf_cap = cap_short_trimp
-    if _tight_cap() and n_short > 0:
+    if _tight_cap(wk) and n_short > 0:
         _long_tr = easy_budget * long_w + mp_km * easy_pace_sec / 60.0 * EASY_TRIMP_PER_MIN
         # Measure the shorts against the long run AS IT WILL BE LAID: once a ceiling (§PRO9's step,
         # §LRMAX, or a shorter race's limit) holds it, its share-of-budget size is fiction and the shorts
@@ -3535,8 +3939,8 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
                 sess = _build_long_mp(date, tr, mp_work, long_q, zones, easy_pace_sec)
             _held = long_step_capped or _lr_caution_held or (long_max_bound and _at_long_max(sess, long_km_cap, _lr_min))
             if _held:                                   # §PRO9 / §LRMAX — tell the truth about the cap
-                sess["note"] += _long_cap_note(long_max_bound or _lr_caution_held, wk)
-                sess["long_max_capped" if (long_max_bound or _lr_caution_held) else "long_step_capped"] = True
+                sess["note"] += _held_note(long_max_bound or _lr_caution_held, long_share_bound, wk)
+                sess[_held_flag(long_max_bound or _lr_caution_held, long_share_bound)] = True
             sessions.append(sess)
             day_trimps[date] = day_trimps.get(date, 0.0) + sess["trimp"]
             continue
@@ -3576,7 +3980,7 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
                              or (long_max_bound and _at_long_max({"km": km, "minutes": mins},
                                                                  long_km_cap, _lr_min)))
         if _held:                                       # §PRO9 / §LRMAX
-            note += _long_cap_note(long_max_bound or _lr_caution_held, wk)
+            note += _held_note(long_max_bound or _lr_caution_held, long_share_bound, wk)
         sess = {"date": date, "kind": "long" if is_long else "easy",
                 "km": km, "minutes": mins, "trimp": tr,
                 "pace_zone": f"{fmt_pace(easy_pace_sec)}/km easy", "note": note}
@@ -3585,7 +3989,7 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
         if is_long and zones:                           # §T2 — the building-phase long run builds economy
             sess["component"] = COMPONENT_BY_KIND["long"]   # (mileage is the economy lever; re-base untagged)
         if _held:
-            sess["long_max_capped" if (long_max_bound or _lr_caution_held) else "long_step_capped"] = True
+            sess[_held_flag(long_max_bound or _lr_caution_held, long_share_bound)] = True
         sessions.append(sess)
         day_trimps[date] = day_trimps.get(date, 0.0) + tr
     # §ROT — the threshold run, last. Not in the governor's search (`carve=False`): the week is sized
@@ -3612,7 +4016,7 @@ def _distribute_week(wk, start_monday, week_trimp, easy_pace_sec, zones=None, da
     # HELD bound reads this marker, so it now evaluates exactly when the lay really stops absorbing.
     # Fork §MAXRUNS — a capped week sheds through the shape cap too, not only through the gate; the
     # same honest marker (and so the §REST held bound) must see it. Flagged only past REST_SHED_MIN_KM.
-    if (_gate_blocked or _tight_cap()) and sessions:
+    if (_gate_blocked or _tight_cap(wk)) and sessions:
         _per_km = (easy_pace_sec / 60.0) * EASY_TRIMP_PER_MIN   # the easy-equivalent km, as §PRO13's
         _shed_km = round(max(0.0, week_trimp - sum(day_trimps.values())) / _per_km, 1)
         if _shed_km >= REST_SHED_MIN_KM:
@@ -3861,7 +4265,7 @@ def _lay_breaches(ctl, atl, wk, start, sess, dt, cap, charge, roll_from=None, ra
     # the long run it can actually lay, not to a step cap that keeps climbing past it. Marathon or
     # unknown race ⇒ `long_km_cap` unchanged ⇒ byte-identical.
     _anchor = long_km_cap
-    if long_km_cap and (wk or {}).get("race_type") in LONG_RUN_MAX_BY_RACE:
+    if long_km_cap and ((wk or {}).get("race_type") in LONG_RUN_MAX_BY_RACE or _LONG_RUN_CAP_KM is not None):
         _anchor = min(long_km_cap, _long_run_max(wk)[0])
     _couple_km = max(_anchor / BASE_LONG_FRAC, (wk.get("km") or 0.0)) if long_km_cap else None
     shape_bad = (bool(long_km_cap) and BASE_LONG_FRAC > 0
@@ -3881,7 +4285,7 @@ def _lay_breaches(ctl, atl, wk, start, sess, dt, cap, charge, roll_from=None, ra
     # prevent (det/restart-dose). Non-floor-ridden weeks hold the soft cap; floor-ridden ones the hard.
     _lo = (m_ctl / soft_ctl_floor) if (soft_ctl_floor and m_ctl and m_ctl < soft_ctl_floor) else 1.0
     _eow_lim = ACWR_HARD if (prog_floor is not None and charge <= prog_floor) else cap
-    capped_bad = _tight_cap() and not _bio_on and ((peak and peak * _lo > ACWR_HARD + 1e-9)
+    capped_bad = _tight_cap(wk) and not _bio_on and ((peak and peak * _lo > ACWR_HARD + 1e-9)
                                    or (eow and eow * _lo > _eow_lim + 1e-9))
     return bool(soft_bad or bio_bad or shape_bad or (_peak_governs and peak and peak > hard_cap)
                 or too_fast or capped_bad)
@@ -4114,7 +4518,7 @@ def _max_week_trimp(ctl, atl, wk, start, easy_pace_sec, cap, zones=None, roll_fr
             # and the search runs to WEEK_TRIMP_SEARCH_MAX — calling 85 km the intent of a 48 km week
             # and growing the quality session with it. Under a cap, a charge whose last 10% lays less
             # than half of itself is fiction too. No cap ⇒ this line never runs ⇒ byte-identical.
-            if not held_bad and _tight_cap():
+            if not held_bad and _tight_cap(wk):
                 held_bad = (sum(dt.values()) - sum(dt9.values())) < 0.5 * 0.1 * mid
         if held_bad or _bad:
             hi = mid
@@ -4929,7 +5333,8 @@ RETIRE_AUTO_BIAS = 0.20      # §C (decision (b)) — … with a median under-pr
 BAR_DIVERGE_TOL = 0.10  # §P2 (0.59.0) — sheet ÷ intent bar beyond this on a LIVE non-race week is labelled; measured 0.92–1.00 (proposal §11)
 LIMITS_LAID_TOL = 0.15  # km — the sheet rounds a capped bout to 0.1 km AFTER the cap; within this it still reads "within"
 LIMITS_BASIS = {"acwr": "L", "long_step": "L", "long_max": "L", "eq_week": "A", "eq_session": "S", "tissue": "L",
-                "chronic": "L"}
+                "chronic": "L", "vmax": "A"}
+VMAX_BIND_KM = 0.5             # fork §VMAX — a week within this of its ceiling was held by it
 
 
 def _retire_mode(db):
@@ -5095,7 +5500,7 @@ def _week_bar(*, intent_km, sessions, frozen=False, ran_km=None, lived_km=None):
 def _week_limits(*, assertive, eff_cap, acwr_laid, clipped, long_cap, long_laid, long_bound,
                  eq_week_cap, eq_week_laid, eq_week_bound, eq_sess_cap, eq_sess_laid,
                  streak, streak_bound, ramp_cap, ctl_gain, race_week=False, streak_exempt=None,
-                 long_max=None, ctl_gain_laid=None, ctl_gain_pre_race=None):
+                 long_max=None, ctl_gain_laid=None, ctl_gain_pre_race=None, km_ceiling=None, km_laid=None):
     def axis(name, ceiling, laid, bound, unit):
         if ceiling is None or laid is None:
             return None
@@ -5107,6 +5512,11 @@ def _week_limits(*, assertive, eff_cap, acwr_laid, clipped, long_cap, long_laid,
     a = axis("acwr", eff_cap, acwr_laid, clipped, "ratio")
     if a:
         out["acwr"] = a
+    # fork §VMAX — the athlete's weekly km ceiling: it binds when the week is laid at it
+    v = axis("vmax", km_ceiling, km_laid, km_ceiling is not None and km_laid is not None
+             and km_laid >= km_ceiling - VMAX_BIND_KM, "km")
+    if v:
+        out["vmax"] = v
     if assertive:
         for name, ceiling, laid, bound, unit in (("long_step", long_cap, long_laid, long_bound, "km"),
                                                  ("eq_week", eq_week_cap, eq_week_laid, eq_week_bound, "eq-km"),
@@ -5146,13 +5556,13 @@ def _week_limits(*, assertive, eff_cap, acwr_laid, clipped, long_cap, long_laid,
     # §LRMAX is never the week's `binding`: it holds one run and moves its km to the easy days, so the
     # week's size is still set by whichever governor names it here (the card reads `binding` as "the
     # limit that sized the week"). Its own axis carries `binds`, and the card names the hold there.
-    bound = [k for k in ("long_step", "eq_week", "acwr", "tissue", "chronic") if k in out and out[k].get("binds")]
+    bound = [k for k in ("vmax", "long_step", "eq_week", "acwr", "tissue", "chronic") if k in out and out[k].get("binds")]
     if bound:
         out["binding"] = bound[0]
     else:
         rel = {}
         _lm_held = bool((out.get("long_max") or {}).get("binds"))
-        for k in ("acwr", "long_step", "eq_week", "eq_session", "chronic"):
+        for k in ("vmax", "acwr", "long_step", "eq_week", "eq_session", "chronic"):
             if k == "long_step" and _lm_held:
                 continue                      # §LRMAX held the run; the step's headroom is not the story
             if k == "chronic" and ran_over:
@@ -5255,9 +5665,12 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
     # (det/golden-plans, det/clock-purity) because the swap never fires on the re-base block today — it
     # needs the assertive regime, which the re-base path doesn't run.
     shape = [dict(w) for w in shape]
+    _stepup = _STEPUP_LONG_KM is not None and _MAX_RUNS is not None   # fork §STEPUP
     for w in shape:                       # fork §MAXRUNS — the athlete's ceiling, before any layout
         if w.get("runs") is not None:
-            w["runs"] = _cap_runs(w["runs"])
+            if _stepup:
+                w.setdefault("runs_designed", w["runs"])
+            w["runs"] = _cap_runs(w["runs"], w)
     from datetime import timedelta
     weeks = []
     ctl, atl = ctl0, atl0
@@ -5295,9 +5708,12 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
     seed_eq = list(recent_eq or [])            # §3.1 — trailing weekly eq_km (biomechanical chronic baseline)
     seed_seq = list(recent_session_eq or [])   # §PRO17 — trailing LARGEST-SESSION eq_km, same window
     blk_longs, blk_eqs, blk_seq = [], [], []   # per-week window contributions, appended as weeks finalize
+    blk_hold = [x * TRIMP_PER_KM for x in seed_eq]   # fork §HOLD — weekly load, lived weeks by their eq-km
     for wi, wk in enumerate(shape):
         wk_start_d = block_start + timedelta(weeks=wk["wk"] - 1)
         wk_start = wk_start_d.isoformat()
+        if _stepup:                                       # fork §STEPUP — this week's run ceiling
+            _step_up_runs(wk, [x for x in (seed_longs + blk_longs)[-LONG_RUN_STEP_WINDOW:] if x])
         intent_trimp = wk["km"] * TRIMP_PER_KM            # easy-equivalent volume intent, in TRIMP
         # §AV — away days inside this week's window re-lay the run-day slots (and may SHED runs when
         # nothing legal remains). `blocked` is a set of ISO dates from the availability table; None/
@@ -5344,10 +5760,23 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
                 _swap_week_fields(wk, shape[nxt])
                 _reseat_specific(shape, wi)        # §ROT — the swap reordered the quality weeks
                 is_down, forced_deload, deload_pulled = True, False, True
+                if _stepup:                                 # fork §STEPUP — the swapped-in fields
+                    _step_up_runs(wk, [x for x in (seed_longs + blk_longs)[-LONG_RUN_STEP_WINDOW:] if x])
                 intent_trimp = wk["km"] * TRIMP_PER_KM      # re-derive from the swapped-in down week
                 if av_off:                                  # §AV — day slots follow the new run count
                     av_days, av_shed = _av_run_days(wk["runs"], av_off)
                     av_frac = (len(av_days) / max(1, wk["runs"])) if av_shed else 1.0
+        # Fork §PEAKLR — the one longer long run's week: a training week, decided once its role is settled
+        if (_is_peak_long_week({"date": wk["race_date"]} if wk.get("race_date") else race, wk_start)
+                and not (is_down or is_taper or forced_deload)):
+            wk["peak_long_km"] = _PEAK_LONG_KM
+            # the longer run takes the place of §STEPUP's extra run: the lighter week keeps its runs worth
+            # running instead of shrinking every short to a token one
+            if _stepup and wk.get("max_runs") and wk["max_runs"] > (_MAX_RUNS or wk["max_runs"]):
+                wk["max_runs"] = _MAX_RUNS
+                wk["runs"] = _cap_runs(wk.get("runs_designed", wk["runs"]), wk)
+        else:
+            wk.pop("peak_long_km", None)
         # §6o — the week that STRADDLES today: keep elapsed days, govern only today-onward (easy).
         # SH-68 — and the week that STARTS today once today carries load (a run, or any recorded
         # TRIMP). The full-week path below re-laid the whole week from scratch with today's actual
@@ -5443,6 +5872,7 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
             _trailing = [x for x in (seed_longs + blk_longs)[-LONG_RUN_STEP_WINDOW:] if x]
             long_km_cap = (round(LONG_RUN_STEP_CAP * max(_trailing), 1)
                            if (assertive and _trailing) else None)
+            long_km_cap = _peak_long_cap(wk, long_km_cap, _trailing)          # fork §PEAKLR
             _trailing_eq = [x for x in (seed_eq + blk_eqs)[-BIO_EQ_WINDOW:] if x]
             _bio_cap = (BIO_EQ_STEP * max(_trailing_eq)) if (assertive and _trailing_eq) else None
             _trailing_seq = [x for x in (seed_seq + blk_seq)[-BIO_EQ_WINDOW:] if x]
@@ -5512,6 +5942,21 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
                 wk_intent_trimp *= av_frac
                 wk_intent_km = wk_intent_trimp / TRIMP_PER_KM
                 _full_trimp *= av_frac
+            # Fork §VMAX / §PEAKLR — the week in progress keeps the ceiling too: Monday's lay (`full`, and the
+            # remainder's share of it) is sized to fit, the same scale-down the full-week path makes
+            _km_ceiling_s = None if is_taper else _VOLUME_MAX_KM
+            if wk.get("peak_long_km") and not is_taper and _km_ceiling_s:
+                _km_ceiling_s = round(_km_ceiling_s * _PEAK_LONG_WEEK_PCT / 100.0, 1)
+            if _km_ceiling_s:
+                _fit = _fit_week_km(lambda t: _distribute_week(wk, wk_start_d, t, easy_pace_sec, zones,
+                                                               days_override=av_days, av_blocked=av_off,
+                                                               long_km_cap=long_km_cap, ladder=assertive,
+                                                               prev_tail=prev_tail),
+                                    _full_trimp, _km_ceiling_s)
+                if _fit < _full_trimp - 1e-9:
+                    _full_trimp = _fit
+                    wk_intent_trimp = min(wk_intent_trimp, _fit)
+                    wk_intent_km = wk_intent_trimp / TRIMP_PER_KM
             # §PRO15 — the long run's aim for THIS week: the distance the full-week path below would
             # lay at this intent. The remainder is governed as a share of what is LEFT, so without an
             # aim an over-run early week demotes its long run proportionally — and because the §PRO9
@@ -5741,8 +6186,8 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
             # run and any quality day ahead; drop the shortest easy days ahead until the week fits.
             # The remainder is then re-laid on fewer days under the same ceilings; what they cannot
             # hold sheds, never crammed. No cap ⇒ never runs ⇒ byte-identical.
-            if rem and week_actuals is not None and _MAX_RUNS is not None:
-                _left = max(0, _MAX_RUNS - int(week_actuals[0] or 0))
+            if rem and week_actuals is not None and _runs_ceiling(wk) is not None:
+                _left = max(0, _runs_ceiling(wk) - int(week_actuals[0] or 0))
                 if len(rem) > _left:
                     _by_off = {(_date(s["date"]) - wk_start_d).days: s for s in full
                                if (s.get("kind") or "") != "rest" and (s.get("km") or 0) > 0}
@@ -6074,7 +6519,7 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
             # never double-counted), with §PRO20b flooring today at what was actually run. The DISPLAY
             # numbers stay the prescription: km/trimp_total are what the plan asks for, the projection
             # is what the governor is held to. Same split the elapsed days already use.
-            pweek = {**wk, "start": wk_start, "sessions": sessions,
+            pweek = {**_wk_public(wk), "start": wk_start, "sessions": sessions,
                      # §CARD — the header counts the sessions it sits above, NOT the skeleton's
                      # template. `{**wk}` spreads the shape's `runs`, and this branch never overrode
                      # it, so a §JR shed or a §PRO9 spread put "5 runs" over a 4- or 6-run listing —
@@ -6106,6 +6551,8 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
                 _held = [s for s in rem_s if s.get("long_held")]
                 pweek["long_held"] = {"km": (_held[0].get("km") if _held else None),
                                       "rung_km": _full_long["km"], "basis": "full-week lay"}
+            if _km_ceiling_s is not None:              # fork §VMAX — the ceiling the week in progress keeps
+                pweek["km_ceiling"] = _km_ceiling_s
             pweek["limits"] = _week_limits(          # §LIMITS (0.58.0) — the straddling week's read; the
                 assertive=assertive, eff_cap=eff_cap,   # ramp IS reproduced here (§WKMEAN2); the streak only when it fired (SH-56)
                 # §LRH — `clipped` used to be a constant False here, so the ACWR axis could never read
@@ -6238,6 +6685,7 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
             weeks.append(pweek)
             blk_longs.append(max(week_actual_long or 0.0, _week_long_km(rem_s)))
             blk_eqs.append(round((week_actual_eq or 0.0) + _week_eq_km(rem_s), 2))
+            blk_hold.append(round((week_actual_eq or 0.0) + _week_eq_km(rem_s), 2) * TRIMP_PER_KM)   # §HOLD
             blk_seq.append(max(week_actual_seq or 0.0,                             # §HANDOVER — the bout already
                                max((_bout_eq_km(x) for x in rem_s), default=0.0)))   # logged this week counts, as
             #                                                                          the long run's does above
@@ -6255,6 +6703,7 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
         trailing = [x for x in prior_longs[-LONG_RUN_STEP_WINDOW:] if x]
         long_km_cap = (round(LONG_RUN_STEP_CAP * max(trailing), 1)
                        if (assertive and trailing) else None)
+        long_km_cap = _peak_long_cap(wk, long_km_cap, trailing)              # fork §PEAKLR
         prior_eq = seed_eq + blk_eqs
         trailing_eq = [x for x in prior_eq[-BIO_EQ_WINDOW:] if x]
         bio_cap = (BIO_EQ_STEP * max(trailing_eq)) if (assertive and trailing_eq) else None
@@ -6271,6 +6720,10 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
                                   session_eq_cap=session_eq_cap, week_eq_cap=bio_cap,
                                   long_km_cap=long_km_cap, actual_floor=act_floor,
                                   ladder=assertive, prev_tail=prev_tail)   # §PRO24/§REST
+        hold_trimp = (_hold_trimp(blk_hold, TRIMP_PER_KM)                      # fork §HOLD
+                      if not (is_down or is_taper or forced_deload) else None)
+        if hold_trimp is not None and allowed > hold_trimp:
+            allowed = hold_trimp
         if assertive and not is_taper:
             # ride the layered ceiling on building weeks; hold a proportional recovery trough on down
             # weeks (BUILD_DOWN_FRAC of the last realised non-down load), always governor-capped. The
@@ -6305,12 +6758,19 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
                          ramp_max=ramp, soft_ctl_floor=soft_ctl_floor, prog_floor=prog,
                          shape_neutral=assertive, session_eq_cap=session_eq_cap, week_eq_cap=bio_cap,
                          long_km_cap=long_km_cap, actual_floor=act_floor)
+        _lay_full = (lambda t: _distribute_week(wk, _date(wk_start), t, easy_pace_sec, wk_zones,
+                                                long_km_cap=long_km_cap, days_override=av_days, av_blocked=av_off,
+                                                ladder=assertive, prev_tail=prev_tail,   # §PRO24/§REST
+                                                carve_eq_cap=bio_cap,   # §ROT — the run fits the week's eq ceiling
+                                                carve_race_offs=_race_offsets(race, wk_start)))   # …and keeps off races
+        # Fork §VMAX / §PEAKLR — the week's km ceiling: the athlete's, lighter in the longer run's week
+        km_ceiling = None if is_taper else _VOLUME_MAX_KM
+        if wk.get("peak_long_km") and not is_taper:
+            _base_km = km_ceiling or sum((x.get("km") or 0.0) for x in _lay_full(chosen)[0])
+            km_ceiling = round(_base_km * _PEAK_LONG_WEEK_PCT / 100.0, 1)
+        chosen = _fit_week_km(_lay_full, chosen, km_ceiling)
         sessions, dt, chosen, lay_stepped, lay_moves = _lay_within_ceiling(
-            lambda t: _distribute_week(wk, _date(wk_start), t, easy_pace_sec, wk_zones,
-                                       long_km_cap=long_km_cap, days_override=av_days, av_blocked=av_off,
-                                       ladder=assertive, prev_tail=prev_tail,   # §PRO24/§REST
-                                       carve_eq_cap=bio_cap,   # §ROT — the run fits the week's eq ceiling
-                                       carve_race_offs=_race_offsets(race, wk_start)),   # …and keeps off races
+            _lay_full,
             chosen,
             lambda sess, day_trimps, t: _lay_breaches(
                 sess=sess, dt=day_trimps, charge=t, **lay_judge),
@@ -6351,6 +6811,36 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
         # raise load. Self-heals as CTL rebuilds.
         # §PRO17 — the rescue's OWN threshold now, not the governor's. See H1_RESCUE_ACWR.
         breach = bool(zones and peak and peak > H1_RESCUE_ACWR)
+        kept_q_km = None
+        if (breach and _KEEP_QUALITY and wk_zones is not None and chosen > 0
+                and any(s.get("kind") in QUALITY_KINDS for s in sessions)):
+            # Fork §KEEPQ — trim the week's budget with its quality in, before §H1 strips it
+            _km0 = sum((s.get("km") or 0.0) for s in sessions)
+            for _k in range(1, int(round(KEEPQ_MAX_TRIM / LAY_STEP_FRAC)) + 1):
+                _t = chosen * (1 - _k * LAY_STEP_FRAC)
+                _s2, _d2 = _distribute_week(wk, _date(wk_start), _t, easy_pace_sec, wk_zones,
+                                            long_km_cap=long_km_cap, days_override=av_days, av_blocked=av_off,
+                                            ladder=assertive, prev_tail=prev_tail, carve_eq_cap=bio_cap,
+                                            carve_race_offs=_race_offsets(race, wk_start))
+                if _lay_breaches(sess=_s2, dt=_d2, charge=_t, **lay_judge):
+                    continue
+                _s2 = _uncarve_eased(_s2, adjust, wk, easy_pace_sec)
+                _a2 = _apply_adjustment(_s2, _d2, adjust)
+                _s2, _d2 = _a2["sessions"], _a2["dt"]
+                if not any(s.get("kind") in QUALITY_KINDS for s in _s2):
+                    continue
+                _pr = _project_week(ctl, atl, wk_start, _d2, actual_floor=act_floor)
+                if _pr[3] and _pr[3] > H1_RESCUE_ACWR:
+                    continue
+                if _hard_share(_s2, sum(_d2.values())) > 1.0 - POLARIZED_EASY_MIN + 1e-9:
+                    continue
+                if bio_cap and _week_eq_km(_s2) > bio_cap:
+                    continue
+                sessions, dt, chosen, adjusted = _s2, _d2, _t, _a2
+                ctl_n, atl_n, eow, peak, eow_flat, m_ctl_n = _pr
+                lay_stepped, breach = True, False
+                kept_q_km = round(max(0.0, _km0 - sum((s.get("km") or 0.0) for s in sessions)), 1)
+                break
         eroded = bool(zones and not breach
                       and _hard_share(sessions, sum(dt.values())) > 1.0 - POLARIZED_EASY_MIN + 1e-9)
         # §3.1 — biomechanical spike: the week's pace-weighted eq_km jumped past the soft bio ceiling AND
@@ -6386,6 +6876,8 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
                                       days_override=av_days, av_blocked=av_off,
                                       actual_floor=act_floor, ladder=assertive,
                                       prev_tail=prev_tail)   # §REST
+            if hold_trimp is not None and allowed > hold_trimp:              # fork §HOLD
+                allowed = hold_trimp
             # assertive still rides the (now pure-easy) ceiling; caution keeps min(intent, ceiling)
             chosen = allowed if (assertive and not is_down) else min(intent_trimp, allowed)
             if av_frac < 1.0:
@@ -6394,6 +6886,10 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
             # week's volume is reduced on purpose (a down week re-lays at the shape's own down intent).
             if eroded or bio_over or forced_deload or is_taper:
                 chosen = min(chosen, pre_total)    # never add volume when suppressing intensity
+            chosen = _fit_week_km(                 # fork §VMAX — the pure-easy re-lay keeps the ceiling
+                lambda t: _distribute_week(wk, _date(wk_start), t, easy_pace_sec, None, long_km_cap=long_km_cap,
+                                           days_override=av_days, av_blocked=av_off, ladder=assertive,
+                                           prev_tail=prev_tail), chosen, km_ceiling)
             rescue_judge = dict(ctl=ctl, atl=atl, wk=wk, start=wk_start, cap=eff_cap,
                                 ramp_max=ramp, soft_ctl_floor=soft_ctl_floor,
                                 shape_neutral=assertive, session_eq_cap=session_eq_cap,
@@ -6465,7 +6961,7 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
         # collapse both into 0.0, which is a number the search never decided.
         _soft = (None if _gov_flat is None and _gov_eow is None else
                  _eow_soft(_gov_eow, _gov_flat, m_ctl_n, ctl_n, atl_n, assertive, soft_ctl_floor))
-        week = {**wk, "start": wk_start, "sessions": sessions,
+        week = {**_wk_public(wk), "start": wk_start, "sessions": sessions,
                 # §PRO9 — honest count (the cap can add easy days to hold volume). §CARD — non-rest
                 # only: _apply_adjustment turns a 0×-eased day into a `rest` session, which stays in
                 # the listing as a note but is not a run the header may claim.
@@ -6503,6 +6999,12 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
         # once the week is lived, §CARD3's elapsed true-up rewrites `runs` to actuals and THIS field
         # keeps the bar the athlete was actually set (what §6e banking judges adherence against).
         week["intent_runs"] = week["runs"]
+        if kept_q_km is not None:                    # fork §KEEPQ — the km the week gave for its quality
+            week["kept_quality_km"] = kept_q_km
+        if km_ceiling is not None:                   # fork §VMAX — the week's km ceiling
+            week["km_ceiling"] = km_ceiling
+        if wk.get("peak_long_km"):                   # fork §PEAKLR — the one longer long run's week
+            week["peak_long_km"] = wk["peak_long_km"]
         # §REST — the spacing gate refused a day this week wanted (volume held back rather than a
         # streak chained): surfaced so the lighter week says so out loud. Read off the sessions THIS
         # generation laid, like §PRO9's cap flag.
@@ -6549,7 +7051,8 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
             streak_bound=bool(forced_deload or deload_pulled),
             streak_exempt=("peak" if is_peak else None),     # §MESO4 — say why a streak past its limit stands
             ramp_cap=ramp, ctl_gain=(ctl - _ctl_start),
-            long_max=_long_max_read(sessions, wk=wk) if long_km_cap else None)
+            long_max=_long_max_read(sessions, wk=wk) if long_km_cap else None,
+            km_ceiling=km_ceiling, km_laid=sum((x.get("km") or 0.0) for x in sessions if not x.get("race")))
         if av_dates:                                 # §AV — laid around away days (PRIVATE-only field;
             week["av_dates"] = av_dates              # the public plan view strips it)
             if av_shed:
@@ -6561,6 +7064,7 @@ def generate_block(shape, block_start, ctl0, atl0, easy_pace_sec, adjust=None, z
         blk_longs.append(_week_long_km(sessions))
         blk_eqs.append(week["eq_km"])
         blk_seq.append(max((_bout_eq_km(x) for x in sessions), default=0.0))   # §PRO17/§AARHUS
+        blk_hold.append(week.get("trimp_total") or sum(dt.values()))           # fork §HOLD
     for w in weeks:                       # honesty pass — relabel governor-gutted long runs (§6f Step F)
         _mark_load_integrity(w, zones)
     # §PRO9/§3.1 carry-out — the trailing long-run + eq_km windows (seed + this block's weeks), tail-trimmed,
@@ -8499,8 +9003,11 @@ def generate_plan(db, force_regime=None, today=None, permission=None):
             # the long-run ceiling can follow the distance. A marathon or unknown race keeps the
             # marathon ceiling ⇒ byte-identical.
             _rt = next(((p.get("type") or "").lower() for p in phases[_pi:] if p.get("type")), None)
+            # fork §PEAKLR — and its date, so a build or peak week can count the weeks to it
+            _rd = next((str(p["date"])[:10] for p in phases[_pi:] if p.get("type") and p.get("date")), None)
             for _w in sh:
                 _w["race_type"] = _rt or None
+                _w["race_date"] = _rd
                 _w["intent"] = _race_specific_intent(_w.get("intent"), _w)   # fork §RSPEC
                 if _w.get("quality"):
                     _w["quality"] = _race_specific_quality(_w["quality"], _w)

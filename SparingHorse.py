@@ -88,6 +88,10 @@ from sh_engine import (
     TRIMP_PER_MIN, WEEK_TRIMP_SEARCH_MAX, set_day_preferences, set_week_start, week_start_of,
     trimp_per_min,
     MAX_RUNS_RANGE, set_max_runs, max_runs, _cap_runs, set_long_first, long_first,
+    LONG_RUN_CAP_RANGE, STEPUP_LONG_RANGE, set_long_run_cap, set_more_runs_at, set_long_easy,
+    HOLD_RANGE, set_volume_hold, set_keep_quality,
+    VMAX_RANGE, LSHARE_RANGE, GAP_RANGE, PEAK_LONG_WEEKS_RANGE, PEAK_LONG_PCT_RANGE,
+    set_volume_max, set_long_share_max, set_easy_before_long, set_peak_long,
     LONG_RUN_MAX_BY_RACE, _long_run_max,
     V5K_VVO2MAX_FRAC, _actual_week_caps, _adj_directive, _adj_fingerprint, _adj_summary,
     _apply_adjustment, _athlete_age, _av_blocked_dates, _av_run_days, _build_long_mp,
@@ -991,7 +995,69 @@ def _rd_fmt_range(vals, fmt):
     return a if a == b else f"{a}–{b}"
 
 
+RD_EASY_PART_MIN_S = 20 * 60   # §EP — an easy run before the strides: at least this long to be "the run"
+RD_EASY_PART_LATE = 0.5        # … and the strides set starts past this share of the recording
+
+
+def _rd_easy_part(frames, reps, sets, halved):
+    """§EP — the easy run on its own, cut where the LAST set of strides starts. Strides and their walk-back
+    recoveries are a separate effort: inside the run's totals they stretch the distance and the time, drag the
+    cadence down and make the second half read as a fade. Returns {sec, km, pace, hr, cad, halves, decoupling}
+    over the frames before that set, or None when there is no late set after a real run (strides mid-run,
+    or a strides-only session)."""
+    if not frames or not reps or not sets:
+        return None
+    first = sorted(r["t"] for r in reps)[-sets[-1]]
+    cut = max(0, int(first // RD_FRAME_S) - 1)     # the frame before the first stride's run-up
+    if cut * RD_FRAME_S < RD_EASY_PART_MIN_S or cut < RD_EASY_PART_LATE * len(frames):
+        return None
+    part = frames[:cut]
+    km = sum(f["km"] for f in part)
+    if km <= 0:
+        return None
+    sec = cut * RD_FRAME_S
+    hrs = [f["hr"] for f in part if f.get("hr")]
+    cads = [f["cad"] for f in part if f.get("cad")]
+    # the halves by distance: pace and heart rate in each, for the fade and the drift
+    half, acc, a, b = km / 2, 0.0, [0.0, 0, []], [0.0, 0, []]
+    for f in part:
+        side = a if acc + f["km"] / 2 < half else b
+        side[0] += f["km"]; side[1] += RD_FRAME_S
+        if f.get("hr"):
+            side[2].append(f["hr"])
+        acc += f["km"]
+    halves = dc = None
+    if a[0] > 0 and b[0] > 0:
+        halves = [round(a[1] / a[0]), round(b[1] / b[0])]
+        if a[2] and b[2]:
+            ef1, ef2 = (a[0] / a[1]) / (sum(a[2]) / len(a[2])), (b[0] / b[1]) / (sum(b[2]) / len(b[2]))
+            dc = round(100 * (ef1 - ef2) / ef1, 1)        # Pa:HR, Runalyze's sign: + = heart rate drifted up
+    return {"sec": sec, "km": round(km, 2), "pace": round(sec / km),
+            "hr": round(sum(hrs) / len(hrs)) if hrs else None,
+            "cad": round(sum(cads) / len(cads) * (2 if halved else 1)) if cads else None,
+            "halves": halves, "decoupling": dc}
+
+
 def classify_structure(streams, zones, min_s=RD_MIN_RUN_S):
+    """§RD entry point (see _classify_structure), plus §EP: an easy run with a late set of strides carries the
+    easy part on its own (`easy_part`), and reads as an easy run with strides, not a strides session."""
+    st = _classify_structure(streams, zones, min_s)
+    if not st.get("ok") or st.get("n_work") or not st.get("strides"):
+        return st
+    frames, _v = _rd_frames(streams, min_s)
+    ep = _rd_easy_part(frames, st.get("stride_reps") or [], st.get("stride_sets") or [],
+                       cadence_is_halved(streams.get("cadence") or []))
+    st["easy_part"] = ep
+    if ep:
+        n = (st.get("stride_sets") or [0])[-1]
+        kind = "long" if ep["sec"] >= RD_LONG_MIN * 60 else "easy"
+        st.update(kind=kind, kind_label="Long run" if kind == "long" else "Easy run",
+                  summary=f"{_rd_fmt_dur(ep['sec'])} @{fmt_pace(ep['pace'])}/km · {n}× strides"
+                          + (f" @{fmt_pace(st['stride_pace'])}/km" if st.get("stride_pace") else ""))
+    return st
+
+
+def _classify_structure(streams, zones, min_s=RD_MIN_RUN_S):
     """§RD entry point: raw activity streams + that-date pace zones → the detected workout.
     Returns {"v", "ok", "kind", "kind_label", "summary", "segments", "n_work", "strides",
     "confidence"} — or ok=False with a reason when the run is honestly unreadable (never force a
@@ -1284,7 +1350,9 @@ def _structure_cached(db, aid, date_iso=None, fetch=True, min_s=RD_MIN_RUN_S, st
     except sqlite3.OperationalError:
         return None, None
     cached = json.loads(row["structure"]) if row else None
-    if cached and cached.get("v") == STRUCT_VERSION:
+    if cached and cached.get("v") == STRUCT_VERSION and not (fetch and cached.get("ok") and cached.get("strides")
+                                                             and not cached.get("n_work") and "easy_part" not in cached):
+        # (§EP: an easy run with strides read before the easy part existed re-reads once when it can fetch)
         # A refusal is a verdict only when the streams it refused were actually there to read (§RD2).
         # 'no usable pace/distance streams' over an EMPTY read is the read failing, not the run being
         # unreadable — and the read-back line would stay missing on a row nothing revisits.
@@ -2116,6 +2184,31 @@ def validate_setting(key, value):
         lo, hi = MAX_RUNS_RANGE
         if not value.strip().isdigit() or not (lo <= int(value.strip()) <= hi):
             return False, f"a whole number of runs, {lo}–{hi} (or empty for no cap)"
+    for _k, _rng, _what in (("long_run_max_km", LONG_RUN_CAP_RANGE, "the longest long run"),
+                            ("more_runs_at_long_km", STEPUP_LONG_RANGE, "the long run that adds a run"),
+                            ("volume_hold_km", HOLD_RANGE, "the weekly volume to hold at"),
+                            ("volume_max_km", VMAX_RANGE, "the weekly volume ceiling"),
+                            ("peak_long_km", LONG_RUN_CAP_RANGE, "the one longer long run")):
+        if key == _k and value.strip():
+            try:
+                _v = float(value.strip().replace(",", "."))
+            except ValueError:
+                _v = None
+            if _v is None or not (_rng[0] <= _v <= _rng[1]):
+                return False, f"{_what} in km, {_rng[0]:g}–{_rng[1]:g} (or empty for off)"
+    for _k, _rng, _what, _unit, _int in (("long_run_share_max", LSHARE_RANGE, "the long run's share", "%", False),
+                                        ("peak_long_week_pct", PEAK_LONG_PCT_RANGE, "that week's volume", "%", False),
+                                        ("easy_days_before_long", GAP_RANGE, "easy days", "days", True),
+                                        ("peak_long_weeks_out", PEAK_LONG_WEEKS_RANGE, "weeks before race week", "weeks", True)):
+        if key == _k and value.strip():
+            _t = value.strip().replace(",", ".").rstrip("%").strip()
+            try:
+                _v = int(_t) if _int else float(_t)
+            except ValueError:
+                _v = None
+            if _v is None or not (_rng[0] <= _v <= _rng[1]):
+                return False, (f"{_what}, {'a whole number ' if _int else ''}{_rng[0]:g}–{_rng[1]:g} {_unit} "
+                               "(or empty for the default)")
     if key == "athlete_age" and value.strip():
         v = value.strip()
         if not v.isdigit() or not (10 <= int(v) <= 100):
@@ -2183,6 +2276,17 @@ def apply_settings_overrides(db):
         _resolve_setting(db, SETTINGS_BY_KEY["rest_day_rank"])[0])
     set_max_runs(_resolve_setting(db, SETTINGS_BY_KEY["max_runs_per_week"])[0])   # fork §MAXRUNS
     set_long_first(_resolve_setting(db, SETTINGS_BY_KEY["long_run_first"])[0])     # fork §LRF
+    set_long_run_cap(_resolve_setting(db, SETTINGS_BY_KEY["long_run_max_km"])[0])  # fork §LRCAP
+    set_more_runs_at(_resolve_setting(db, SETTINGS_BY_KEY["more_runs_at_long_km"])[0])   # fork §STEPUP
+    set_long_easy(_resolve_setting(db, SETTINGS_BY_KEY["long_run_easy"])[0])       # fork §EASYLR
+    set_volume_hold(_resolve_setting(db, SETTINGS_BY_KEY["volume_hold_km"])[0])    # fork §HOLD
+    set_keep_quality(_resolve_setting(db, SETTINGS_BY_KEY["keep_quality"])[0])     # fork §KEEPQ
+    set_volume_max(_resolve_setting(db, SETTINGS_BY_KEY["volume_max_km"])[0])      # fork §VMAX
+    set_long_share_max(_resolve_setting(db, SETTINGS_BY_KEY["long_run_share_max"])[0])   # fork §LSHARE
+    set_easy_before_long(_resolve_setting(db, SETTINGS_BY_KEY["easy_days_before_long"])[0])   # fork §GAP
+    set_peak_long(_resolve_setting(db, SETTINGS_BY_KEY["peak_long_km"])[0],                # fork §PEAKLR
+                  _resolve_setting(db, SETTINGS_BY_KEY["peak_long_weeks_out"])[0],
+                  _resolve_setting(db, SETTINGS_BY_KEY["peak_long_week_pct"])[0])
     set_week_start(_resolve_setting(db, SETTINGS_BY_KEY["week_start"])[0])        # fork §WEEK
     # Fork §CAL — an APPROVED calibration overlays the engine's fitted constants; none ⇒ defaults.
     # Like the day preference it changes how the NEXT plan is laid, not one already generated.
@@ -7048,7 +7152,8 @@ def llm_readiness(hrv, energy, sleep, note, session=None):
         "legs, sleep, and especially their free-text note — that's where nuance the numbers miss shows "
         "up. You may only ESCALATE caution beyond the obvious; a separate deterministic floor already "
         "enforces the minimums (one poor signal ⇒ at least amber, two ⇒ at least red), so don't be "
-        "afraid to be cautious. Set stop_symptom_detected=true if the note hints at having to stop "
+        "afraid to be cautious, but escalate only on what the note says: HRV ABOVE its band is not a poor "
+        "signal, and a signal that was not reported is not a poor signal. Set stop_symptom_detected=true if the note hints at having to stop "
         "mid-run / can't sustain easy effort, or any chest pain/dizziness/fainting; err toward true "
         "for cardiac/exertional signs. Never diagnose; you flag and defer to their doctor. Keep action "
         "to one sentence."
@@ -7461,8 +7566,12 @@ def assess_readiness(db, checkin, session=None):
     note = (checkin or {}).get("note", "")
     # §H7 — "not reported" rather than a fabricated "ok": handing the narrator an undeclared value
     # is the §H6 defect again (a narrator told something that is not a fact will state it as one).
+    # §RD1 — the judgment layer reads the NOTE: that is the nuance the numbers miss and the only input the
+    # engine can't score. With no note it has nothing to add, and on 12 Nov 2026 it filled the gap by
+    # reading an HRV 0.9 ms over its band and an absent check-in as two poor signals, turning the
+    # engine's green into "Go easier" over a page whose every signal read fine. No note → the engine speaks.
     llm = (llm_readiness(hrv, energy or "not reported", sleep or "not reported", note, session)
-           if (llm_available() and ai_enabled(db, "judgment")) else None)   # §S5 — off by default
+           if (note or "").strip() and llm_available() and ai_enabled(db, "judgment") else None)   # §S5 — off by default
     if not (llm and llm.get("ok")):
         return base
     if llm.get("stop_symptom_detected"):  # free-text safety catch — the §H2 backstop to the check-in stop control
@@ -8910,11 +9019,14 @@ def replan(db, mutate):
 _PV_REPS = {"detail": True, "effort": True, "km": True, "minutes": True, "pace_zone": True,
             "trimp": True, "zone": True}
 _PV_QUALITY = {"attach": True, "component": True, "frac": True, "kind": True, "label": True,
+               "easylr": True,   # fork §EASYLR — the race-pace session moved off the long run (prescription)
                "rec_min": True, "rep_min": True, "structure": True, "zone": True}
 # NOT `reflection`: the free-text "how it felt" is the readiness-note posture — private (§H7).
 _PV_SESSION = {"activity_id": True, "actual": {"km": True, "pace": True}, "component": True, "moved_to": True,
                "date": True, "done": True, "kind": True, "km": True, "long_step_capped": True,
                "long_max_capped": True,   # §LRMAX — the long-run limit held this run (prescription)
+               "long_share_capped": True,   # fork §LSHARE — the share of the week held it, same class
+               "long_first_km": True,   # fork §LRF — the km Long run first added to this long run, same class
                "long_held": True,   # §LRH — the long run kept its rung on a straddling week
                "moved_from": True,   # SH-120 — the prescription's former date, same class as `date`
                "minutes": True, "missed": True, "note": True, "optional": True,
@@ -8940,6 +9052,11 @@ _PV_SESSION = {"activity_id": True, "actual": {"km": True, "pace": True}, "compo
 # by construction — a new phase key or a new payload cannot outrun it.
 _PV_LIMIT_AXIS = {"ceiling": True, "laid": True, "headroom": True, "binds": True, "basis": True, "unit": True}
 _PV_WEEK = {"adjusted": True, "clipped": True, "deload_forced": True, "deload_pulled": True,
+            # fork §STEPUP / §KEEPQ — the week's run ceiling, the shape's own count, and the km the week
+            # gave to keep its quality: governor annotations on the prescription, like `clipped`
+            "max_runs": True, "runs_designed": True, "kept_quality_km": True,
+            # fork §VMAX / §PEAKLR — the week's km ceiling and the longer long run's limit, same class
+            "km_ceiling": True, "peak_long_km": True,
             "elapsed": True, "eq_km": True, "freq_actual": True, "frequency_met": True,
             "frozen": True, "intent": True, "intent_km": True, "intent_runs": True, "km": True,
             # §P1 — the structured role/phase behind the `intent` sentence already published
@@ -8983,6 +9100,7 @@ _PV_WEEK = {"adjusted": True, "clipped": True, "deload_forced": True, "deload_pu
                        "acwr": _PV_LIMIT_AXIS, "long_step": _PV_LIMIT_AXIS, "eq_week": _PV_LIMIT_AXIS,
                        "long_max": {**_PV_LIMIT_AXIS, "km": True, "max_km": True},   # §LRMAX
                        "eq_session": _PV_LIMIT_AXIS, "chronic": _PV_LIMIT_AXIS,
+                       "vmax": _PV_LIMIT_AXIS,   # fork §VMAX — the athlete's weekly ceiling
                        "tissue": {"streak": True, "limit": True, "headroom": True, "binds": True, "basis": True, "unit": True,
                                   "exempt": True, "note": True},   # §MESO4 — the peak exemption, named
                        "risk": {"axis": True, "cohort": True, "note": True, "n": True, "basis": True, "read": True}},

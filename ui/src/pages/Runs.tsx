@@ -43,9 +43,13 @@ function RunDetail({ id, onGone }: { id: number; onGone: () => void }) {
       {r.readback?.kind && <span><b>Read back:</b> {r.readback.composite ? `1+1 (${r.readback.composite} parts) · ` : ""}{r.readback.kind}
         {r.readback.summary ? `: ${r.readback.summary}` : ""}{r.readback.rough ? " · rough signal" : ""}
         <Help>Detected from the run's own streams: warm-up, work and recovery segments, and what kind of session that adds up to.</Help></span>}
+      {!!r.parts?.length && <dl className="reads" aria-label="The run in two parts">
+        {r.parts.map(x => <div key={x.key}><dt>{x.label}</dt>
+          <dd><span className="num">{x.figures}</span>{x.note && <span className="muted"> · {x.note}</span>}</dd></div>)}
+      </dl>}
       {r.readback?.strides && <span className="muted"><b>Strides read:</b> {r.readback.strides}</span>}
       {r.verdict_text && <Pill tone={verdictTone(r.verdict)} dot>{r.verdict_text}</Pill>}
-      <Profile id={id} />
+      <Profile id={id} mark={r.parts?.[0]?.km} />
       <RunMap id={id} />
     </Card>)}</Query>;
 }
@@ -69,10 +73,11 @@ function Log({ month, range, picked, onPick, onMonth }: { month?: string; range:
         <div className="week-head"><span>Week of {dateShort(w.start)}</span><span className="num">{km(w.km)} · {w.runs} run{w.runs > 1 ? "s" : ""}</span></div>
         {w.ids.map(id => { const r = byId.get(id)!;
           return <Row key={id} onClick={() => onPick(id)} active={picked === id}
-                      label={`${r.dow} ${Number(r.date.slice(8))}: ${r.kind} ${km(r.km)}${r.verdict_text ? `, ${r.verdict_text}` : ""}. Open the run`}
+                      label={`${r.dow} ${Number(r.date.slice(8))}: ${r.kind} ${km(r.km)}${r.bpk ? `, ${r.bpk} beats per km` : ""}${r.verdict_text ? `, ${r.verdict_text}` : ""}. Open the run`}
                       lead={`${r.dow} ${Number(r.date.slice(8))}`}
-                      main={r.kind} sub={[r.time, r.verdict_text].filter(Boolean).join(" · ")}
-                      cols={[{ v: km(r.km), w: 8 }, { v: pace(r.pace), w: 9, muted: true }, { v: r.hr ? `${r.hr} bpm` : "", w: 8, muted: true }]}
+                      main={r.kind} sub={[r.time, r.hr ? `${r.hr} bpm` : null, r.verdict_text].filter(Boolean).join(" · ")}
+                      cols={[{ v: km(r.km), w: 8 }, { v: pace(r.pace), w: 9, muted: true },
+                             { v: r.bpk ? `${r.bpk} b/km` : "", w: 9 }]}
                       trail={<span className="zdot" style={{ background: r.z != null ? ZONE[r.z] : "var(--line-strong)" }} aria-hidden="true" />} />; })}
       </div>)}
     </div>;

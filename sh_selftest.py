@@ -4725,6 +4725,11 @@ def _stc_readiness_provenance():
         S.llm_json = lambda system, user, schema, **kw: (seen.update(user=user)
                                                          or {"ok": True, "verdict": "green"})
         S.assess_readiness(m, None)
+        # §RD1 — with no note the narrator has nothing to read and is not called: the engine's call stands
+        if seen:
+            fails.append("the readiness narrator was called with no note (§RD1: no note, the engine speaks)")
+        seen.clear()
+        S.assess_readiness(m, {"note": "felt a bit flat"})   # a note-only day: legs and sleep still unreported
     finally:
         S.llm_available, S.llm_json, S.ai_enabled = real_av, real_json, real_ai
     u = (seen.get("user") or "")
@@ -15932,6 +15937,173 @@ def _stc_race_correction_fitness():
                passed=not fails, got={"failures": fails or "none"})
 
 
+def _stc_calf_safe():
+    """Fork §LRCAP / §STEPUP / §EASYLR / §HOLD — the four calf-safe settings, each alone and all four
+    together, on the half fixture at a 3-run cap (10 km history: the long run grows 11 → 22 km and the
+    week 29 → 51 km off). Every check has its anti-vacuity: the same road laid with the setting off
+    breaks the limit the setting promises.
+      LRCAP  (a) no long run past the cap; the held note names it; off, a long run passes it.
+      STEPUP (b) a week has at most 3 runs until the long run of one of the 4 weeks before it reached the
+             threshold, at most 4 after; some week lays 4.
+      EASYLR (c) no long run carries a race-pace finish; a half-marathon-pace session is laid mid-week
+             and the VO₂ intervals still appear (they alternate); off, long runs finish at race pace.
+      HOLD   (d) no building week goes past the hold until 3 of the 4 weeks before it carried ≥ 95% of it;
+             off, a week passes it sooner.
+      ALL    (e) the four together keep (a)–(d), and settings validation refuses out-of-range values.
+      KEEPQ  (f) with Keep quality over volume added to the four: a week that keeps its quality says how
+             many km it gave, gave at most KEEPQ_MAX_TRIM of the week, holds the peak bound, and laid off
+             the first such week had no quality laid off; every week before it is laid identically;
+             the road carries more quality sessions than off (anti-vacuity).
+      PV     (g) every field these plans carry is classified for the public view (§PV)."""
+    E_ = E
+    fails, seen = [], {}
+    keep = (E_.max_runs(), E_.long_run_cap(), E_.more_runs_at(), E_.long_easy(), E_.volume_hold(), E_.keep_quality())
+    plans = []
+    weeks_of = lambda plan: [w for v in plan.values() if isinstance(v, dict) and "weeks" in v for w in v["weeks"]]
+    runs_of = lambda w: [x for x in w.get("sessions") or [] if (x.get("km") or 0) > 0 and x.get("kind") not in ("rest", "race")]
+    long_of = lambda w: max([x["km"] for x in runs_of(w) if (x.get("kind") or "").startswith("long")] or [0.0])
+    CAP, STEP, HOLD = 16.0, 14.0, 35.0
+
+    def lay(cap="", step="", easy="0", hold="", kq="0", run_km=10.0):
+        E_.set_max_runs("3"); E_.set_long_run_cap(cap); E_.set_more_runs_at(step)
+        E_.set_long_easy(easy); E_.set_volume_hold(hold); E_.set_keep_quality(kq)
+        fx, td = _race_fixture_db("half", run_km=run_km)
+        try:
+            plan = S.generate_plan(fx, today=td)
+            plans.append(plan)
+            return [w for w in weeks_of(plan) if not w.get("frozen") and not w.get("elapsed")]
+        finally:
+            fx.close()
+
+    def check_cap(ws, tag):
+        for w in ws:
+            if long_of(w) > CAP + 0.15:
+                fails.append(f"(a) {tag}/{w.get('start')}: long {long_of(w)} past the {CAP:g} km cap")
+        return any("your longest long run" in (x.get("note") or "") for w in ws for x in runs_of(w))
+
+    def check_step(ws, tag):
+        n4 = 0
+        for i, w in enumerate(ws):
+            n = len(runs_of(w))
+            prior = [long_of(x) for x in ws[max(0, i - E_.LONG_RUN_STEP_WINDOW):i]]
+            reached = bool(prior) and max(prior) >= STEP - 0.05
+            if n > 4 or (n == 4 and i >= E_.LONG_RUN_STEP_WINDOW and not reached):
+                fails.append(f"(b) {tag}/{w.get('start')}: {n} runs, trailing longest {max(prior or [0]):.1f}")
+            n4 += n == 4
+        return n4
+
+    def check_easy(ws, tag):
+        if any(x.get("kind") == "long_mp" for w in ws for x in runs_of(w)):
+            fails.append(f"(c) {tag}: a long run still finishes at race pace")
+        pace = sum(1 for w in ws for x in runs_of(w) if (x.get("note") or "").startswith("half-marathon-pace intervals"))
+        vo2 = sum(1 for w in ws for x in runs_of(w) if x.get("kind") == "interval")
+        return pace, vo2
+
+    def check_hold(ws, tag):
+        tpk = next((w["trimp_total"] / w["km"] for w in ws if w.get("km") and w.get("trimp_total")
+                    and all(x.get("kind") in ("easy", "long") for x in runs_of(w))), None)
+        cap_t = HOLD * tpk
+        held = 0
+        for i, w in enumerate(ws):
+            if E_._is_down(w) or E_._is_taper(w):
+                continue
+            prior = [x.get("trimp_total") or 0 for x in ws[max(0, i - E_.HOLD_WEEKS - 1):i]]
+            ok_past = sum(1 for t in prior if t >= E_.HOLD_FRAC * cap_t) >= E_.HOLD_WEEKS
+            if (w.get("trimp_total") or 0) > cap_t * 1.01 and not ok_past:
+                fails.append(f"(d) {tag}/{w.get('start')}: {w.get('km')} km ({w.get('trimp_total')} TRIMP) past the hold, "
+                             f"{sum(1 for t in prior if t >= E_.HOLD_FRAC * cap_t)} held weeks before it")
+            held += abs((w.get("trimp_total") or 0) - cap_t) <= 0.03 * cap_t
+        return held
+
+    def first_over(ws):
+        return next((i for i, w in enumerate(ws) if (w.get("km") or 0) > HOLD * 1.01), None)
+
+    try:
+        off = lay()
+        if not any(long_of(w) > CAP + 0.15 for w in off):
+            fails.append("(a) anti-vacuity: off, no long run passes the cap")
+        if not any(x.get("kind") == "long_mp" for w in off for x in runs_of(w)):
+            fails.append("(c) anti-vacuity: off, no long run finishes at race pace")
+        if any(len(runs_of(w)) > 3 for w in off):
+            fails.append("(b) off, a week lays more than the 3-run cap")
+        on = lay(cap=str(CAP))
+        if not check_cap(on, "cap"):
+            fails.append("(a) no held long run names the athlete's cap")
+        seen["step_4run_weeks"] = check_step(lay(step=str(STEP)), "step")
+        if not seen["step_4run_weeks"]:
+            fails.append("(b) anti-vacuity: no week lays a 4th run")
+        seen["pace"], seen["vo2"] = check_easy(lay(easy="1"), "easy")
+        if not seen["pace"] or not seen["vo2"]:
+            fails.append(f"(c) half-pace sessions {seen['pace']}, VO₂ sessions {seen['vo2']}: they must both appear")
+        hold = lay(hold=str(HOLD))
+        seen["held_weeks"] = check_hold(hold, "hold")
+        fo, fh = first_over(off), first_over(hold)
+        if fo is None or (fh is not None and fh <= fo):
+            fails.append(f"(d) anti-vacuity: off first passes {HOLD:g} km at week {fo}, held at {fh}")
+        both = lay(cap=str(CAP), step=str(STEP), easy="1", hold=str(HOLD))
+        check_cap(both, "all"); check_step(both, "all"); check_easy(both, "all"); check_hold(both, "all")
+        # (f) keep quality over volume, on top of the four
+        kq = lay(cap=str(CAP), step=str(STEP), easy="1", hold=str(HOLD), kq="1")
+        check_cap(kq, "kq"); check_step(kq, "kq"); check_easy(kq, "kq"); check_hold(kq, "kq")
+        nq = lambda ws: sum(1 for w in ws for x in runs_of(w) if x.get("kind") in E_.QUALITY_KINDS)
+        # the 8 km road: one of its weeks would need 12% of its km to keep its quality — past the limit
+        kq8 = lay(cap=str(CAP), step=str(STEP), easy="1", hold=str(HOLD), kq="1", run_km=8.0)
+        kept = [w for w in kq + kq8 if w.get("kept_quality_km") is not None]
+        seen["kept_weeks"], seen["quality_on_off"] = len(kept), (nq(kq), nq(both))
+        if not kept or nq(kq) <= nq(both):
+            fails.append(f"(f) anti-vacuity: {len(kept)} kept weeks, quality sessions {nq(kq)} on vs {nq(both)} off")
+        off_by = {w.get("start"): w for w in both}
+        for w in kept:
+            wid = f"kq/{w.get('start')}"
+            if not any(x.get("kind") in E_.QUALITY_KINDS for x in runs_of(w)):
+                fails.append(f"(f) {wid}: says it kept its quality but lays none")
+            if (w.get("peak_acwr") or 0) > E_.H1_RESCUE_ACWR + 1e-9:
+                fails.append(f"(f) {wid}: peak {w.get('peak_acwr')} past {E_.H1_RESCUE_ACWR}")
+            if w["kept_quality_km"] > E_.KEEPQ_MAX_TRIM * ((w.get("km") or 0) + w["kept_quality_km"]) + 0.3:
+                fails.append(f"(f) {wid}: gave {w['kept_quality_km']} km of {w.get('km')}, past the {E_.KEEPQ_MAX_TRIM:.0%} limit")
+        kept10 = [w for w in kq if w.get("kept_quality_km") is not None]
+        if kept10:                    # the first kept week: laid off, on the same history, it lost its quality
+            o = off_by.get(kept10[0].get("start"))
+            if o is not None and any(x.get("kind") in E_.QUALITY_KINDS for x in runs_of(o)):
+                fails.append(f"(f) kq/{kept10[0].get('start')}: off, this week had its quality too, so nothing was kept")
+        kept = kept10
+        if kept:
+            sig = lambda w: [(x.get("date"), x.get("kind"), x.get("km")) for x in w.get("sessions") or []]
+            for w in kq:
+                if w.get("start") >= kept[0].get("start"):
+                    break
+                if w.get("start") in off_by and sig(w) != sig(off_by[w["start"]]):
+                    fails.append(f"(f) kq/{w.get('start')}: changed before the first kept week")
+                    break
+        # (g) every field these plans carry is classified for the public view
+        _seen_pv = set()
+        for plan in plans:
+            _seen_pv |= _pv_paths(plan, "plan", set())
+        uncl = [x for x in sorted(_seen_pv) if x != "plan.<phase>"
+                and not (_pv_classified(x, S._PV_PLAN) or _pv_withheld(x))]
+        if uncl:
+            fails.append(f"(g) unclassified for the public view: {uncl[:8]}")
+        for key, bad, good in (("long_run_max_km", "9", "17"), ("more_runs_at_long_km", "31", "12"),
+                               ("volume_hold_km", "abc", "30")):
+            if S.validate_setting(key, bad)[0] or not S.validate_setting(key, good)[0]:
+                fails.append(f"(e) validation of {key}: {bad!r} accepted or {good!r} refused")
+    except Exception as e:
+        import traceback
+        fails.append(f"raised {type(e).__name__}: {e} {traceback.format_exc()[-300:]}")
+    finally:
+        mr, lc, mu, le, vh, kqv = keep
+        E_.set_keep_quality("1" if kqv else "0")
+        E_.set_max_runs("" if mr is None else str(mr)); E_.set_long_run_cap("" if lc is None else str(lc))
+        E_.set_more_runs_at("" if mu is None else str(mu)); E_.set_long_easy("1" if le else "0")
+        E_.set_volume_hold("" if vh is None else str(vh))
+    return _st("det", "calf-safe",
+               "Fork §LRCAP/§STEPUP/§EASYLR/§HOLD: the long run stays under the athlete's cap; a 4th run only once "
+               "the long run reached the threshold; long runs stay easy and the race-pace work moves mid-week, "
+               "alternating with VO₂; the weekly volume settles at the hold for 3 weeks before passing it",
+               passed=not fails, expect="each limit holds, and each setting changes the road",
+               got={"failures": fails or "none", **seen})
+
+
 def _stc_long_run_first():
     """Fork §LRF — Long run first. On a half and a marathon road, at 3 runs a week (the cap the share
     ceiling bites hardest at) and uncapped: (a) off, no session is marked and the plan is the one the
@@ -16148,6 +16320,145 @@ def _stc_week_start():
                "week's last day, keeps race week and a named long-run day on their real dates; Monday is "
                "the default",
                passed=not fails, got={"failures": fails[:8] or "none"})
+
+
+def _stc_injury_limits():
+    """Fork §VMAX / §LSHARE / §GAP / §PEAKLR — the limits read off the athlete's two calf strains, on the half
+    fixture at a 3-run cap (the long run grows past 20 km and the week past 40 km with them off). Each has its
+    anti-vacuity: the same road with the setting off breaks what the setting promises.
+      VMAX   (a) no training week (taper excepted) lays past the ceiling, a week says the ceiling held it
+             (limits.vmax binds); off, a week passes it.
+      LSHARE (b) no building week's long run takes more than the share of the week; off, one does.
+      GAP    (c) at 5 runs, no quality session falls on the 3 days leading into the long run and the road
+             still lays quality; off, one falls there.
+      PEAKLR (d) with Longest long run 14: exactly one week carries the longer run, the week starting 3
+             weeks before the race's week, a training week; its long run passes 14 and reaches the lesser
+             of 16 and +15 % of the 4 weeks before, never more; its km is at most 90 % of the ceiling; no other long run
+             passes 14; off, none does.
+      (e) settings validation refuses out-of-range values; (f) every field is classified for the public view."""
+    E_ = E
+    fails = []
+    keep = (E_.max_runs(), E_.long_run_cap(), E_.volume_max(), E_.long_share_max(), E_.easy_before_long(), E_.peak_long())
+    plans = []
+    weeks_of = lambda plan: [w for v in plan.values() if isinstance(v, dict) and "weeks" in v for w in v["weeks"]]
+    runs_of = lambda w: [x for x in w.get("sessions") or [] if (x.get("km") or 0) > 0 and x.get("kind") not in ("rest", "race")]
+    long_s = lambda w: max((x for x in runs_of(w) if (x.get("kind") or "").startswith("long")), key=lambda x: x["km"], default=None)
+    long_of = lambda w: (long_s(w) or {}).get("km", 0.0)
+    km_of = lambda w: sum(x["km"] for x in runs_of(w))
+    VMAX, SHARE, GAP, LCAP, PEAK = 30.0, 40.0, 3, 14.0, 16.0
+
+    def lay(vmax="", share="", gap="", lcap="", peak="", runs="3"):
+        E_.set_max_runs(runs); E_.set_long_run_cap(lcap); E_.set_volume_max(vmax)
+        E_.set_long_share_max(share); E_.set_easy_before_long(gap); E_.set_peak_long(peak, "", "")
+        fx, td = _race_fixture_db("half", run_km=10.0)
+        try:
+            plan = S.generate_plan(fx, today=td)
+            plans.append(plan)
+            return plan, [w for w in weeks_of(plan) if not w.get("frozen") and not w.get("elapsed")]
+        finally:
+            fx.close()
+
+    def gap_hits(ws, g):
+        out = []
+        for w in ws:
+            lr = long_s(w)
+            if not lr:
+                continue
+            ld = E_._date(lr["date"]).weekday()
+            out += [f"{w['start']}:{x['date']}" for x in runs_of(w) if x.get("kind") in E_.QUALITY_KINDS
+                    and 1 <= (ld - E_._date(x["date"]).weekday()) % 7 <= g]
+        return out
+    try:
+        # (a) VMAX
+        _, off = lay()
+        _, on = lay(vmax=str(VMAX))
+        train = lambda ws: [w for w in ws if not E_._is_taper(w)]
+        if not any(km_of(w) > VMAX + 0.05 for w in train(off)):
+            fails.append(f"(a) ANTI-VACUITY — off, no week passes {VMAX:g} km, so (a) cannot see the ceiling")
+        over = [(w["start"], round(km_of(w), 1)) for w in train(on) if km_of(w) > VMAX + 0.05]
+        if over:
+            fails.append(f"(a) weeks past the {VMAX:g} km ceiling: {over[:4]}")
+        if not any(((w.get("limits") or {}).get("vmax") or {}).get("binds") for w in on):
+            fails.append("(a) no week says the ceiling held it (limits.vmax.binds)")
+        if any(w.get("km_ceiling") != VMAX for w in train(on)):
+            fails.append("(a) a training week does not publish its km ceiling")
+        # (b) LSHARE
+        build = lambda ws: [w for w in ws if not (E_._is_taper(w) or E_._is_down(w)) and runs_of(w)]
+        sh = lambda w: long_of(w) / km_of(w)
+        if not any(sh(w) > SHARE / 100 + 0.01 for w in build(off)):
+            fails.append(f"(b) ANTI-VACUITY — off, no long run passes {SHARE:g} % of its week")
+        _, on = lay(share=str(SHARE))
+        over = [(w["start"], round(100 * sh(w))) for w in build(on) if long_of(w) > SHARE / 100 * km_of(w) + 0.3]
+        if over:
+            fails.append(f"(b) long runs past {SHARE:g} % of the week: {over[:4]}")
+        if not any(x.get("long_share_capped") for w in on for x in runs_of(w)):
+            fails.append("(b) no long run says the share held it")
+        # (c) GAP — at 5 runs the stock layout seats quality on the Thursday before a Sunday long run
+        _, off5 = lay(runs="5")
+        if not gap_hits(off5, GAP):
+            fails.append(f"(c) ANTI-VACUITY — off, no quality falls in the {GAP} days before a long run")
+        _, on = lay(gap=str(GAP), runs="5")
+        if not any(x.get("kind") in E_.QUALITY_KINDS for w in on for x in runs_of(w)):
+            fails.append("(c) with the gap on, the road lays no quality at all")
+        if gap_hits(on, GAP):
+            fails.append(f"(c) quality in the {GAP} days before the long run: {gap_hits(on, GAP)[:4]}")
+        # (d) PEAKLR
+        _, capped = lay(vmax=str(VMAX), lcap=str(LCAP))
+        if any(long_of(w) > LCAP + 0.15 for w in capped):
+            fails.append(f"(d) ANTI-VACUITY — off, a long run passes {LCAP:g} km")
+        plan, on = lay(vmax=str(VMAX), lcap=str(LCAP), peak=str(PEAK))
+        race = E_._date(plan["objective"]["date"])
+        pk = [w for w in on if w.get("peak_long_km")]
+        if len(pk) != 1:
+            fails.append(f"(d) {len(pk)} weeks carry the longer run, want exactly 1")
+        else:
+            w = pk[0]
+            i = on.index(w)
+            off_days = (race - E_._date(w["start"])).days
+            prior = [long_of(x) for x in on[max(0, i - E_.LONG_RUN_STEP_WINDOW):i]]
+            if not (21 <= off_days < 28) or E_._is_taper(w) or E_._is_down(w):
+                fails.append(f"(d) the longer run's week starts {off_days} days before the race (want 21–27), or is a taper/down week")
+            if not (LCAP + 0.15 < long_of(w) <= PEAK + 0.05):
+                fails.append(f"(d) the longer run is {long_of(w)} km, want past {LCAP:g} and within {PEAK:g}")
+            if prior and long_of(w) > E_.PEAK_LONG_STEP * max(prior) + 0.15:
+                fails.append(f"(d) the longer run {long_of(w)} steps past +15 % of {max(prior)}")
+            _want = min(PEAK, round(E_.PEAK_LONG_STEP * max(prior or [0.0]), 1))
+            if prior and long_of(w) < _want - 0.2:
+                fails.append(f"(d) the longer run is {long_of(w)} km, short of the {_want} km it may reach "
+                             f"(min of {PEAK:g} and +15 % of {max(prior)})")
+            if km_of(w) > VMAX * E_.PEAK_LONG_PCT_DEFAULT / 100 + 0.05:
+                fails.append(f"(d) the longer run's week lays {km_of(w):.1f} km, past {E_.PEAK_LONG_PCT_DEFAULT:g} % of the ceiling")
+        others = [(w["start"], long_of(w)) for w in on if not w.get("peak_long_km") and long_of(w) > LCAP + 0.15]
+        if others:
+            fails.append(f"(d) other long runs pass {LCAP:g} km: {others[:3]}")
+        # (e) validation
+        for key, bad, good in (("volume_max_km", "14", "32"), ("long_run_share_max", "80", "40"),
+                               ("easy_days_before_long", "4", "2"), ("peak_long_km", "9", "16"),
+                               ("peak_long_weeks_out", "1", "3"), ("peak_long_week_pct", "50", "90")):
+            if S.validate_setting(key, bad)[0] or not S.validate_setting(key, good)[0]:
+                fails.append(f"(e) validation of {key}: {bad!r} accepted or {good!r} refused")
+        # (f) PV
+        _seen_pv = set()
+        for plan in plans:
+            _seen_pv |= _pv_paths(plan, "plan", set())
+        uncl = [x for x in sorted(_seen_pv) if x != "plan.<phase>"
+                and not (_pv_classified(x, S._PV_PLAN) or _pv_withheld(x))]
+        if uncl:
+            fails.append(f"(f) unclassified for the public view: {uncl[:8]}")
+    except Exception as e:
+        import traceback
+        fails.append(f"raised {type(e).__name__}: {e} {traceback.format_exc()[-300:]}")
+    finally:
+        mr, lc, vm, ls, gp, (pkm, pkw, pkp) = keep
+        E_.set_max_runs("" if mr is None else str(mr)); E_.set_long_run_cap("" if lc is None else str(lc))
+        E_.set_volume_max("" if vm is None else str(vm))
+        E_.set_long_share_max("" if ls is None else str(round(ls * 100, 6)))
+        E_.set_easy_before_long("" if gp is None else str(gp))
+        E_.set_peak_long("" if pkm is None else str(pkm), str(pkw), str(pkp))
+    return _st("det", "injury-limits",
+               "Fork §VMAX/§LSHARE/§GAP/§PEAKLR: a weekly km ceiling that never lets go, the long run's most of "
+               "the week, easy days before the long run, and one longer long run in a lighter week 3 weeks out",
+               passed=not fails, got={"failures": fails or "none"})
 
 
 def _stc_session_swap():
@@ -16414,6 +16725,10 @@ def _stc_ui_today():
         fails.append("(b) the target does not follow the threshold's trust (HR when trusted, else pace)")
     if U.strides_of({"note": "easy run + 2×4–6 strides"}) != 2 or U.strides_of({"strides": 3}) != 3:
         fails.append("(c) strides_of misses the flag or the note")
+    for _n in (2, 4):                     # the marker's count is not a number of sets: one set of 4–6, ~6 min
+        _sx = [x for x in U.workout_steps({"strides": _n}) if "strides" in x["label"]]
+        if len(_sx) != 1 or not _sx[0]["label"].startswith("4–6 strides") or "×" in _sx[0]["label"] or _sx[0]["minutes"] != 6:
+            fails.append(f"(c) the strides step for a count of {_n} reads {[(x['label'], x['minutes']) for x in _sx]}")
     steps = U.workout_steps({"reps": [{"effort": "warmup", "minutes": 10, "km": 1.5, "zone": "easy"},
                                       *[{"effort": "work", "minutes": 4, "km": 1.0, "zone": "interval"},
                                         {"effort": "recovery", "minutes": 2, "km": 0.3, "zone": "easy"}] * 4,
@@ -16435,6 +16750,9 @@ def _stc_ui_today():
         for k in ("readiness", "session", "week", "race"):
             if not d.get(k):
                 fails.append(f"(a) page lacks {k}")
+        sd = d.get("session") or {}
+        if sd.get("done") and not sd.get("activity_id"):
+            fails.append("(a) today's session is done but names no run (the hero's Open and debrief summary need it)")
         w = d.get("week") or {}
         if len(w.get("days") or []) != 7 or S._date(w["days"][0]["date"]) != E.week_start_of(today):
             fails.append(f"(a) week is not 7 days from the week start: {[x['date'] for x in w.get('days') or []][:2]}")
@@ -16904,18 +17222,22 @@ def _stc_ui_rest_days():
     TSB ≥ 0 and after n − 1 it is still below; balanced form reads 0; (b) today's row is read off the
     de-duplicated reconstruction INCLUDING today's run, comes first in Recovery, links to the fitness
     chart, and turns 'watch' when form is at the tired line; (c) no history, no row."""
+    import math
     import sqlite3 as _sq
     from datetime import date as _d, timedelta as _td
     U = UIAPI
     fails = []
     start = _d(2026, 6, 4)
     for ctl, atl in ((60, 90), (60, 62), (40, 80), (55, 55)):
-        n = U.rest_days(S, ctl, atl, start)
+        x = U.rest_days(S, ctl, atl, start)
+        n = math.ceil(x)
         curve = S.roll({}, start, start + _td(days=max(n, 1)), ctl0=ctl, atl0=atl)
-        ok_n = n == 0 if ctl >= atl else (curve[n - 1]["ctl"] >= curve[n - 1]["atl"] and
+        ok_n = x == 0 if ctl >= atl else (curve[n - 1]["ctl"] >= curve[n - 1]["atl"] and
                                           (n == 1 or curve[n - 2]["ctl"] < curve[n - 2]["atl"]))
         if not ok_n:
-            fails.append(f"(a) CTL {ctl} / ATL {atl}: {n} rest day(s) is not the first day TSB reaches 0")
+            fails.append(f"(a) CTL {ctl} / ATL {atl}: {x} rest day(s) does not round up to the first day TSB reaches 0")
+        if ctl < atl and x == n:
+            fails.append(f"(a) CTL {ctl} / ATL {atl}: {x} has no decimal (Runalyze shows 3.4, not 4)")
     mem = _sq.connect(":memory:"); mem.row_factory = _sq.Row
     mem.executescript(S.SCHEMA)
     try:
@@ -16939,7 +17261,7 @@ def _stc_ui_rest_days():
         if U.rest_days(S, y["ctl"], y["atl"], today) == want:
             fails.append("(b) ANTI-VACUITY — today's run does not change the count, so (b) cannot see it")
         r = U.today_rest_days(S, mem, today) or {}
-        if h["date"] != today.isoformat() or r.get("value") != str(want) or want < 1:
+        if h["date"] != today.isoformat() or r.get("value") != f"{want:g}" or want < 1:
             fails.append(f"(b) rest days {r.get('value')} vs the reconstruction's {want} (today's run counted?)")
         if r.get("link") != "/fitness#fitness-fatigue" or not r.get("series"):
             fails.append(f"(b) the row has no door or no TSB series: {r.get('link')}")
@@ -16956,6 +17278,294 @@ def _stc_ui_rest_days():
     return _st("det", "ui-rest-days",
                "Today's Recovery shows Runalyze's rest days — full-rest days until TSB is back to 0 — exact on the "
                "engine's own EWMA, read off the de-duplicated history with today's run, first in the card",
+               passed=not fails, got={"failures": fails or "none"})
+
+
+def _stc_run_insights():
+    """Fork §LENS — a run's "what to keep, what to change", each read against the athlete's own recent runs.
+    (a) even 1 km splits, a steady heart rate (decoupling under 5 %) and the longest run in weeks are KEEPs;
+    (b) a second half ≥5 % slower is a CHANGE with advice for the next run; (c) a long run's fast last km is a
+    CHANGE, and a long run without one is a KEEP only for an athlete with an injury history; (d) an easy run over the
+    easy ceiling is a CHANGE (and names the pattern only for a run inside today's effort window), under it a KEEP;
+    (e) heartbeats per km against the recent median: better is a KEEP, worse a CHANGE; (f) heat is CONTEXT, never a
+    CHANGE; (g) a run with no splits, no decoupling and no heart rate says nothing (nothing is guessed); (h) the
+    debrief carries the insights."""
+    import json
+    import sqlite3 as _sq
+    import sh_ui_lenses as L
+    from datetime import date as _d, timedelta as _td
+    fails = []
+    mem = _sq.connect(":memory:"); mem.row_factory = _sq.Row
+    mem.executescript(S.SCHEMA)
+    saved_inj = L._has_injuries
+    today = _d.today()
+    ed = {"easy_hr_ceiling": 145, "easy_counts": {"judged": 5, "hot": 4, "too_hard": 0}, "window_days": 21}
+    aid = [0]
+
+    def add(day, km, sec_km, hr, splits=None, dc=None, temp=18, cad=82):
+        aid[0] += 1
+        raw = {"aerobic_decoupling_pace": dc, "temperature": temp, "humidity": 50, "cadence": cad,
+               "cadence_display_factor": 2,
+               "splits": splits if splits is not None else [{"distance": 1, "duration": sec_km} for _ in range(int(km))]}
+        mem.execute("INSERT INTO activities (id, date_time, date, sport, distance, duration, hr_avg, trimp, raw) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)", (aid[0], day.isoformat() + "T07:00:00", day.isoformat(), "Running",
+                                                   km, km * sec_km, hr, 80.0, json.dumps(raw)))
+        mem.commit()
+        return dict(mem.execute("SELECT * FROM activities WHERE id=?", (aid[0],)).fetchone())
+
+    keys = lambda r, part: {x["key"] for x in r[part]}
+    try:
+        L._has_injuries = lambda S_, db: True
+        add(today - _td(days=60), 10.0, 400, 150, dc=6)                 # the last longer run, 60 days back
+        for k in (30, 25, 20, 15):                                     # the recent runs: ~1000 beats a km, 7 % drift
+            add(today - _td(days=k), 6.0, 400, 150, dc=7)
+        long_ = {"kind": "long"}
+        # (a) + (c keep) + (d over) + (e better): even, steady, longest in weeks, over the ceiling, more km per beat
+        a = add(today - _td(days=1), 8.0, 400, 146, dc=4)
+        r = L.run_insights(S, mem, a, long_, {"pace": "6:40"}, ed, "hot")
+        for k in ("distance", "pacing", "decoupling", "finish", "efficiency"):
+            if k not in keys(r, "keep"):
+                fails.append(f"(a/c/e) '{k}' is not a keep on an even, steady, long, efficient run: {r['keep']}")
+        if "effort" not in keys(r, "change") or "4 of your last 5" not in next(x["text"] for x in r["change"] if x["key"] == "effort"):
+            fails.append(f"(d) 146 bpm over a 145 ceiling, inside the window, is not a change naming the pattern: {r['change']}")
+        if not r["next"]:
+            fails.append("(d) an over-ceiling run gives no advice for the next run")
+        L._has_injuries = lambda S_, db: False
+        if "finish" in keys(L.run_insights(S, mem, a, long_, {}, ed, "hot"), "keep"):
+            fails.append("(c) 'no push at the end' is said to an athlete with no injury history")
+        # (b) a fade: the second half 10 % slower; (c) a fast last km on a long run
+        sp = [{"distance": 1, "duration": 380}] * 3 + [{"distance": 1, "duration": 420}] * 3
+        b = add(today - _td(days=2), 6.0, 400, 140, splits=sp, dc=6)
+        r = L.run_insights(S, mem, b, {"kind": "easy"}, {}, ed, "on")
+        if "pacing" not in keys(r, "change") or not r["next"]:
+            fails.append(f"(b) a 10 % slower second half is not a change with advice: {r}")
+        if "effort" not in keys(r, "keep"):
+            fails.append(f"(d) 140 bpm under a 145 ceiling is not a keep: {r['keep']}")
+        sp = [{"distance": 1, "duration": 400}] * 5 + [{"distance": 1, "duration": 370}]
+        c = add(today - _td(days=3), 6.0, 395, 140, splits=sp, dc=6)
+        if "finish" not in keys(L.run_insights(S, mem, c, long_, {}, ed, "on"), "change"):
+            fails.append("(c) a long run's last km 7 % faster than its average is not a change")
+        # (d) an old run gets no pattern line: today's window doesn't speak for it
+        old = add(today - _td(days=40), 6.0, 400, 150, dc=7)
+        t = next((x["text"] for x in L.run_insights(S, mem, old, {"kind": "easy"}, {}, ed, "hot")["change"] if x["key"] == "effort"), "")
+        if not t or "of your last" in t:
+            fails.append(f"(d) a run 40 days back names today's pattern (or loses its effort line): {t!r}")
+        # (e) worse: 8 % more beats a km than the median
+        e = add(today - _td(days=4), 6.0, 400, 162, dc=6)
+        if "efficiency" not in keys(L.run_insights(S, mem, e, {"kind": "easy"}, {}, {}, None), "change"):
+            fails.append("(e) 8 % more beats a km than the recent median is not a change")
+        # (f) heat is context, not a change
+        f = add(today - _td(days=5), 6.0, 400, 150, dc=6, temp=29)
+        r = L.run_insights(S, mem, f, {"kind": "easy"}, {}, {}, None)
+        if "heat" not in keys(r, "context") or "heat" in keys(r, "change"):
+            fails.append(f"(f) 29 °C is not context only: {r}")
+        # (g) nothing to read, nothing said
+        aid[0] += 1
+        mem.execute("INSERT INTO activities (id, date_time, date, sport, distance, duration, hr_avg, trimp, raw) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)", (aid[0], today.isoformat() + "T07:00:00", today.isoformat(), "Running",
+                                                   3.0, 1200, None, 30.0, "{}"))
+        g = dict(mem.execute("SELECT * FROM activities WHERE id=?", (aid[0],)).fetchone())
+        r = L.run_insights(S, mem, g, None, {}, {}, None)
+        if any(r[k] for k in ("keep", "change", "next", "context")):
+            fails.append(f"(g) a run with nothing to read still says something: {r}")
+        # (h) the debrief carries them
+        d = L.run_debrief(S, mem, a["id"])
+        if set((d.get("insights") or {}).keys()) != {"keep", "change", "next", "context"}:
+            fails.append(f"(h) the debrief does not carry the insights: {d.get('insights')}")
+    except Exception as ex:
+        fails.append(f"raised {type(ex).__name__}: {ex}")
+    finally:
+        L._has_injuries = saved_inj
+        mem.close()
+    return _st("det", "run-insights",
+               "After a run: what to keep and what to change, each against the athlete's own recent runs (pacing, "
+               "heart-rate drift, effort vs the easy ceiling, beats per km, cadence, a long run's finish); heat is "
+               "context; a run with nothing to read says nothing",
+               passed=not fails, got={"failures": fails or "none"})
+
+
+def _stc_seasons():
+    """Fork §SEASON — this season against the past ones (sh_seasons), on a fixture of tagged races and runs.
+    (a) a race's VDOT and the engine's Daniels time invert each other (the race scale is the engine's own);
+    (b) one race per past season: tagged 10k/half within the window of the goal's day of year, the closest when a
+        season has two; a 5k, a race out of the window, the goal's own date and later ones are left out;
+    (c) the signals on a day: VO₂max = mean of the runs' estimates over 30 days, beats per km = median of runs of
+        4 km+ over 28 days (a short run is not counted), windows inclusive of the day;
+    (d) the history check: the goal distance's own gap when it has ≥2 races, the best case at the other distance's
+        smaller gap, the VO₂max the goal needs gives the goal's time at that gap, the fitness note only when the
+        plan's race-day fitness passes every race's;
+    (e) the seasons' lines sit on this season's calendar (last point the day before race day) and the same-point
+        state is read as many days out as today;
+    (f) Today's two rows: VO₂max (Runalyze's snapshot when fresh, else the runs') and beats per km, each linking
+        to the Seasons card, each series ending today; no runs, no rows."""
+    import json
+    import sqlite3 as _sq
+    import sh_seasons as SS
+    from datetime import date as _d, timedelta as _td
+    fails = []
+    mem = _sq.connect(":memory:"); mem.row_factory = _sq.Row
+    mem.executescript(S.SCHEMA)
+    aid = [0]
+
+    def add(day, km, sec, hr=150, vo2=None, race=None):
+        aid[0] += 1
+        raw = {"vo2max": vo2, "use_vo2max": True}
+        if race:
+            raw["race_result"] = {"official_distance": race[0], "official_time": race[1]}
+        mem.execute("INSERT INTO activities (id, date_time, date, sport, distance, duration, elapsed_time, hr_avg, trimp, raw) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)", (aid[0], day.isoformat() + "T07:00:00", day.isoformat(), "Running",
+                                                     km, sec, sec, hr, 60.0, json.dumps(raw)))
+    try:
+        # (a)
+        for km, typ in ((10.0, "10k"), (21.0975, "half")):
+            for secs in (3290, 3700) if typ == "10k" else (7767, 8800):
+                v = SS.race_vdot(km, secs)
+                back = E._ft_daniels_time(v, typ)
+                if abs(back - secs) > 1.0:
+                    fails.append(f"(a) {typ} {secs}s → VDOT {v:.2f} → {back:.1f}s: not the engine's Daniels inverse")
+        goal = _d(2027, 2, 26)
+        races = [(_d(2019, 2, 22), 21097.5, 7767), (_d(2022, 2, 25), 10000, 3693), (_d(2022, 3, 6), 10000, 3626),
+                 (_d(2023, 2, 24), 10000, 3581), (_d(2023, 6, 1), 10000, 3500), (_d(2024, 2, 20), 5000, 1700),
+                 (_d(2025, 2, 28), 21097.5, 8050), (_d(2026, 2, 27), 21097.5, 8767),
+                 (_d(2021, 3, 23), 10000, 3600)]          # 25 days past the anniversary: outside the window
+        for rd, dist, secs in races:
+            add(rd, dist / 1000.0, secs, hr=165, vo2=36.0, race=(dist, secs))
+        # training runs before 2025's race (for c) and this season (e, f)
+        base = _d(2025, 2, 27)
+        for k, (km, sec, hr, vo2) in enumerate([(8.0, 3200, 150, 36.0), (6.0, 2400, 148, 38.0), (3.0, 1200, 120, 50.0),
+                                                 (10.0, 4000, 152, 37.0)]):
+            add(base - _td(days=3 + 7 * k), km, sec, hr=hr, vo2=vo2)
+        add(base - _td(days=40), 8.0, 3200, hr=150, vo2=20.0)   # 40 days out: outside the 30-day VO₂max window
+        today = _d(2026, 11, 8)
+        for k in range(12):
+            add(today - _td(days=2 * k), 7.0, 2800, hr=150, vo2=37.0 + 0.1 * k)
+        mem.commit()
+        # (b)
+        got = [(r["season"], r["date"], r["type"]) for r in SS.season_races(mem, goal.isoformat(), "half")]
+        want = [(2019, "2019-02-22", "half"), (2022, "2022-02-25", "10k"), (2023, "2023-02-24", "10k"),
+                (2025, "2025-02-28", "half"), (2026, "2026-02-27", "half")]
+        if got != want:
+            fails.append(f"(b) seasons {got}, want {want}")
+        # (c) 2025 race eve: 30-day VO₂max over the four runs before it, beats per km without the 3 km run
+        runs = SS._runs(S, mem)
+        eve = SS.state_at(runs, {}, _d(2025, 2, 27))
+        ins = [r for r in runs if "2025-01-29" <= r["date"] <= "2025-02-27"]
+        vo_want = round(sum(r["vo2"] for r in ins if r["vo2"]) / len([r for r in ins if r["vo2"]]), 1)
+        if eve["vo2"] != vo_want:
+            fails.append(f"(c) VO₂max {eve['vo2']} on race eve, want the 30-day mean {vo_want}")
+        b28 = sorted(r["hr_avg"] * r["duration"] / 60 / r["distance"] for r in mem.execute(
+            "SELECT hr_avg, duration, distance FROM activities WHERE date BETWEEN '2025-01-31' AND '2025-02-27' AND distance >= 4"))
+        if eve["bpk"] != round(b28[len(b28) // 2] if len(b28) % 2 else (b28[len(b28) // 2 - 1] + b28[len(b28) // 2]) / 2):
+            fails.append(f"(c) beats per km {eve['bpk']} is not the 28-day median of runs of 4 km+ ({[round(x) for x in b28]})")
+        if any(r["km"] < SS.BPK_MIN_KM and r["bpk"] is not None for r in runs):
+            fails.append("(c) a run under 4 km carries beats per km")
+        # (d)
+        rows = [{"type": "half", "gap": -5.0, "eve": {"ctl": 30}}, {"type": "half", "gap": -6.0, "eve": {"ctl": 40}},
+                {"type": "10k", "gap": -3.0, "eve": {"ctl": 35}}]
+        c = SS.history_check(rows, "half", 37.0, "1:59", {"feasibility": {"finish_time": {"hms": "1:58:40"}, "projected_ctl": 65}})
+        exp = SS.hms(E._ft_daniels_time(37.0 - 5.5, "half"))
+        if not c or c["expected"] != exp or c["gap_basis"] != "half":
+            fails.append(f"(d) expected {c and c.get('expected')} at the half's own gap, want {exp}")
+        if not c or c["best_case"] != SS.hms(E._ft_daniels_time(37.0 - 3.0, "half")):
+            fails.append(f"(d) best case {c and c.get('best_case')} is not the 10k gap's")
+        if not c or abs(E._ft_daniels_time(c["vo2_for_goal"] - 5.5, "half") - (3600 + 59 * 60)) > 15:
+            fails.append(f"(d) VO₂max for the goal {c and c.get('vo2_for_goal')} does not give 1:59 at the expected gap")
+        if not c or "fitness 65" not in c["summary"] or "30–40" not in c["summary"]:
+            fails.append(f"(d) the summary does not name the fitness past every race: {c and c.get('summary')}")
+        c2 = SS.history_check(rows, "half", 37.0, None, {"feasibility": {"finish_time": {"hms": "2:10:00"}, "projected_ctl": 38}})
+        if "fitness" in (c2 or {}).get("summary", ""):
+            fails.append("(d) the fitness note shows though the plan's fitness is inside the raced range")
+        # (e)
+        page = SS.seasons(S, mem, today, {"date": goal.isoformat(), "type": "half", "target": "1:59"}, {})
+        days_out = (goal - today).days
+        last = page["seasons"][-1]
+        if last["series"][-1]["date"] != (goal - _td(days=1)).isoformat():
+            fails.append(f"(e) a season's line ends {last['series'][-1]['date']}, want race eve on this calendar")
+        sp = SS.state_at(runs, {}, _d(2026, 2, 27) - _td(days=days_out))
+        if last["same_point"]["vo2"] != sp["vo2"] or page["race"]["days_out"] != days_out:
+            fails.append("(e) the same-point state is not read as many days out as today")
+        # (f)
+        rows_t = SS.today_signals(S, mem, today, {"date": goal.isoformat(), "type": "half", "target": "1:59"})
+        keys = [r["key"] for r in rows_t]
+        if keys != ["vo2max", "beats_per_km"] or any(r["link"] != "/goal#seasons" or r["series"][-1]["date"] != today.isoformat()
+                                                      for r in rows_t):
+            fails.append(f"(f) Today's rows {keys}: wrong keys, door or series end")
+        if rows_t and "30-day mean of your runs" not in rows_t[0]["sub"]:
+            fails.append("(f) with no snapshot the VO₂max row does not say it is the runs' mean")
+        mem.execute("INSERT INTO shape_snapshots (snapshot_date, captured_at, effective_vo2max) VALUES (?,?,?)",
+                    (today.isoformat(), today.isoformat() + "T06:00:00", 39.9))
+        mem.commit()
+        rows_t = SS.today_signals(S, mem, today, {"date": goal.isoformat(), "type": "half"})
+        if not rows_t or rows_t[0]["value"] != "39.9" or "Runalyze" not in rows_t[0]["sub"]:
+            fails.append(f"(f) a fresh Runalyze snapshot is not today's VO₂max: {rows_t and rows_t[0]}")
+        empty = _sq.connect(":memory:"); empty.row_factory = _sq.Row; empty.executescript(S.SCHEMA)
+        if SS.today_signals(S, empty, today, {"date": goal.isoformat(), "type": "half"}):
+            fails.append("(f) rows with no runs")
+        empty.close()
+        # (g) the single latest run beside the windows that smooth it, and one run's own signals for its debrief
+        nxt = today + _td(days=1)
+        add(nxt, 5.0, 1800, hr=140, vo2=41.0)                  # 840 beats a km, VO₂max 41.0
+        mem.commit()
+        runs = SS._runs(S, mem)
+        lr = SS.latest_run(runs, nxt)
+        if not lr or (lr["date"], lr["vo2"], lr["bpk"]) != (nxt.isoformat(), 41.0, 840):
+            fails.append(f"(g) the latest run {lr}, want {nxt} at 41.0 and 840")
+        if (SS.latest_run(runs, today) or {}).get("date") != today.isoformat():
+            fails.append("(g) the latest run on a day reaches past that day")
+        pg = SS.seasons(S, mem, nxt, {"date": goal.isoformat(), "type": "half"}, {})["now"]
+        if pg.get("latest_vo2") != "today's run 41.0" or pg.get("latest_bpk") != "today's run 840":
+            fails.append(f"(g) Seasons' latest-run words {pg.get('latest_vo2')!r}, {pg.get('latest_bpk')!r}")
+        later = SS.seasons(S, mem, nxt + _td(days=2), {"date": goal.isoformat(), "type": "half"}, {})["now"]
+        if not (later.get("latest_bpk") or "").startswith(f"latest run ({nxt.strftime('%b %-d')})"):
+            fails.append(f"(g) two days on the latest run is not dated: {later.get('latest_bpk')!r}")
+        rt = SS.today_signals(S, mem, nxt, {"date": goal.isoformat(), "type": "half"})
+        if [r["sub"].split(" · ")[0] for r in rt] != ["today's run 41.0", "today's run 840"]:
+            fails.append(f"(g) Today's rows do not lead with today's run: {[r['sub'] for r in rt]}")
+        rs = SS.run_signals(S, mem, aid[0], nxt)
+        med = SS.state_at(runs, {}, nxt)["bpk"]
+        want_pct = round(100 * (840 - med) / med)
+        if not rs or rs["vo2"] != 41.0 or rs["bpk"] != 840 or rs["bpk_median"] != med \
+                or rs["bpk_text"] != f"{abs(want_pct)} % under your 4-week median {med}":
+            fails.append(f"(g) the run's own signals {rs}, want 41.0, 840 and {abs(want_pct)} % under {med}")
+        if SS.run_signals(S, mem, 999999, nxt) is not None:
+            fails.append("(g) signals for a run that does not exist")
+        # (h) this season as a row: the model's finish and race-eve VO₂max, the plan's sessions ahead, the runs behind
+        t_h = goal - _td(days=30)
+        add(goal - _td(days=40), 9.0, 3600, hr=150, vo2=38.0)           # done, inside the 12 weeks
+        add(goal - _td(days=90), 30.0, 12000, hr=150, vo2=38.0)         # done, before the 12 weeks
+        mem.commit()
+        plan_h = {"feasibility": {"finish_time": {"hms": "1:59:00", "seconds": 7140, "curve": [
+                      {"plus_weeks": 4, "evo2": 44.0}, {"plus_weeks": 0, "evo2": 40.5}]}},
+                  "build": {"weeks": [{"start": (goal - _td(days=40)).isoformat(), "sessions": [
+                      {"date": (goal - _td(days=40)).isoformat(), "km": 25.0},       # planned but past: the run counts
+                      {"date": (goal - _td(days=10)).isoformat(), "km": 14.0},
+                      {"date": (goal - _td(days=5)).isoformat(), "km": 0},
+                      {"date": goal.isoformat(), "km": 21.1, "race": True}]}]}}
+        pg_h = SS.seasons(S, mem, t_h, {"date": goal.isoformat(), "type": "half"}, plan_h)
+        ts = pg_h.get("this_season") or {}
+        want_vd = round(SS.race_vdot(21.0975, 7140), 1)
+        if (ts.get("time"), ts.get("vdot"), (ts.get("eve") or {}).get("vo2")) != ("1:59:00", want_vd, 40.5):
+            fails.append(f"(h) this season's planned finish {ts.get('time')}, VDOT {ts.get('vdot')}, race eve "
+                         f"{(ts.get('eve') or {}).get('vo2')}; want 1:59:00, {want_vd}, 40.5 (the race-day point)")
+        if (ts.get("eve") or {}).get("long_12") != 14.0 or (ts.get("eve") or {}).get("km_week_12") != round((9.0 + 14.0) / 12, 1):
+            fails.append(f"(h) the 12 weeks {ts.get('eve')}: want the run done (9) and the session ahead (14), "
+                         "not the past session, the race or the run before the window")
+        nw = pg_h["now"]
+        if ts.get("same_point") != {"vo2": nw["vo2"], "bpk": nw["bpk"]}:
+            fails.append(f"(h) this season's days-out figures {ts.get('same_point')} are not today's")
+        if any(r.get("planned") for r in pg_h["seasons"]):
+            fails.append("(h) the planned row joins the past seasons (it would enter the correlations)")
+        if any("bpk" not in (r.get("same_point") or {}) for r in pg_h["seasons"]):
+            fails.append("(h) a season without its days-out beats per km")
+    except Exception as e:
+        import traceback
+        fails.append(f"raised {type(e).__name__}: {e} {traceback.format_exc()[-300:]}")
+    finally:
+        mem.close()
+    return _st("det", "seasons",
+               "This season against the past ones, aligned on race day: races from the race corpus on Daniels' scale, "
+               "VO₂max and beats per km read the same way every season, and the personal-history check of the "
+               "prediction (own-distance gap, the goal's VO₂max, the fitness the model counts on)",
                passed=not fails, got={"failures": fails or "none"})
 
 
@@ -25905,6 +26515,13 @@ def _pinned_engine_globals():
     E.set_max_runs("")
     saved_lf = E.long_first()           # fork §LRF — Long run first is the same class of setting
     E.set_long_first("0")
+    # Fork §LRCAP / §STEPUP / §EASYLR — the same class again
+    saved_lc, saved_mu, saved_le, saved_vh = E.long_run_cap(), E.more_runs_at(), E.long_easy(), E.volume_hold()
+    saved_kq = E.keep_quality()
+    saved_lim = (E.volume_max(), E.long_share_max(), E.easy_before_long(), E.peak_long())
+    E.set_long_run_cap(""); E.set_more_runs_at(""); E.set_long_easy("0"); E.set_volume_hold("")
+    E.set_keep_quality("0")
+    E.set_volume_max(""); E.set_long_share_max(""); E.set_easy_before_long(""); E.set_peak_long("", "", "")
     E.reset_calibration()
     # Fork §LOCAL — `auto` would see a developer's `claude` CLI and turn the AI layer on for every
     # det that assumes the keyless test env. The battery keeps the key-only rule it always had;
@@ -25920,6 +26537,16 @@ def _pinned_engine_globals():
         E.WEEK_START = saved_ws
         E.set_max_runs("" if saved_mr is None else str(saved_mr))
         E.set_long_first("1" if saved_lf else "0")
+        E.set_long_run_cap("" if saved_lc is None else str(saved_lc))
+        E.set_more_runs_at("" if saved_mu is None else str(saved_mu))
+        E.set_long_easy("1" if saved_le else "0")
+        E.set_volume_hold("" if saved_vh is None else str(saved_vh))
+        E.set_keep_quality("1" if saved_kq else "0")
+        _vm, _ls, _gp, (_pkm, _pkw, _pkp) = saved_lim
+        E.set_volume_max("" if _vm is None else str(_vm))
+        E.set_long_share_max("" if _ls is None else str(round(_ls * 100, 6)))
+        E.set_easy_before_long("" if _gp is None else str(_gp))
+        E.set_peak_long("" if _pkm is None else str(_pkm), str(_pkw), str(_pkp))
         E.apply_calibration(saved_cal)
 
 
@@ -26031,7 +26658,7 @@ def _run_server_selftest(db, categories=None):
                  lambda: _stc_seed_anchor(), lambda: _stc_seed_resync(),
                  lambda: _stc_today_actual(),
                  lambda: _stc_frequency_met(),
-                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_long_run_first(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
+                 lambda: _stc_run_metrics(), lambda: _stc_durability(), lambda: _stc_decoupling_units(), lambda: _stc_durability_api(), lambda: _stc_durability_builds(), lambda: _stc_race_tags(), lambda: _stc_max_runs(), lambda: _stc_race_distance_long(), lambda: _stc_race_specific(), lambda: _stc_calibration(), lambda: _stc_race_correction_fitness(), lambda: _stc_week_start(), lambda: _stc_long_day_turned(), lambda: _stc_long_run_first(), lambda: _stc_calf_safe(), lambda: _stc_injury_limits(), lambda: _stc_session_swap(), lambda: _stc_race_day_plan(), lambda: _stc_lenses(), lambda: _stc_run_insights(), lambda: _stc_seasons(), lambda: _stc_marathon_shape(), lambda: _stc_ui_rest_days(), lambda: _stc_vs_original(), lambda: _stc_coach_chat(), lambda: _stc_ui_today(), lambda: _stc_ui_fitness(), lambda: _stc_ui_pages(), lambda: _stc_ui_parity(), lambda: _stc_worked_example(),
                  lambda: _stc_diff_load_fingerprint(), lambda: _stc_cross_phase_freeze(),
                  lambda: _stc_cross_phase_freeze_integration(),
                  lambda: _stc_feasibility_floor(),

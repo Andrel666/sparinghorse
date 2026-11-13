@@ -21,7 +21,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export type Verdict = "green" | "amber" | "red" | null;
 export interface Target { kind: "hr" | "pace"; text: string; hint: string }
 export interface Step { label: string; minutes: number | null; km: number | null; zone: string | null; pace: string | null }
-export interface Actual { km: number; pace: string | null; hr?: number | null }
+export interface Actual { km: number; pace: string | null; hr?: number | null; strides?: number; total_km?: number | null }
 export interface Day {
   date: string; dow: string; kind: string; title: string; km: number | null; race: boolean; strides: number;
   status: "rest" | "planned" | "today" | "done" | "moved" | "missed" | "extra"; actual: Actual | null; moved_to: string | null;
@@ -30,6 +30,8 @@ export interface Day {
   moved_from?: string | null; moved_dow?: string | null;
 }
 export interface Held { key: string; name: string; text: string; short?: string }
+/** One thing the readiness verdict read (HRV, legs, sleep), with its value and a plain word. */
+export interface ReadinessInput { key: string; label: string; value: string; word: string | null; tone: "warn" | null }
 export interface TodayPage {
   ok: true; today: string; sync_minutes: number | null; dateline?: string;
   race: { label: string; date: string; type: string; days: number; target: string | null; start_time: string | null;
@@ -37,11 +39,12 @@ export interface TodayPage {
           pred?: { hms: string; tone: "ok" | "warn" | "bad" | null; words: string } } | null;
   readiness: { verdict: Verdict; halt: boolean; action: string; headline: string | null; detail: string;
                reasons: string[]; hrv: string | null; hrv_line: string; ai_line: string | null;
-               checkin: Checkin | null; for_label?: string | null; saved_at?: string | null };
+               checkin: Checkin | null; for_label?: string | null; saved_at?: string | null;
+               inputs?: ReadinessInput[]; judged?: boolean };
   session: { kind: string; title: string; km: number | null; minutes: number | null; note: string | null; done: boolean;
              actual: Actual | null; race: boolean; target: Target | null; steps: Step[]; phase: string | null;
              week: number | null; trimp: number | null; optional: boolean; start: string | null; component: string | null;
-             pace_zone: string | null; why: string | null; activity_id?: number | null };
+             pace_zone: string | null; why: string | null; activity_id?: number | null; skipped?: string };
   next: { date: string; dow: string; kind: string; title: string; km: number | null; minutes: number | null;
           strides: number; race: boolean; target: Target | null; days: number } | null;
   week: { start: string; phase: string | null; km: number; runs: number; days: Day[]; deload: string | null;
@@ -52,8 +55,8 @@ export interface TodayPage {
   // added with the day drawer and the glance row — optional, so a backend that predates them still renders
   coming?: (Omit<SessionDetail, "mark" | "activity_id" | "reflection" | "component" | "moved_dow" | "runs"> & { dow: string; days: number })[];
   glance?: { key: string; label: string; value: string; sub: string; hint?: string | null; tone: "ok" | "warn" | "bad" | null; link: string }[];
-  recovery?: { key: string; label: string; value: string; unit: string; sub: string; state: "ok" | "watch" | null;
-              series: { date: string; v: number }[]; link?: string }[];
+  recovery?: MarkerRow[];
+  signals?: MarkerRow[];                 // fork §SEASON — VO₂max and beats per km, the signals the races track
   where?: Where | null;
   why?: { key: string; text: string; detail?: string; link: string }[];
   vs_plan?: VsPlan | null;
@@ -152,6 +155,7 @@ export interface PlanPage {
 }
 export interface RunPage { ok: true; id: number; date: string; title: string; sport: string;
   stats: { k: string; v: string | null; primary?: boolean }[];
+  parts?: { key: string; label: string; km: number; figures: string; note: string | null }[];
   readback: { kind: string | null; summary: string | null; rough: boolean; composite: number | null; strides: string | null } | null;
   verdict: string | null; verdict_text: string | null; time: string | null; ignored: boolean;
   split: { index: number; parts: number; km: number; min: number } | null }
@@ -211,7 +215,7 @@ export const useCalendar = (month?: string) => q<CalendarMonth>(["ui", "calendar
 export const usePlanCalendar = (month?: string) => q<PlanCalendar>(["ui", "plancal", month], `/api/plan/calendar${month ? `?month=${month}` : ""}`);
 export interface RunsLog { ok: true; month: string; range: string | null; km: number;
   runs: { id: number; date: string; dow: string; time: string | null; km: number; pace: string | null; z: number | null; hr: number | null;
-          min: number | null; kind: string; verdict: string | null; verdict_text: string | null }[];
+          bpk: number | null; min: number | null; kind: string; verdict: string | null; verdict_text: string | null }[];
   weeks: { start: string; km: number; runs: number; ids: number[] }[] }
 export const useRunsLog = (month?: string, range?: string | null) =>
   q<RunsLog>(["ui", "runslog", month, range], `/api/ui/runs?${new URLSearchParams(Object.entries({ month, range }).filter(([, v]) => v) as [string, string][])}`);
@@ -229,10 +233,14 @@ export interface Debrief {
           fitness: { before: number; after: number; delta: number } | null;
           endurance: { before: number; after: number; delta: number; label: string } | null;
           prediction: { before: string | null; after: string; delta_s: number | null; delta: string } | null;
+          signals?: { vo2: number | null; vo2_now: number | null; vo2_text: string | null;
+                      bpk: number | null; bpk_median: number | null; bpk_text: string | null } | null;
           contract?: { predicted: string; margin_s: number | null; tone: "ok" | "warn" | "bad" | null; words: string | null; days: number } };
   next: { date: string; dow: string; title: string; km: number | null; target: Target | null } | null;
   changed: string[]; plan_reacted: boolean;
+  insights?: { keep: Insight[]; change: Insight[]; next: string[]; context: Insight[] };
 }
+export interface Insight { key: string; text: string }
 export const useDebrief = (id: number | null | undefined) => q<Debrief>(["ui", "debrief", id], `/api/ui/debrief/${id}`, id != null, false);
 
 /** Goal (sh_ui_lenses.goal_page): the contract line, ranked levers, what holds the next weeks, vs the original plan. */
@@ -245,6 +253,27 @@ export interface GoalPage {
   levers: Lever[];
   holding: { key: string; name: string; weeks: number; of: number; text: string | null; first: string; link: string }[];
   vs_plan: VsPlan | null;
+  seasons?: Seasons | null;
+}
+export interface MarkerRow { key: string; label: string; value: string; unit: string; sub: string; state: "ok" | "watch" | null;
+  series: { date: string; v: number }[]; link?: string }
+export interface SeasonPoint { date: string; vo2: number | null; bpk: number | null; km_week: number; ctl: number | null }
+export interface SeasonState { vo2: number | null; bpk: number | null; km_week: number; km_week_12: number; long_12: number; ctl: number | null }
+export interface SeasonRow { season: number; date: string; type: string; time: string; seconds: number; vdot: number | null;
+  equivalent: string | null; gap: number | null; eve: SeasonState; same_point: SeasonState; series: SeasonPoint[] }
+/** This season as a row: today's real figures at the days-out point, the model's and the plan's for the rest. */
+export interface ThisSeasonRow { season: number; date: string; type: string; planned: true; label: string; note: string;
+  time: string | null; seconds: number | null; vdot: number | null; equivalent: string | null;
+  eve: { vo2: number | null; bpk: null; km_week_12: number; long_12: number }; same_point: { vo2: number | null; bpk: number | null } }
+export interface Seasons {
+  ok: boolean; reason?: string;
+  race?: { date: string; type: string; label: string | null; days_out: number };
+  now?: SeasonState & { vo2_source: string; series: SeasonPoint[]; latest_vo2?: string | null; latest_bpk?: string | null };
+  seasons: SeasonRow[];
+  this_season?: ThisSeasonRow | null;
+  tracked?: { key: string; label: string; r: number; better: string; text: string }[];
+  check?: { summary: string; expected: string | null; best_case: string | null; vo2: number; vo2_for_goal?: number; goal?: string;
+            model?: string; ctl_plan?: number; ctl_raced?: [number, number]; gap: number; gaps: Record<string, number> } | null;
 }
 export const useGoal = () => q<GoalPage>(["ui", "goal"], "/api/ui/goal");
 
